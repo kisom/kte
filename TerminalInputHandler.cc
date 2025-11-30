@@ -103,6 +103,23 @@ map_key_to_command(const int ch, bool &k_prefix, bool &esc_meta, MappedInput &ou
 		out = {true, CommandId::FindStart, "", 0};
 		return true;
 	}
+	// Emacs-style movement aliases
+	if (ch == CTRL('N')) { // C-n: down
+		out = {true, CommandId::MoveDown, "", 0};
+		return true;
+	}
+	if (ch == CTRL('P')) { // C-p: up
+		out = {true, CommandId::MoveUp, "", 0};
+		return true;
+	}
+	if (ch == CTRL('F')) { // C-f: right/forward
+		out = {true, CommandId::MoveRight, "", 0};
+		return true;
+	}
+	if (ch == CTRL('B')) { // C-b: left/back
+		out = {true, CommandId::MoveLeft, "", 0};
+		return true;
+	}
 	if (ch == CTRL('A')) {
 		out = {true, CommandId::MoveHome, "", 0};
 		return true;
@@ -144,26 +161,29 @@ map_key_to_command(const int ch, bool &k_prefix, bool &esc_meta, MappedInput &ou
 		return true;
 	}
 
-	if (k_prefix) {
-		k_prefix = false; // single next key only
-		// Determine if this is a control chord (e.g., C-x) and normalize
-		bool ctrl     = false;
-		int ascii_key = ch;
-		if (ch >= 1 && ch <= 26) {
-			ctrl      = true;
-			ascii_key = 'a' + (ch - 1);
-		}
-		// For letters, normalize to lowercase ASCII
-		ascii_key = KLowerAscii(ascii_key);
+ if (k_prefix) {
+        k_prefix = false; // single next key only
+        // Determine if this is a control chord (e.g., C-x) and normalize
+        bool ctrl     = false;
+        int ascii_key = ch;
+        if (ch >= 1 && ch <= 26) {
+            ctrl      = true;
+            ascii_key = 'a' + (ch - 1);
+        }
+        // For letters, normalize to lowercase ASCII
+        ascii_key = KLowerAscii(ascii_key);
 
-		CommandId id;
-		if (KLookupKCommand(ascii_key, ctrl, id)) {
-			out = {true, id, "", 0};
-		} else {
-			out.hasCommand = false; // unknown chord after C-k
-		}
-		return true;
-	}
+        CommandId id;
+        if (KLookupKCommand(ascii_key, ctrl, id)) {
+            out = {true, id, "", 0};
+        } else {
+            // Show unknown k-command message with the typed character
+            char c = (ascii_key >= 0x20 && ascii_key <= 0x7e) ? static_cast<char>(ascii_key) : '?';
+            std::string arg(1, c);
+            out = {true, CommandId::UnknownKCommand, arg, 0};
+        }
+        return true;
+    }
 
 	// Printable ASCII
 	if (ch >= 0x20 && ch <= 0x7E) {

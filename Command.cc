@@ -365,9 +365,23 @@ cmd_refresh(CommandContext &ctx)
 static bool
 cmd_kprefix(CommandContext &ctx)
 {
-	// Show k-command mode hint in status
-	ctx.editor.SetStatus("C-k _");
-	return true;
+    // Show k-command mode hint in status
+    ctx.editor.SetStatus("C-k _");
+    return true;
+}
+
+
+static bool
+cmd_unknown_kcommand(CommandContext &ctx)
+{
+    char ch = '?';
+    if (!ctx.arg.empty()) {
+        ch = ctx.arg[0];
+    }
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "unknown k-command %c", ch);
+    ctx.editor.SetStatus(buf);
+    return true;
 }
 
 
@@ -887,57 +901,75 @@ cmd_move_end(CommandContext &ctx)
 static bool
 cmd_page_up(CommandContext &ctx)
 {
-	Buffer *buf = ctx.editor.CurrentBuffer();
-	if (!buf)
-		return false;
-	ensure_at_least_one_line(*buf);
-	auto &rows               = buf->Rows();
-	std::size_t y            = buf->Cury();
-	std::size_t x            = buf->Curx();
-	int repeat               = ctx.count > 0 ? ctx.count : 1;
-	std::size_t content_rows = ctx.editor.Rows() > 0 ? ctx.editor.Rows() - 1 : 0;
-	if (content_rows == 0)
-		content_rows = 1;
-	while (repeat-- > 0) {
-		if (y > content_rows)
-			y -= content_rows;
-		else
-			y = 0;
-		if (x > rows[y].size())
-			x = rows[y].size();
-	}
-	buf->SetCursor(x, y);
-	ensure_cursor_visible(ctx.editor, *buf);
-	return true;
+    Buffer *buf = ctx.editor.CurrentBuffer();
+    if (!buf)
+        return false;
+    ensure_at_least_one_line(*buf);
+    auto &rows               = buf->Rows();
+    int repeat               = ctx.count > 0 ? ctx.count : 1;
+    std::size_t content_rows = ctx.editor.Rows() > 0 ? ctx.editor.Rows() - 1 : 0;
+    if (content_rows == 0)
+        content_rows = 1;
+
+    // Base on current top-of-screen (row offset)
+    std::size_t rowoffs = buf->Rowoffs();
+    while (repeat-- > 0) {
+        if (rowoffs >= content_rows)
+            rowoffs -= content_rows;
+        else
+            rowoffs = 0;
+    }
+    // Clamp to valid range
+    if (rows.size() > content_rows) {
+        std::size_t max_top = rows.size() - content_rows;
+        if (rowoffs > max_top) rowoffs = max_top;
+    } else {
+        rowoffs = 0;
+    }
+    // Move cursor to first visible line, column 0
+    std::size_t y = rowoffs;
+    if (y >= rows.size()) y = rows.empty() ? 0 : rows.size() - 1;
+    buf->SetOffsets(rowoffs, 0);
+    buf->SetCursor(0, y);
+    ensure_cursor_visible(ctx.editor, *buf);
+    return true;
 }
 
 
 static bool
 cmd_page_down(CommandContext &ctx)
 {
-	Buffer *buf = ctx.editor.CurrentBuffer();
-	if (!buf)
-		return false;
-	ensure_at_least_one_line(*buf);
-	auto &rows               = buf->Rows();
-	std::size_t y            = buf->Cury();
-	std::size_t x            = buf->Curx();
-	int repeat               = ctx.count > 0 ? ctx.count : 1;
-	std::size_t content_rows = ctx.editor.Rows() > 0 ? ctx.editor.Rows() - 1 : 0;
-	if (content_rows == 0)
-		content_rows = 1;
-	while (repeat-- > 0) {
-		std::size_t max_down = rows.empty() ? 0 : (rows.size() - 1 - y);
-		if (content_rows < max_down)
-			y += content_rows;
-		else
-			y += max_down;
-		if (x > rows[y].size())
-			x = rows[y].size();
-	}
-	buf->SetCursor(x, y);
-	ensure_cursor_visible(ctx.editor, *buf);
-	return true;
+    Buffer *buf = ctx.editor.CurrentBuffer();
+    if (!buf)
+        return false;
+    ensure_at_least_one_line(*buf);
+    auto &rows               = buf->Rows();
+    int repeat               = ctx.count > 0 ? ctx.count : 1;
+    std::size_t content_rows = ctx.editor.Rows() > 0 ? ctx.editor.Rows() - 1 : 0;
+    if (content_rows == 0)
+        content_rows = 1;
+
+    std::size_t rowoffs = buf->Rowoffs();
+    // Compute maximum top offset
+    std::size_t max_top = 0;
+    if (!rows.empty()) {
+        if (rows.size() > content_rows)
+            max_top = rows.size() - content_rows;
+        else
+            max_top = 0;
+    }
+    while (repeat-- > 0) {
+        if (rowoffs + content_rows <= max_top)
+            rowoffs += content_rows;
+        else
+            rowoffs = max_top;
+    }
+    // Move cursor to first visible line, column 0
+    std::size_t y = std::min<std::size_t>(rowoffs, rows.empty() ? 0 : rows.size() - 1);
+    buf->SetOffsets(rowoffs, 0);
+    buf->SetCursor(0, y);
+    ensure_cursor_visible(ctx.editor, *buf);
+    return true;
 }
 
 
@@ -1115,11 +1147,13 @@ InstallDefaultCommands()
 	CommandRegistry::Register({CommandId::Save, "save", "Save current buffer", cmd_save});
 	CommandRegistry::Register({CommandId::SaveAs, "save-as", "Save current buffer as...", cmd_save_as});
 	CommandRegistry::Register({CommandId::Quit, "quit", "Quit editor (request)", cmd_quit});
-	CommandRegistry::Register({CommandId::SaveAndQuit, "save-quit", "Save and quit (request)", cmd_save_and_quit});
-	CommandRegistry::Register({CommandId::Refresh, "refresh", "Force redraw", cmd_refresh});
-	CommandRegistry::Register(
-		{CommandId::KPrefix, "k-prefix", "Entering k-command prefix (show hint)", cmd_kprefix});
-	CommandRegistry::Register({CommandId::FindStart, "find-start", "Begin incremental search", cmd_find_start});
+ CommandRegistry::Register({CommandId::SaveAndQuit, "save-quit", "Save and quit (request)", cmd_save_and_quit});
+ CommandRegistry::Register({CommandId::Refresh, "refresh", "Force redraw", cmd_refresh});
+ CommandRegistry::Register(
+     {CommandId::KPrefix, "k-prefix", "Entering k-command prefix (show hint)", cmd_kprefix});
+ CommandRegistry::Register({CommandId::UnknownKCommand, "unknown-k", "Unknown k-command (status)",
+                            cmd_unknown_kcommand});
+ CommandRegistry::Register({CommandId::FindStart, "find-start", "Begin incremental search", cmd_find_start});
 	CommandRegistry::Register({
 		CommandId::OpenFileStart, "open-file-start", "Begin open-file prompt", cmd_open_file_start
 	});

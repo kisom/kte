@@ -32,7 +32,8 @@ TerminalRenderer::Draw(Editor &ed)
 	const Buffer *buf = ed.CurrentBuffer();
 	int content_rows  = rows - 1; // last line is status
 
-	if (buf) {
+ int saved_cur_y = -1, saved_cur_x = -1; // logical cursor position within content area
+ if (buf) {
 		const auto &lines   = buf->Rows();
 		std::size_t rowoffs = buf->Rowoffs();
 		std::size_t coloffs = buf->Coloffs();
@@ -138,12 +139,15 @@ TerminalRenderer::Draw(Editor &ed)
 		std::size_t rx = buf->Rx(); // render x computed by command layer
 		int cur_y      = static_cast<int>(cy) - static_cast<int>(buf->Rowoffs());
 		int cur_x      = static_cast<int>(rx) - static_cast<int>(buf->Coloffs());
-		if (cur_y >= 0 && cur_y < content_rows && cur_x >= 0 && cur_x < cols) {
-			move(cur_y, cur_x);
-		}
-	} else {
-		mvaddstr(0, 0, "[no buffer]");
- }
+        if (cur_y >= 0 && cur_y < content_rows && cur_x >= 0 && cur_x < cols) {
+            // remember where to leave the terminal cursor after status is drawn
+            saved_cur_y = cur_y;
+            saved_cur_x = cur_x;
+            move(cur_y, cur_x);
+        }
+    } else {
+        mvaddstr(0, 0, "[no buffer]");
+     }
 
  // Status line (inverse) — left: app/version/buffer/dirty, middle: message, right: cursor/mark
  move(rows - 1, 0);
@@ -236,6 +240,12 @@ TerminalRenderer::Draw(Editor &ed)
  }
 
  attroff(A_REVERSE);
+
+    // Restore terminal cursor to the content position so a visible caret
+    // remains in the editing area (not on the status line).
+    if (saved_cur_y >= 0 && saved_cur_x >= 0) {
+        move(saved_cur_y, saved_cur_x);
+    }
 
     refresh();
 }

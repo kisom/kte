@@ -62,6 +62,18 @@ map_key(const SDL_Keycode key, const SDL_Keymod mod, bool &k_prefix, MappedInput
             k_prefix = true;
             out = {true, CommandId::KPrefix, "", 0};
             return true;
+        case SDLK_n: // C-n: down
+            out = {true, CommandId::MoveDown, "", 0};
+            return true;
+        case SDLK_p: // C-p: up
+            out = {true, CommandId::MoveUp, "", 0};
+            return true;
+        case SDLK_f: // C-f: right
+            out = {true, CommandId::MoveRight, "", 0};
+            return true;
+        case SDLK_b: // C-b: left
+            out = {true, CommandId::MoveLeft, "", 0};
+            return true;
         case SDLK_a:
             out = {true, CommandId::MoveHome, "", 0};
             return true;
@@ -103,25 +115,30 @@ map_key(const SDL_Keycode key, const SDL_Keymod mod, bool &k_prefix, MappedInput
         }
     }
 
-	if (k_prefix) {
-		k_prefix = false;
-		// Normalize SDL key to ASCII where possible
-		int ascii_key = 0;
-		if (key >= SDLK_SPACE && key <= SDLK_z) {
-			ascii_key = static_cast<int>(key);
-		}
-		bool ctrl2 = (mod & KMOD_CTRL) != 0;
-		if (ascii_key != 0) {
-			ascii_key = KLowerAscii(ascii_key);
-			CommandId id;
-			if (KLookupKCommand(ascii_key, ctrl2, id)) {
-				out = {true, id, "", 0};
-				return true;
-			}
-		}
-		out.hasCommand = false;
-		return true;
-	}
+ if (k_prefix) {
+        k_prefix = false;
+        // Normalize SDL key to ASCII where possible
+        int ascii_key = 0;
+        if (key >= SDLK_SPACE && key <= SDLK_z) {
+            ascii_key = static_cast<int>(key);
+        }
+        bool ctrl2 = (mod & KMOD_CTRL) != 0;
+        if (ascii_key != 0) {
+            ascii_key = KLowerAscii(ascii_key);
+            CommandId id;
+            if (KLookupKCommand(ascii_key, ctrl2, id)) {
+                out = {true, id, "", 0};
+                return true;
+            }
+            // Unknown k-command: report the typed character
+            char c = (ascii_key >= 0x20 && ascii_key <= 0x7e) ? static_cast<char>(ascii_key) : '?';
+            std::string arg(1, c);
+            out = {true, CommandId::UnknownKCommand, arg, 0};
+            return true;
+        }
+        out.hasCommand = false;
+        return true;
+    }
 
 	return false;
 }

@@ -19,6 +19,7 @@ static const char *kGlslVersion = "#version 150"; // GL 3.2 core (macOS compatib
 bool
 GUIFrontend::Init(Editor &ed)
 {
+    (void)ed; // editor dimensions will be initialized during the first Step() frame
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
 		return false;
 	}
@@ -57,12 +58,11 @@ GUIFrontend::Init(Editor &ed)
 	if (!ImGui_ImplOpenGL3_Init(kGlslVersion))
 		return false;
 
-	// Initialize editor reported dimensions to pixels for now
-	int w, h;
-	SDL_GetWindowSize(window_, &w, &h);
-	width_  = w;
-	height_ = h;
-    ed.SetDimensions(static_cast<std::size_t>(height_), static_cast<std::size_t>(width_));
+ // Cache initial window size; logical rows/cols will be computed in Step() once a valid ImGui frame exists
+ int w, h;
+ SDL_GetWindowSize(window_, &w, &h);
+ width_  = w;
+ height_ = h;
 
     // Initialize GUI font from embedded default
     LoadGuiFont_(nullptr, 16.f);
@@ -81,14 +81,12 @@ GUIFrontend::Step(Editor &ed, bool &running)
 			case SDL_QUIT:
 				running = false;
 				break;
-			case SDL_WINDOWEVENT:
-				if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-					width_  = e.window.data1;
-					height_ = e.window.data2;
-					ed.SetDimensions(static_cast<std::size_t>(height_),
-					                 static_cast<std::size_t>(width_));
-				}
-				break;
+   case SDL_WINDOWEVENT:
+                if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+                    width_  = e.window.data1;
+                    height_ = e.window.data2;
+                }
+                break;
 			default:
 				break;
 		}
@@ -96,7 +94,7 @@ GUIFrontend::Step(Editor &ed, bool &running)
 		input_.ProcessSDLEvent(e);
 	}
 
-	// Execute pending mapped inputs (drain queue)
+ // Execute pending mapped inputs (drain queue)
 	for (;;) {
 		MappedInput mi;
 		if (!input_.Poll(mi))
@@ -109,10 +107,43 @@ GUIFrontend::Step(Editor &ed, bool &running)
 		}
 	}
 
- // Start a new ImGui frame
- ImGui_ImplOpenGL3_NewFrame();
- ImGui_ImplSDL2_NewFrame(window_);
- ImGui::NewFrame();
+    // Start a new ImGui frame
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplSDL2_NewFrame(window_);
+    ImGui::NewFrame();
+
+    // Update editor logical rows/cols using current ImGui metrics and display size
+    {
+        ImGuiIO &io = ImGui::GetIO();
+        float line_h = ImGui::GetTextLineHeightWithSpacing();
+        float ch_w   = ImGui::CalcTextSize("M").x;
+        if (line_h <= 0.0f) line_h = 16.0f;
+        if (ch_w <= 0.0f) ch_w = 8.0f;
+        // Prefer ImGui IO display size; fall back to cached SDL window size
+        float disp_w = io.DisplaySize.x > 0 ? io.DisplaySize.x : static_cast<float>(width_);
+        float disp_h = io.DisplaySize.y > 0 ? io.DisplaySize.y : static_cast<float>(height_);
+
+        // Account for the GUI window padding and the status bar height used in GUIRenderer
+        const ImGuiStyle &style = ImGui::GetStyle();
+        float pad_x = style.WindowPadding.x;
+        float pad_y = style.WindowPadding.y;
+        // Status bar reserves one frame height (with spacing) inside the window
+        float status_h = ImGui::GetFrameHeightWithSpacing();
+
+        float avail_w = std::max(0.0f, disp_w - 2.0f * pad_x);
+        float avail_h = std::max(0.0f, disp_h - 2.0f * pad_y - status_h);
+
+        // Visible content rows inside the scroll child
+        std::size_t content_rows = static_cast<std::size_t>(std::floor(avail_h / line_h));
+        // Editor::Rows includes the status line; add 1 back for it.
+        std::size_t rows = std::max<std::size_t>(1, content_rows + 1);
+        std::size_t cols = static_cast<std::size_t>(std::max(1.0f, std::floor(avail_w / ch_w)));
+
+        // Only update if changed to avoid churn
+        if (rows != ed.Rows() || cols != ed.Cols()) {
+            ed.SetDimensions(rows, cols);
+        }
+    }
 
  // No runtime font UI; always use embedded font.
 

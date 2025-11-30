@@ -9,15 +9,21 @@
 bool
 TerminalFrontend::Init(Editor &ed)
 {
-	initscr();
-	cbreak();
-	noecho();
-	keypad(stdscr, TRUE);
-	nodelay(stdscr, TRUE);
-	curs_set(1);
-	// Enable mouse support if available
-	mouseinterval(0);
-	mousemask(ALL_MOUSE_EVENTS, nullptr);
+    initscr();
+    cbreak();
+    noecho();
+    keypad(stdscr, TRUE);
+    // Enable 8-bit meta key sequences (Alt/ESC-prefix handling in terminals)
+    meta(stdscr, TRUE);
+    // Make ESC key sequences resolve quickly so ESC+<key> works as meta
+#ifdef set_escdelay
+    set_escdelay(50);
+#endif
+    nodelay(stdscr, TRUE);
+    curs_set(1);
+    // Enable mouse support if available
+    mouseinterval(0);
+    mousemask(ALL_MOUSE_EVENTS, nullptr);
 
 	int r = 0, c = 0;
 	getmaxyx(stdscr, r, c);

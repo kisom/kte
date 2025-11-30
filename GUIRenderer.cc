@@ -56,40 +56,77 @@ GUIRenderer::Draw(Editor &ed)
 		const float line_h  = ImGui::GetTextLineHeight();
 		const float row_h   = ImGui::GetTextLineHeightWithSpacing();
 		const float space_w = ImGui::CalcTextSize(" ").x;
-		// When the user scrolls and the cursor is off-screen, move it to the nearest visible row
-		{
-			static float prev_scroll_y = -1.0f;
-			float child_h              = ImGui::GetWindowHeight(); // child window height
-			long first_row             = static_cast<long>(scroll_y / row_h);
-			long vis_rows              = static_cast<long>(child_h / row_h);
-			if (vis_rows < 1)
-				vis_rows = 1;
-			long last_row = first_row + vis_rows - 1;
-			if (prev_scroll_y >= 0.0f && scroll_y != prev_scroll_y) {
-				long cyr = static_cast<long>(cy);
-				if (cyr < first_row || cyr > last_row) {
-					long new_row = (cyr < first_row) ? first_row : last_row;
-					if (new_row < 0)
-						new_row = 0;
-					if (new_row >= static_cast<long>(lines.size())) {
-						new_row = static_cast<long>(lines.empty() ? 0 : (lines.size() - 1));
-					}
-					// Clamp column to line length
-					std::size_t new_col = 0;
-					if (!lines.empty()) {
-						const std::string &l = lines[static_cast<std::size_t>(new_row)];
-						new_col              = std::min<std::size_t>(cx, l.size());
-					}
-					char tmp2[64];
-					std::snprintf(tmp2, sizeof(tmp2), "%ld:%zu", new_row, new_col);
-					Execute(ed, CommandId::MoveCursorTo, std::string(tmp2));
-					// refresh local variables after move
-					cy = buf->Cury();
-					cx = buf->Curx();
-				}
-			}
-			prev_scroll_y = scroll_y;
-		}
+        // If the command layer requested a specific top-of-screen (via Buffer::Rowoffs),
+        // force the ImGui scroll to match so paging aligns the first visible row.
+        bool forced_scroll = false;
+        {
+            std::size_t desired_top = buf->Rowoffs();
+            long current_top = static_cast<long>(scroll_y / row_h);
+            if (static_cast<long>(desired_top) != current_top) {
+                ImGui::SetScrollY(static_cast<float>(desired_top) * row_h);
+                scroll_y = ImGui::GetScrollY();
+                forced_scroll = true;
+            }
+        }
+	  // Synchronize cursor and scrolling.
+	  // A) When the user scrolls and the cursor goes off-screen, move the cursor to the nearest visible row.
+	  // B) When the cursor moves (via keyboard commands), scroll it back into view.
+	  {
+	      static float prev_scroll_y = -1.0f;
+	      static long prev_cursor_y = -1;
+	      // Compute visible row range using the child window height
+	      float child_h   = ImGui::GetWindowHeight();
+	      long first_row  = static_cast<long>(scroll_y / row_h);
+	      long vis_rows   = static_cast<long>(child_h / row_h);
+	      if (vis_rows < 1) vis_rows = 1;
+	      long last_row   = first_row + vis_rows - 1;
+
+      // A) If user scrolled (scroll_y changed), and cursor outside, move cursor to nearest visible row
+      if (prev_scroll_y >= 0.0f && scroll_y != prev_scroll_y) {
+          long cyr = static_cast<long>(cy);
+          if (cyr < first_row || cyr > last_row) {
+              long new_row = (cyr < first_row) ? first_row : last_row;
+              if (new_row < 0) new_row = 0;
+              if (new_row >= static_cast<long>(lines.size()))
+                  new_row = static_cast<long>(lines.empty() ? 0 : (lines.size() - 1));
+              // Clamp column to line length
+              std::size_t new_col = 0;
+              if (!lines.empty()) {
+                  const std::string &l = lines[static_cast<std::size_t>(new_row)];
+                  new_col = std::min<std::size_t>(cx, l.size());
+              }
+              char tmp2[64];
+              std::snprintf(tmp2, sizeof(tmp2), "%ld:%zu", new_row, new_col);
+              Execute(ed, CommandId::MoveCursorTo, std::string(tmp2));
+              cy = buf->Cury();
+              cx = buf->Curx();
+              cyr = static_cast<long>(cy);
+              // Update visible range again in case content changed
+              first_row = static_cast<long>(ImGui::GetScrollY() / row_h);
+              last_row  = first_row + vis_rows - 1;
+          }
+      }
+
+	      // B) If cursor moved since last frame and is outside the visible region, scroll to reveal it
+	      // Skip this when we just forced a top-of-screen alignment this frame.
+	      if (!forced_scroll && prev_cursor_y >= 0 && static_cast<long>(cy) != prev_cursor_y) {
+	          long cyr = static_cast<long>(cy);
+	          if (cyr < first_row || cyr > last_row) {
+	              float target = (static_cast<float>(cyr) - std::max(0L, vis_rows / 2)) * row_h;
+	              float max_y  = ImGui::GetScrollMaxY();
+	              if (target < 0.f) target = 0.f;
+	              if (max_y >= 0.f && target > max_y) target = max_y;
+	              ImGui::SetScrollY(target);
+	              // refresh local variables
+	              scroll_y  = ImGui::GetScrollY();
+	              first_row = static_cast<long>(scroll_y / row_h);
+	              last_row  = first_row + vis_rows - 1;
+	          }
+	      }
+
+      prev_scroll_y = ImGui::GetScrollY();
+	      prev_cursor_y = static_cast<long>(cy);
+	  }
 		// Handle mouse click before rendering to avoid dependent on drawn items
 		if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
 			ImVec2 mp = ImGui::GetIO().MousePos;

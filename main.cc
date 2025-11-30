@@ -33,8 +33,6 @@ main(int argc, const char *argv[])
 {
 	Editor editor;
 
-	std::cout << "v" << KTE_VERSION_STR << std::endl;
-
 	// CLI parsing using getopt_long
 	bool req_gui      = false;
 	bool req_term     = false;
