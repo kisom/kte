@@ -8,6 +8,8 @@ WordStar/VDE family and emacs. The spiritual parent is `mg(1)`.
 These guidelines summarize the goals, interfaces, key operations, and current
 development practices for kte.
 
+Style note: all code should be formatted with the current CLion C++ style.
+
 ## Goals
 
 - Keep the core small, fast, and understandable.
@@ -28,10 +30,10 @@ Prerequisites: a C++17 compiler, CMake, and ncurses development headers/libs.
 - Debian/Ubuntu: `sudo apt-get install libncurses5-dev libncursesw5-dev`
 
 - Configure and build (example):
-  - `cmake -S . -B cmake-build-debug -DCMAKE_BUILD_TYPE=Debug`
-  - `cmake --build cmake-build-debug`
+    - `cmake -S . -B cmake-build-debug -DCMAKE_BUILD_TYPE=Debug`
+    - `cmake --build cmake-build-debug`
 - Run:
-  - `./cmake-build-debug/kte [files]`
+    - `./cmake-build-debug/kte [files]`
 
 Project entry point: `main.cpp`
 

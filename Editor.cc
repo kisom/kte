@@ -113,9 +113,11 @@ Editor::Reset()
 	no_kill_ = 0;
 	dirtyex_ = 0;
 	msg_.clear();
-	msgtm_  = 0;
-	uarg_   = 0;
-	ucount_ = 0;
+	msgtm_                = 0;
+	uarg_                 = 0;
+	ucount_               = 0;
+	quit_requested_       = false;
+	quit_confirm_pending_ = false;
 	buffers_.clear();
 	curbuf_ = 0;
 }

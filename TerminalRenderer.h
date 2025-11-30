@@ -9,10 +9,11 @@
 
 class TerminalRenderer final : public Renderer {
 public:
-    TerminalRenderer();
-    ~TerminalRenderer() override;
+	TerminalRenderer();
 
-    void Draw(Editor &ed) override;
+	~TerminalRenderer() override;
+
+	void Draw(Editor &ed) override;
 };
 
 #endif // KTE_TERMINAL_RENDERER_H

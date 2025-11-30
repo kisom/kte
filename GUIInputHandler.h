@@ -27,6 +27,9 @@ private:
 	std::mutex mu_;
 	std::queue<MappedInput> q_;
 	bool k_prefix_ = false;
+	// When a printable keydown generated a non-text command, suppress the very next SDL_TEXTINPUT
+	// event produced by SDL for the same keystroke to avoid inserting stray characters.
+	bool suppress_text_input_once_ = false;
 };
 
 #endif // KTE_GUI_INPUT_HANDLER_H

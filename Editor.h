@@ -111,6 +111,31 @@ public:
 	}
 
 
+	// --- Quit/Exit state ---
+	void SetQuitRequested(bool on)
+	{
+		quit_requested_ = on;
+	}
+
+
+	[[nodiscard]] bool QuitRequested() const
+	{
+		return quit_requested_;
+	}
+
+
+	void SetQuitConfirmPending(bool on)
+	{
+		quit_confirm_pending_ = on;
+	}
+
+
+	[[nodiscard]] bool QuitConfirmPending() const
+	{
+		return quit_confirm_pending_;
+	}
+
+
 	[[nodiscard]] std::time_t StatusTime() const
 	{
 		return msgtm_;
@@ -356,6 +381,10 @@ private:
 
 	std::vector<Buffer> buffers_;
 	std::size_t curbuf_ = 0; // index into buffers_
+
+	// Quit state
+	bool quit_requested_       = false;
+	bool quit_confirm_pending_ = false;
 
 	// Search state
 	bool search_active_ = false;

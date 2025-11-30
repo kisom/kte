@@ -13,6 +13,14 @@
 // Returns true and sets out if a mapping exists; false otherwise.
 bool KLookupKCommand(int ascii_key, bool ctrl, CommandId &out);
 
+// Lookup direct Control-chord commands (e.g., C-n, C-p, C-f, ...).
+// ascii_key should be the lowercase ASCII of the letter (e.g., 'n' for C-n).
+bool KLookupCtrlCommand(int ascii_key, CommandId &out);
+
+// Lookup ESC/Meta + key commands (e.g., ESC f/b).
+// ascii_key should be the lowercase ASCII of the letter.
+bool KLookupEscCommand(int ascii_key, CommandId &out);
+
 // Utility: normalize an int keycode to lowercased ASCII if it's in printable range.
 inline int
 KLowerAscii(const int key)

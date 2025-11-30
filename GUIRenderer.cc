@@ -56,77 +56,81 @@ GUIRenderer::Draw(Editor &ed)
 		const float line_h  = ImGui::GetTextLineHeight();
 		const float row_h   = ImGui::GetTextLineHeightWithSpacing();
 		const float space_w = ImGui::CalcTextSize(" ").x;
-        // If the command layer requested a specific top-of-screen (via Buffer::Rowoffs),
-        // force the ImGui scroll to match so paging aligns the first visible row.
-        bool forced_scroll = false;
-        {
-            std::size_t desired_top = buf->Rowoffs();
-            long current_top = static_cast<long>(scroll_y / row_h);
-            if (static_cast<long>(desired_top) != current_top) {
-                ImGui::SetScrollY(static_cast<float>(desired_top) * row_h);
-                scroll_y = ImGui::GetScrollY();
-                forced_scroll = true;
-            }
-        }
-	  // Synchronize cursor and scrolling.
-	  // A) When the user scrolls and the cursor goes off-screen, move the cursor to the nearest visible row.
-	  // B) When the cursor moves (via keyboard commands), scroll it back into view.
-	  {
-	      static float prev_scroll_y = -1.0f;
-	      static long prev_cursor_y = -1;
-	      // Compute visible row range using the child window height
-	      float child_h   = ImGui::GetWindowHeight();
-	      long first_row  = static_cast<long>(scroll_y / row_h);
-	      long vis_rows   = static_cast<long>(child_h / row_h);
-	      if (vis_rows < 1) vis_rows = 1;
-	      long last_row   = first_row + vis_rows - 1;
+		// If the command layer requested a specific top-of-screen (via Buffer::Rowoffs),
+		// force the ImGui scroll to match so paging aligns the first visible row.
+		bool forced_scroll = false;
+		{
+			std::size_t desired_top = buf->Rowoffs();
+			long current_top        = static_cast<long>(scroll_y / row_h);
+			if (static_cast<long>(desired_top) != current_top) {
+				ImGui::SetScrollY(static_cast<float>(desired_top) * row_h);
+				scroll_y      = ImGui::GetScrollY();
+				forced_scroll = true;
+			}
+		}
+		// Synchronize cursor and scrolling.
+		// A) When the user scrolls and the cursor goes off-screen, move the cursor to the nearest visible row.
+		// B) When the cursor moves (via keyboard commands), scroll it back into view.
+		{
+			static float prev_scroll_y = -1.0f;
+			static long prev_cursor_y  = -1;
+			// Compute visible row range using the child window height
+			float child_h  = ImGui::GetWindowHeight();
+			long first_row = static_cast<long>(scroll_y / row_h);
+			long vis_rows  = static_cast<long>(child_h / row_h);
+			if (vis_rows < 1)
+				vis_rows = 1;
+			long last_row = first_row + vis_rows - 1;
 
-      // A) If user scrolled (scroll_y changed), and cursor outside, move cursor to nearest visible row
-      if (prev_scroll_y >= 0.0f && scroll_y != prev_scroll_y) {
-          long cyr = static_cast<long>(cy);
-          if (cyr < first_row || cyr > last_row) {
-              long new_row = (cyr < first_row) ? first_row : last_row;
-              if (new_row < 0) new_row = 0;
-              if (new_row >= static_cast<long>(lines.size()))
-                  new_row = static_cast<long>(lines.empty() ? 0 : (lines.size() - 1));
-              // Clamp column to line length
-              std::size_t new_col = 0;
-              if (!lines.empty()) {
-                  const std::string &l = lines[static_cast<std::size_t>(new_row)];
-                  new_col = std::min<std::size_t>(cx, l.size());
-              }
-              char tmp2[64];
-              std::snprintf(tmp2, sizeof(tmp2), "%ld:%zu", new_row, new_col);
-              Execute(ed, CommandId::MoveCursorTo, std::string(tmp2));
-              cy = buf->Cury();
-              cx = buf->Curx();
-              cyr = static_cast<long>(cy);
-              // Update visible range again in case content changed
-              first_row = static_cast<long>(ImGui::GetScrollY() / row_h);
-              last_row  = first_row + vis_rows - 1;
-          }
-      }
+			// A) If user scrolled (scroll_y changed), and cursor outside, move cursor to nearest visible row
+			if (prev_scroll_y >= 0.0f && scroll_y != prev_scroll_y) {
+				long cyr = static_cast<long>(cy);
+				if (cyr < first_row || cyr > last_row) {
+					long new_row = (cyr < first_row) ? first_row : last_row;
+					if (new_row < 0)
+						new_row = 0;
+					if (new_row >= static_cast<long>(lines.size()))
+						new_row = static_cast<long>(lines.empty() ? 0 : (lines.size() - 1));
+					// Clamp column to line length
+					std::size_t new_col = 0;
+					if (!lines.empty()) {
+						const std::string &l = lines[static_cast<std::size_t>(new_row)];
+						new_col              = std::min<std::size_t>(cx, l.size());
+					}
+					char tmp2[64];
+					std::snprintf(tmp2, sizeof(tmp2), "%ld:%zu", new_row, new_col);
+					Execute(ed, CommandId::MoveCursorTo, std::string(tmp2));
+					cy  = buf->Cury();
+					cx  = buf->Curx();
+					cyr = static_cast<long>(cy);
+					// Update visible range again in case content changed
+					first_row = static_cast<long>(ImGui::GetScrollY() / row_h);
+					last_row  = first_row + vis_rows - 1;
+				}
+			}
 
-	      // B) If cursor moved since last frame and is outside the visible region, scroll to reveal it
-	      // Skip this when we just forced a top-of-screen alignment this frame.
-	      if (!forced_scroll && prev_cursor_y >= 0 && static_cast<long>(cy) != prev_cursor_y) {
-	          long cyr = static_cast<long>(cy);
-	          if (cyr < first_row || cyr > last_row) {
-	              float target = (static_cast<float>(cyr) - std::max(0L, vis_rows / 2)) * row_h;
-	              float max_y  = ImGui::GetScrollMaxY();
-	              if (target < 0.f) target = 0.f;
-	              if (max_y >= 0.f && target > max_y) target = max_y;
-	              ImGui::SetScrollY(target);
-	              // refresh local variables
-	              scroll_y  = ImGui::GetScrollY();
-	              first_row = static_cast<long>(scroll_y / row_h);
-	              last_row  = first_row + vis_rows - 1;
-	          }
-	      }
+			// B) If cursor moved since last frame and is outside the visible region, scroll to reveal it
+			// Skip this when we just forced a top-of-screen alignment this frame.
+			if (!forced_scroll && prev_cursor_y >= 0 && static_cast<long>(cy) != prev_cursor_y) {
+				long cyr = static_cast<long>(cy);
+				if (cyr < first_row || cyr > last_row) {
+					float target = (static_cast<float>(cyr) - std::max(0L, vis_rows / 2)) * row_h;
+					float max_y  = ImGui::GetScrollMaxY();
+					if (target < 0.f)
+						target = 0.f;
+					if (max_y >= 0.f && target > max_y)
+						target = max_y;
+					ImGui::SetScrollY(target);
+					// refresh local variables
+					scroll_y  = ImGui::GetScrollY();
+					first_row = static_cast<long>(scroll_y / row_h);
+					last_row  = first_row + vis_rows - 1;
+				}
+			}
 
-      prev_scroll_y = ImGui::GetScrollY();
-	      prev_cursor_y = static_cast<long>(cy);
-	  }
+			prev_scroll_y = ImGui::GetScrollY();
+			prev_cursor_y = static_cast<long>(cy);
+		}
 		// Handle mouse click before rendering to avoid dependent on drawn items
 		if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
 			ImVec2 mp = ImGui::GetIO().MousePos;
@@ -190,98 +194,103 @@ GUIRenderer::Draw(Editor &ed)
 				ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
 			}
 		}
-        ImGui::EndChild();
+		ImGui::EndChild();
 
-        // Status bar spanning full width
-        ImGui::Separator();
+		// Status bar spanning full width
+		ImGui::Separator();
 
-        // Build three segments: left (app/version/buffer/dirty), middle (message), right (cursor/mark)
-        // Compute full content width and draw a filled background rectangle
-        ImVec2 win_pos = ImGui::GetWindowPos();
-        ImVec2 cr_min  = ImGui::GetWindowContentRegionMin();
-        ImVec2 cr_max  = ImGui::GetWindowContentRegionMax();
-        float x0       = win_pos.x + cr_min.x;
-        float x1       = win_pos.x + cr_max.x;
-        ImVec2 cursor  = ImGui::GetCursorScreenPos();
-        float bar_h    = ImGui::GetFrameHeight();
-        ImVec2 p0(x0, cursor.y);
-        ImVec2 p1(x1, cursor.y + bar_h);
-        ImU32 bg_col = ImGui::GetColorU32(ImGuiCol_HeaderActive);
-        ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, bg_col);
-        // Build left text
-        std::string left;
-        left.reserve(256);
-        left += "kge"; // GUI app name
-        left += " ";
-        left += KTE_VERSION_STR;
-        std::string fname = buf->Filename();
-        if (!fname.empty()) {
-            try { fname = std::filesystem::path(fname).filename().string(); } catch (...) {}
-        } else {
-            fname = "[no name]";
-        }
-        left += "  ";
-        left += fname;
-        if (buf->Dirty()) left += " *";
+		// Build three segments: left (app/version/buffer/dirty), middle (message), right (cursor/mark)
+		// Compute full content width and draw a filled background rectangle
+		ImVec2 win_pos = ImGui::GetWindowPos();
+		ImVec2 cr_min  = ImGui::GetWindowContentRegionMin();
+		ImVec2 cr_max  = ImGui::GetWindowContentRegionMax();
+		float x0       = win_pos.x + cr_min.x;
+		float x1       = win_pos.x + cr_max.x;
+		ImVec2 cursor  = ImGui::GetCursorScreenPos();
+		float bar_h    = ImGui::GetFrameHeight();
+		ImVec2 p0(x0, cursor.y);
+		ImVec2 p1(x1, cursor.y + bar_h);
+		ImU32 bg_col = ImGui::GetColorU32(ImGuiCol_HeaderActive);
+		ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, bg_col);
+		// Build left text
+		std::string left;
+		left.reserve(256);
+		left += "kge"; // GUI app name
+		left += " ";
+		left += KTE_VERSION_STR;
+		std::string fname = buf->Filename();
+		if (!fname.empty()) {
+			try {
+				fname = std::filesystem::path(fname).filename().string();
+			} catch (...) {}
+		} else {
+			fname = "[no name]";
+		}
+		left += "  ";
+		left += fname;
+		if (buf->Dirty())
+			left += " *";
 
-        // Build right text (cursor/mark)
-        int row1 = static_cast<int>(buf->Cury()) + 1;
-        int col1 = static_cast<int>(buf->Curx()) + 1;
-        bool have_mark = buf->MarkSet();
-        int mrow1 = have_mark ? static_cast<int>(buf->MarkCury()) + 1 : 0;
-        int mcol1 = have_mark ? static_cast<int>(buf->MarkCurx()) + 1 : 0;
-        char rbuf[128];
-        if (have_mark) std::snprintf(rbuf, sizeof(rbuf), "%d,%d | M: %d,%d", row1, col1, mrow1, mcol1);
-        else           std::snprintf(rbuf, sizeof(rbuf), "%d,%d | M: not set", row1, col1);
-        std::string right = rbuf;
+		// Build right text (cursor/mark)
+		int row1       = static_cast<int>(buf->Cury()) + 1;
+		int col1       = static_cast<int>(buf->Curx()) + 1;
+		bool have_mark = buf->MarkSet();
+		int mrow1      = have_mark ? static_cast<int>(buf->MarkCury()) + 1 : 0;
+		int mcol1      = have_mark ? static_cast<int>(buf->MarkCurx()) + 1 : 0;
+		char rbuf[128];
+		if (have_mark)
+			std::snprintf(rbuf, sizeof(rbuf), "%d,%d | M: %d,%d", row1, col1, mrow1, mcol1);
+		else
+			std::snprintf(rbuf, sizeof(rbuf), "%d,%d | M: not set", row1, col1);
+		std::string right = rbuf;
 
-        // Middle message
-        const std::string &msg = ed.Status();
+		// Middle message
+		const std::string &msg = ed.Status();
 
-        // Measurements
-        ImVec2 left_sz  = ImGui::CalcTextSize(left.c_str());
-        ImVec2 right_sz = ImGui::CalcTextSize(right.c_str());
-        float pad = 6.f;
-        float left_x  = p0.x + pad;
-        float right_x = p1.x - pad - right_sz.x;
-        if (right_x < left_x + left_sz.x + pad) {
-            // Not enough room; clip left to fit
-            float max_left = std::max(0.0f, right_x - left_x - pad);
-            if (max_left < left_sz.x && max_left > 10.0f) {
-                // Render a clipped left using a child region
-                ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - left_sz.y) * 0.5f));
-                ImGui::PushClipRect(ImVec2(left_x, p0.y), ImVec2(right_x - pad, p1.y), true);
-                ImGui::TextUnformatted(left.c_str());
-                ImGui::PopClipRect();
-            }
-        } else {
-            // Draw left normally
-            ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - left_sz.y) * 0.5f));
-            ImGui::TextUnformatted(left.c_str());
-        }
+		// Measurements
+		ImVec2 left_sz  = ImGui::CalcTextSize(left.c_str());
+		ImVec2 right_sz = ImGui::CalcTextSize(right.c_str());
+		float pad       = 6.f;
+		float left_x    = p0.x + pad;
+		float right_x   = p1.x - pad - right_sz.x;
+		if (right_x < left_x + left_sz.x + pad) {
+			// Not enough room; clip left to fit
+			float max_left = std::max(0.0f, right_x - left_x - pad);
+			if (max_left < left_sz.x && max_left > 10.0f) {
+				// Render a clipped left using a child region
+				ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - left_sz.y) * 0.5f));
+				ImGui::PushClipRect(ImVec2(left_x, p0.y), ImVec2(right_x - pad, p1.y), true);
+				ImGui::TextUnformatted(left.c_str());
+				ImGui::PopClipRect();
+			}
+		} else {
+			// Draw left normally
+			ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - left_sz.y) * 0.5f));
+			ImGui::TextUnformatted(left.c_str());
+		}
 
-        // Draw right
-        ImGui::SetCursorScreenPos(ImVec2(std::max(right_x, left_x), p0.y + (bar_h - right_sz.y) * 0.5f));
-        ImGui::TextUnformatted(right.c_str());
+		// Draw right
+		ImGui::SetCursorScreenPos(ImVec2(std::max(right_x, left_x), p0.y + (bar_h - right_sz.y) * 0.5f));
+		ImGui::TextUnformatted(right.c_str());
 
-        // Draw middle message centered in remaining space
-        if (!msg.empty()) {
-            float mid_left  = left_x + left_sz.x + pad;
-            float mid_right = std::max(right_x - pad, mid_left);
-            float mid_w     = std::max(0.0f, mid_right - mid_left);
-            if (mid_w > 1.0f) {
-                ImVec2 msg_sz = ImGui::CalcTextSize(msg.c_str());
-                float msg_x   = mid_left + std::max(0.0f, (mid_w - msg_sz.x) * 0.5f);
-                // Clip to middle region
-                ImGui::PushClipRect(ImVec2(mid_left, p0.y), ImVec2(mid_right, p1.y), true);
-                ImGui::SetCursorScreenPos(ImVec2(msg_x, p0.y + (bar_h - msg_sz.y) * 0.5f));
-                ImGui::TextUnformatted(msg.c_str());
-                ImGui::PopClipRect();
-            }
-        }
-        // Advance cursor to after the bar to keep layout consistent
-        ImGui::Dummy(ImVec2(x1 - x0, bar_h));
-    }
+		// Draw middle message centered in remaining space
+		if (!msg.empty()) {
+			float mid_left  = left_x + left_sz.x + pad;
+			float mid_right = std::max(right_x - pad, mid_left);
+			float mid_w     = std::max(0.0f, mid_right - mid_left);
+			if (mid_w > 1.0f) {
+				ImVec2 msg_sz = ImGui::CalcTextSize(msg.c_str());
+				float msg_x   = mid_left + std::max(0.0f, (mid_w - msg_sz.x) * 0.5f);
+				// Clip to middle region
+				ImGui::PushClipRect(ImVec2(mid_left, p0.y), ImVec2(mid_right, p1.y), true);
+				ImGui::SetCursorScreenPos(ImVec2(msg_x, p0.y + (bar_h - msg_sz.y) * 0.5f));
+				ImGui::TextUnformatted(msg.c_str());
+				ImGui::PopClipRect();
+			}
+		}
+		// Advance cursor to after the bar to keep layout consistent
+		ImGui::Dummy(ImVec2(x1 - x0, bar_h));
+	}
 
 	ImGui::End();
 	ImGui::PopStyleVar(3);

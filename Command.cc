@@ -296,7 +296,22 @@ cmd_save_as(CommandContext &ctx)
 static bool
 cmd_quit(CommandContext &ctx)
 {
-	// Placeholder: actual app loop should react to this status or a future flag
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	// If a confirmation is already pending, quit now without saving
+	if (ctx.editor.QuitConfirmPending()) {
+		ctx.editor.SetQuitConfirmPending(false);
+		ctx.editor.SetQuitRequested(true);
+		ctx.editor.SetStatus("Quit requested");
+		return true;
+	}
+	// If current buffer exists and is dirty, warn and arm confirmation
+	if (buf && buf->Dirty()) {
+		ctx.editor.SetStatus("Unsaved changes. C-k q to quit without saving");
+		ctx.editor.SetQuitConfirmPending(true);
+		return true;
+	}
+	// Otherwise quit immediately
+	ctx.editor.SetQuitRequested(true);
 	ctx.editor.SetStatus("Quit requested");
 	return true;
 }
@@ -329,6 +344,16 @@ cmd_save_and_quit(CommandContext &ctx)
 		}
 	}
 	ctx.editor.SetStatus("Save and quit requested");
+	ctx.editor.SetQuitRequested(true);
+	return true;
+}
+
+
+static bool
+cmd_quit_now(CommandContext &ctx)
+{
+	ctx.editor.SetQuitRequested(true);
+	ctx.editor.SetStatus("Quit requested");
 	return true;
 }
 
@@ -1065,24 +1090,7 @@ cmd_word_next(CommandContext &ctx)
 	while (repeat-- > 0) {
 		if (y >= rows.size())
 			break;
-		// Skip whitespace to the right
-		while (y < rows.size()) {
-			if (y >= rows.size())
-				break;
-			if (x < rows[y].size() && std::isspace(static_cast<unsigned char>(rows[y][x]))) {
-				++x;
-				continue;
-			}
-			if (x >= rows[y].size()) {
-				if (y + 1 >= rows.size())
-					break;
-				++y;
-				x = 0;
-				continue;
-			}
-			break;
-		}
-		// Skip word characters to the right
+		// First, if currently on a word, skip to its end
 		while (y < rows.size()) {
 			if (x < rows[y].size() && is_word_char(static_cast<unsigned char>(rows[y][x]))) {
 				++x;
@@ -1096,6 +1104,23 @@ cmd_word_next(CommandContext &ctx)
 				continue;
 			}
 			break;
+		}
+		// Then, skip any non-word characters (including punctuation and whitespace)
+		while (y < rows.size()) {
+			if (x < rows[y].size()) {
+				unsigned char c = static_cast<unsigned char>(rows[y][x]);
+				if (is_word_char(c))
+					break;
+				++x;
+				continue;
+			}
+			if (x >= rows[y].size()) {
+				if (y + 1 >= rows.size())
+					break;
+				++y;
+				x = 0;
+				continue;
+			}
 		}
 	}
 	buf->SetCursor(x, y);
@@ -1163,6 +1188,7 @@ InstallDefaultCommands()
 	CommandRegistry::Register({CommandId::Save, "save", "Save current buffer", cmd_save});
 	CommandRegistry::Register({CommandId::SaveAs, "save-as", "Save current buffer as...", cmd_save_as});
 	CommandRegistry::Register({CommandId::Quit, "quit", "Quit editor (request)", cmd_quit});
+	CommandRegistry::Register({CommandId::QuitNow, "quit-now", "Quit editor immediately", cmd_quit_now});
 	CommandRegistry::Register({CommandId::SaveAndQuit, "save-quit", "Save and quit (request)", cmd_save_and_quit});
 	CommandRegistry::Register({CommandId::Refresh, "refresh", "Force redraw", cmd_refresh});
 	CommandRegistry::Register(
@@ -1205,6 +1231,11 @@ Execute(Editor &ed, CommandId id, const std::string &arg, int count)
 	const Command *cmd = CommandRegistry::FindById(id);
 	if (!cmd)
 		return false;
+	// If a quit confirmation was pending and the user invoked something other
+	// than the soft quit again, cancel the pending confirmation.
+	if (ed.QuitConfirmPending() && id != CommandId::Quit && id != CommandId::KPrefix) {
+		ed.SetQuitConfirmPending(false);
+	}
 	CommandContext ctx{ed, arg, count};
 	return cmd->handler ? cmd->handler(ctx) : false;
 }

@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <termios.h>
 #include <ncurses.h>
 
 #include "Editor.h"
@@ -9,21 +10,29 @@
 bool
 TerminalFrontend::Init(Editor &ed)
 {
-    initscr();
-    cbreak();
-    noecho();
-    keypad(stdscr, TRUE);
-    // Enable 8-bit meta key sequences (Alt/ESC-prefix handling in terminals)
-    meta(stdscr, TRUE);
-    // Make ESC key sequences resolve quickly so ESC+<key> works as meta
+	// Ensure Ctrl-S/Ctrl-Q reach the application by disabling XON/XOFF flow control
+	{
+		struct termios tio{};
+		if (tcgetattr(STDIN_FILENO, &tio) == 0) {
+			tio.c_iflag &= static_cast<unsigned long>(~IXON);
+			(void) tcsetattr(STDIN_FILENO, TCSANOW, &tio);
+		}
+	}
+	initscr();
+	cbreak();
+	noecho();
+	keypad(stdscr, TRUE);
+	// Enable 8-bit meta key sequences (Alt/ESC-prefix handling in terminals)
+	meta(stdscr, TRUE);
+	// Make ESC key sequences resolve quickly so ESC+<key> works as meta
 #ifdef set_escdelay
-    set_escdelay(50);
+	set_escdelay(50);
 #endif
-    nodelay(stdscr, TRUE);
-    curs_set(1);
-    // Enable mouse support if available
-    mouseinterval(0);
-    mousemask(ALL_MOUSE_EVENTS, nullptr);
+	nodelay(stdscr, TRUE);
+	curs_set(1);
+	// Enable mouse support if available
+	mouseinterval(0);
+	mousemask(ALL_MOUSE_EVENTS, nullptr);
 
 	int r = 0, c = 0;
 	getmaxyx(stdscr, r, c);
@@ -52,13 +61,14 @@ TerminalFrontend::Step(Editor &ed, bool &running)
 	if (input_.Poll(mi)) {
 		if (mi.hasCommand) {
 			Execute(ed, mi.id, mi.arg, mi.count);
-			if (mi.id == CommandId::Quit || mi.id == CommandId::SaveAndQuit) {
-				running = false;
-			}
 		}
 	} else {
 		// Avoid busy loop
 		usleep(1000);
+	}
+
+	if (ed.QuitRequested()) {
+		running = false;
 	}
 
 	renderer_.Draw(ed);
