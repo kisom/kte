@@ -2,6 +2,9 @@
   lib,
   stdenv,
   cmake,
+  libGL,
+  SDL2,
+  xorg.libX11
   installShellFiles,
   ...
 }:
@@ -26,7 +29,7 @@ pkgs.stdenv.mkDerivation {
   ];
 
   cmakeFlags = [
-    "-DKTE_USE_PIECE_TABLE=ON"
+    "-DBUILD_GUI=ON"
     "-DCURSES_NEED_NCURSES=TRUE"
     "-DCURSES_NEED_WIDE=TRUE"
   ];
@@ -36,7 +39,9 @@ pkgs.stdenv.mkDerivation {
 
     mkdir -p $out/bin
     cp kte $out/bin/
+    cp kge $out/bin/
 
+    installManPage ../docs/kte.1
     installManPage ../docs/kte.1
 
     runHook postInstall
