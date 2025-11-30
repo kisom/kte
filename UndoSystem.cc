@@ -13,20 +13,40 @@ UndoSystem::Begin(UndoType type)
 	const int row = static_cast<int>(buf_.Cury());
 	const int col = static_cast<int>(buf_.Curx());
 	if (tree_.pending && tree_.pending->type == type && tree_.pending->row == row) {
-		std::size_t expected = static_cast<std::size_t>(tree_.pending->col) + tree_.pending->text.size();
-		if (expected == static_cast<std::size_t>(col)) {
-			return; // keep batching
+		if (type == UndoType::Delete) {
+			// Support batching both forward deletes (DeleteChar) and backspace (prepend case)
+			// Forward delete: cursor stays at anchor col; expected == col
+			std::size_t anchor = static_cast<std::size_t>(tree_.pending->col);
+			if (anchor + tree_.pending->text.size() == static_cast<std::size_t>(col)) {
+				pending_prepend_ = false;
+				return; // keep batching forward delete
+			}
+			// Backspace: cursor moved left by 1; allow extend if col + text.size() == anchor
+			if (static_cast<std::size_t>(col) + tree_.pending->text.size() == anchor) {
+				// Move anchor one left to new cursor column; next Append should prepend
+				tree_.pending->col = col;
+				pending_prepend_   = true;
+				return;
+			}
+		} else {
+			std::size_t expected = static_cast<std::size_t>(tree_.pending->col) + tree_.pending->text.
+			                       size();
+			if (expected == static_cast<std::size_t>(col)) {
+				pending_prepend_ = false;
+				return; // keep batching
+			}
 		}
 	}
 	// Otherwise commit any existing batch and start a new node
 	commit();
-	auto *node    = new UndoNode();
-	node->type    = type;
-	node->row     = row;
-	node->col     = col;
-	node->child   = nullptr;
-	node->next    = nullptr;
-	tree_.pending = node;
+	auto *node       = new UndoNode();
+	node->type       = type;
+	node->row        = row;
+	node->col        = col;
+	node->child      = nullptr;
+	node->next       = nullptr;
+	tree_.pending    = node;
+	pending_prepend_ = false;
 }
 
 
@@ -35,7 +55,12 @@ UndoSystem::Append(char ch)
 {
 	if (!tree_.pending)
 		return;
-	tree_.pending->text.push_back(ch);
+	if (pending_prepend_ && tree_.pending->type == UndoType::Delete) {
+		// Prepend for backspace so that text is in increasing column order
+		tree_.pending->text.insert(tree_.pending->text.begin(), ch);
+	} else {
+		tree_.pending->text.push_back(ch);
+	}
 }
 
 

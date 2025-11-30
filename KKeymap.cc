@@ -7,6 +7,7 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 	// For k-prefix, preserve case to allow distinct mappings (e.g., 'U' vs 'u').
 	const int k_lower = KLowerAscii(ascii_key);
 
+	// 1) Try Control-specific C-k mappings first
 	if (ctrl) {
 		switch (k_lower) {
 		case 'd':
@@ -19,57 +20,61 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 			out = CommandId::QuitNow;
 			return true; // C-k C-q (quit immediately)
 		default:
+			// Important: do not return here — fall through to non-ctrl table
+			// so that C-k u/U still work even if Ctrl is (incorrectly) held
 			break;
 		}
-	} else {
-		switch (k_lower) {
-		case 'j':
-			out = CommandId::JumpToMark;
-			return true; // C-k j
-		case 'f':
-			out = CommandId::FlushKillRing;
-			return true; // C-k f
-		case 'd':
-			out = CommandId::KillToEOL;
-			return true; // C-k d
-		case 'y':
-			out = CommandId::Yank;
-			return true; // C-k y
-		case 's':
-			out = CommandId::Save;
-			return true; // C-k s
-		case 'e':
-			out = CommandId::OpenFileStart;
-			return true; // C-k e (open file)
-		case 'b':
-			out = CommandId::BufferSwitchStart;
-			return true; // C-k b (switch buffer by name)
-		case 'c':
-			out = CommandId::BufferClose;
-			return true; // C-k c (close current buffer)
-		case 'n':
-			out = CommandId::BufferPrev;
-			return true; // C-k n (switch to previous buffer)
-		case 'x':
-			out = CommandId::SaveAndQuit;
-			return true; // C-k x
-		case 'q':
-			out = CommandId::Quit;
-			return true; // C-k q
-		case 'p':
-			out = CommandId::BufferNext;
-			return true; // C-k p (switch to next buffer)
-		case 'u':
-			out = CommandId::Undo;
-			return true; // C-k u (undo)
-		default:
-			break;
-		}
-		// Case-sensitive bindings after k-prefix
-		if (ascii_key == 'U') {
-			out = CommandId::Redo; // C-k U (redo)
-			return true;
-		}
+	}
+
+	// 2) Case-sensitive bindings must be checked before case-insensitive table.
+	if (ascii_key == 'U') {
+		out = CommandId::Redo; // C-k U (redo)
+		return true;
+	}
+
+	// 3) Non-control k-table (lowercased)
+	switch (k_lower) {
+	case 'j':
+		out = CommandId::JumpToMark;
+		return true; // C-k j
+	case 'f':
+		out = CommandId::FlushKillRing;
+		return true; // C-k f
+	case 'd':
+		out = CommandId::KillToEOL;
+		return true; // C-k d
+	case 'y':
+		out = CommandId::Yank;
+		return true; // C-k y
+	case 's':
+		out = CommandId::Save;
+		return true; // C-k s
+	case 'e':
+		out = CommandId::OpenFileStart;
+		return true; // C-k e (open file)
+	case 'b':
+		out = CommandId::BufferSwitchStart;
+		return true; // C-k b (switch buffer by name)
+	case 'c':
+		out = CommandId::BufferClose;
+		return true; // C-k c (close current buffer)
+	case 'n':
+		out = CommandId::BufferPrev;
+		return true; // C-k n (switch to previous buffer)
+	case 'x':
+		out = CommandId::SaveAndQuit;
+		return true; // C-k x
+	case 'q':
+		out = CommandId::Quit;
+		return true; // C-k q
+	case 'p':
+		out = CommandId::BufferNext;
+		return true; // C-k p (switch to next buffer)
+	case 'u':
+		out = CommandId::Undo;
+		return true; // C-k u (undo)
+	default:
+		break;
 	}
 	return false;
 }

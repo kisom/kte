@@ -61,6 +61,8 @@ enum class CommandId {
 	// Undo/Redo
 	Undo,
 	Redo,
+	// UI/status helpers
+	UArgStatus, // update status line during universal-argument collection
 	// Meta
 	UnknownKCommand, // arg: single character that was not recognized after C-k
 };

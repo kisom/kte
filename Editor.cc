@@ -68,11 +68,27 @@ Editor::AddBuffer(Buffer &&buf)
 bool
 Editor::OpenFile(const std::string &path, std::string &err)
 {
+	// If there is exactly one unnamed, empty, clean buffer, reuse it instead
+	// of creating a new one.
+	if (buffers_.size() == 1) {
+		Buffer &cur                  = buffers_[curbuf_];
+		const bool unnamed           = cur.Filename().empty() && !cur.IsFileBacked();
+		const bool clean             = !cur.Dirty();
+		const auto &rows             = cur.Rows();
+		const bool rows_empty        = rows.empty();
+		const bool single_empty_line = (!rows.empty() && rows.size() == 1 && rows[0].size() == 0);
+		if (unnamed && clean && (rows_empty || single_empty_line)) {
+			return cur.OpenFromFile(path, err);
+		}
+	}
+
 	Buffer b;
 	if (!b.OpenFromFile(path, err)) {
 		return false;
 	}
-	AddBuffer(std::move(b));
+	// Add as a new buffer and switch to it
+	std::size_t idx = AddBuffer(std::move(b));
+	SwitchTo(idx);
 	return true;
 }
 

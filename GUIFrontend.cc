@@ -100,7 +100,14 @@ GUIFrontend::Step(Editor &ed, bool &running)
 		if (!input_.Poll(mi))
 			break;
 		if (mi.hasCommand) {
+			// Track kill ring before and after to sync GUI clipboard when it changes
+			const std::string before = ed.KillRingHead();
 			Execute(ed, mi.id, mi.arg, mi.count);
+			const std::string after = ed.KillRingHead();
+			if (after != before && !after.empty()) {
+				// Update the system clipboard to mirror the kill ring head in GUI
+				SDL_SetClipboardText(after.c_str());
+			}
 		}
 	}
 

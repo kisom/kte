@@ -83,6 +83,16 @@ ensure_at_least_one_line(Buffer &buf)
 }
 
 
+// --- UI/status helpers ---
+static bool
+cmd_uarg_status(CommandContext &ctx)
+{
+	// ctx.arg should contain the digits/minus entered so far (may be empty)
+	ctx.editor.SetStatus(std::string("C-u ") + ctx.arg);
+	return true;
+}
+
+
 // Helper: compute ordered region between mark and cursor. Returns false if no mark set or zero-length.
 static bool
 compute_mark_region(Buffer &buf, std::size_t &sx, std::size_t &sy, std::size_t &ex, std::size_t &ey)
@@ -566,6 +576,11 @@ cmd_refresh(CommandContext &ctx)
 static bool
 cmd_kprefix(CommandContext &ctx)
 {
+	// Close any pending edit batch before entering k-prefix
+	if (Buffer *b = ctx.editor.CurrentBuffer()) {
+		if (auto *u = b->Undo())
+			u->commit();
+	}
 	// Show k-command mode hint in status
 	ctx.editor.SetStatus("C-k _");
 	return true;
@@ -998,14 +1013,26 @@ cmd_backspace(CommandContext &ctx)
 	auto &rows    = buf->Rows();
 	std::size_t y = buf->Cury();
 	std::size_t x = buf->Curx();
+	UndoSystem *u = buf->Undo();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
 	for (int i = 0; i < repeat; ++i) {
 		if (x > 0) {
+			// Batch contiguous character deletes (backspace)
+			if (u)
+				u->Begin(UndoType::Delete);
+			char deleted = rows[y][x - 1];
 			rows[y].erase(x - 1, 1);
 			--x;
+			if (u)
+				u->Append(deleted);
 		} else if (y > 0) {
 			// join with previous line
 			std::size_t prev_len = rows[y - 1].size();
+			if (u) {
+				// Record a newline deletion that joined lines; commit immediately
+				u->Begin(UndoType::Newline);
+				u->commit();
+			}
 			rows[y - 1] += rows[y];
 			rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(y));
 			y = y - 1;
@@ -1034,14 +1061,26 @@ cmd_delete_char(CommandContext &ctx)
 	auto &rows    = buf->Rows();
 	std::size_t y = buf->Cury();
 	std::size_t x = buf->Curx();
+	UndoSystem *u = buf->Undo();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
 	for (int i = 0; i < repeat; ++i) {
 		if (y >= rows.size())
 			break;
 		if (x < rows[y].size()) {
+			// Forward delete at cursor, batch contiguous
+			if (u)
+				u->Begin(UndoType::Delete);
+			char deleted = rows[y][x];
 			rows[y].erase(x, 1);
+			if (u)
+				u->Append(deleted);
 		} else if (y + 1 < rows.size()) {
 			// join next line
+			if (u) {
+				// Record newline deletion at end of this line; commit immediately
+				u->Begin(UndoType::Newline);
+				u->commit();
+			}
 			rows[y] += rows[y + 1];
 			rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(y + 1));
 		} else {
@@ -1062,9 +1101,12 @@ cmd_undo(CommandContext &ctx)
 	if (!buf)
 		return false;
 	if (auto *u = buf->Undo()) {
+		// Ensure pending batch is finalized so it can be undone
+		u->commit();
 		u->undo();
 		// Keep cursor within buffer bounds
 		ensure_cursor_visible(ctx.editor, *buf);
+		ctx.editor.SetStatus("Undone");
 		return true;
 	}
 	return false;
@@ -1078,8 +1120,11 @@ cmd_redo(CommandContext &ctx)
 	if (!buf)
 		return false;
 	if (auto *u = buf->Undo()) {
+		// Finalize any pending batch before redoing
+		u->commit();
 		u->redo();
 		ensure_cursor_visible(ctx.editor, *buf);
+		ctx.editor.SetStatus("Redone");
 		return true;
 	}
 	return false;
@@ -1888,6 +1933,9 @@ InstallDefaultCommands()
 	// Undo/Redo
 	CommandRegistry::Register({CommandId::Undo, "undo", "Undo last edit", cmd_undo});
 	CommandRegistry::Register({CommandId::Redo, "redo", "Redo edit", cmd_redo});
+	// UI helpers
+	CommandRegistry::Register(
+		{CommandId::UArgStatus, "uarg-status", "Update universal-arg status", cmd_uarg_status});
 }
 
 
