@@ -3,7 +3,7 @@ kte — Kyle's Text Editor
 Vision
 -------
 kte will be a small, fast, and understandable text editor with a
-terminal‑first UX and an optional ImGui GUI. It modernizes the
+terminal�first UX and an optional ImGui GUI. It modernizes the
 original ke editor while preserving its familiar WordStar/VDE‑style
 command model and Emacs‑influenced ergonomics. The focus is on
 simplicity of design, excellent latency, and pragmatic features you
