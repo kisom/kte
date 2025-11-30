@@ -29,6 +29,8 @@ enum class CommandId {
 	Newline, // insert a newline at cursor
 	Backspace, // delete char before cursor (may join lines)
 	DeleteChar, // delete char at cursor (may join lines)
+	KillToEOL, // delete from cursor to end of line; if at EOL, delete newline
+	KillLine,  // delete the entire current line (including newline)
 	// Navigation (basic)
 	MoveLeft,
 	MoveRight,

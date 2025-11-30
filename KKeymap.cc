@@ -9,6 +9,9 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 
 	if (ctrl) {
 		switch (k) {
+		case 'd':
+			out = CommandId::KillLine;
+			return true; // C-k C-d
 		case 'x':
 			out = CommandId::SaveAndQuit;
 			return true; // C-k C-x
@@ -20,6 +23,9 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 		}
 	} else {
 		switch (k) {
+		case 'd':
+			out = CommandId::KillToEOL;
+			return true; // C-k d
 		case 's':
 			out = CommandId::Save;
 			return true; // C-k s
@@ -45,6 +51,9 @@ KLookupCtrlCommand(const int ascii_key, CommandId &out) -> bool
 {
 	const int k = KLowerAscii(ascii_key);
 	switch (k) {
+	case 'd':
+		out = CommandId::DeleteChar; // C-d
+		return true;
 	case 'n':
 		out = CommandId::MoveDown;
 		return true;

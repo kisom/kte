@@ -720,6 +720,80 @@ cmd_delete_char(CommandContext &ctx)
 }
 
 
+static bool
+cmd_kill_to_eol(CommandContext &ctx)
+{
+    Buffer *buf = ctx.editor.CurrentBuffer();
+    if (!buf) {
+        ctx.editor.SetStatus("No buffer to edit");
+        return false;
+    }
+    ensure_at_least_one_line(*buf);
+    auto &rows    = buf->Rows();
+    std::size_t y = buf->Cury();
+    std::size_t x = buf->Curx();
+    int repeat    = ctx.count > 0 ? ctx.count : 1;
+    for (int i = 0; i < repeat; ++i) {
+        if (y >= rows.size())
+            break;
+        if (x < rows[y].size()) {
+            // delete from cursor to end of line
+            rows[y].erase(x);
+        } else if (y + 1 < rows.size()) {
+            // at EOL: delete the newline (join with next line)
+            rows[y] += rows[y + 1];
+            rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(y + 1));
+        } else {
+            // nothing to delete
+            break;
+        }
+    }
+    buf->SetDirty(true);
+    ensure_cursor_visible(ctx.editor, *buf);
+    return true;
+}
+
+
+static bool
+cmd_kill_line(CommandContext &ctx)
+{
+    Buffer *buf = ctx.editor.CurrentBuffer();
+    if (!buf) {
+        ctx.editor.SetStatus("No buffer to edit");
+        return false;
+    }
+    ensure_at_least_one_line(*buf);
+    auto &rows    = buf->Rows();
+    std::size_t y = buf->Cury();
+    std::size_t x = buf->Curx();
+    (void)x; // cursor x will be reset to 0
+    int repeat = ctx.count > 0 ? ctx.count : 1;
+    for (int i = 0; i < repeat; ++i) {
+        if (rows.empty())
+            break;
+        if (rows.size() == 1) {
+            // last remaining line: clear its contents
+            rows[0].clear();
+            y = 0;
+        } else if (y < rows.size()) {
+            // erase current line; keep y pointing at the next line
+            rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(y));
+            if (y >= rows.size()) {
+                // deleted last line; move to previous
+                y = rows.size() - 1;
+            }
+        } else {
+            // out of range
+            y = rows.empty() ? 0 : rows.size() - 1;
+        }
+    }
+    buf->SetCursor(0, y);
+    buf->SetDirty(true);
+    ensure_cursor_visible(ctx.editor, *buf);
+    return true;
+}
+
+
 // --- Navigation ---
 // (helper removed)
 
@@ -1208,6 +1282,8 @@ InstallDefaultCommands()
 	CommandRegistry::Register({CommandId::Newline, "newline", "Insert newline at cursor", cmd_newline});
 	CommandRegistry::Register({CommandId::Backspace, "backspace", "Delete char before cursor", cmd_backspace});
 	CommandRegistry::Register({CommandId::DeleteChar, "delete-char", "Delete char at cursor", cmd_delete_char});
+	CommandRegistry::Register({CommandId::KillToEOL, "kill-to-eol", "Delete to end of line", cmd_kill_to_eol});
+	CommandRegistry::Register({CommandId::KillLine, "kill-line", "Delete entire line", cmd_kill_line});
 	// Navigation
 	CommandRegistry::Register({CommandId::MoveLeft, "left", "Move cursor left", cmd_move_left});
 	CommandRegistry::Register({CommandId::MoveRight, "right", "Move cursor right", cmd_move_right});

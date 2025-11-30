@@ -105,6 +105,28 @@ map_key_to_command(const int ch, bool &k_prefix, bool &esc_meta, MappedInput &ou
 		return true;
 	}
 	// Generic Control-chord lookup (after handling special prefixes/cancel)
+	// IMPORTANT: if we're in k-prefix, the very next key must be interpreted
+	// via the C-k keymap first, even if it's a Control chord like C-d.
+	if (k_prefix) {
+		k_prefix = false; // consume the prefix for this one key
+		bool ctrl     = false;
+		int ascii_key = ch;
+		if (ch >= 1 && ch <= 26) {
+			ctrl      = true;
+			ascii_key = 'a' + (ch - 1);
+		}
+		ascii_key = KLowerAscii(ascii_key);
+		CommandId id;
+		if (KLookupKCommand(ascii_key, ctrl, id)) {
+			out = {true, id, "", 0};
+		} else {
+			char c = (ascii_key >= 0x20 && ascii_key <= 0x7e) ? static_cast<char>(ascii_key) : '?';
+			std::string arg(1, c);
+			out = {true, CommandId::UnknownKCommand, arg, 0};
+		}
+		return true;
+	}
+
 	if (ch >= 1 && ch <= 26) {
 		int ascii_key = 'a' + (ch - 1);
 		CommandId id;
@@ -143,29 +165,7 @@ map_key_to_command(const int ch, bool &k_prefix, bool &esc_meta, MappedInput &ou
 		return true;
 	}
 
-	if (k_prefix) {
-		k_prefix = false; // single next key only
-		// Determine if this is a control chord (e.g., C-x) and normalize
-		bool ctrl     = false;
-		int ascii_key = ch;
-		if (ch >= 1 && ch <= 26) {
-			ctrl      = true;
-			ascii_key = 'a' + (ch - 1);
-		}
-		// For letters, normalize to lowercase ASCII
-		ascii_key = KLowerAscii(ascii_key);
-
-		CommandId id;
-		if (KLookupKCommand(ascii_key, ctrl, id)) {
-			out = {true, id, "", 0};
-		} else {
-			// Show unknown k-command message with the typed character
-			char c = (ascii_key >= 0x20 && ascii_key <= 0x7e) ? static_cast<char>(ascii_key) : '?';
-			std::string arg(1, c);
-			out = {true, CommandId::UnknownKCommand, arg, 0};
-		}
-		return true;
-	}
+	// k_prefix handled earlier
 
 	// Printable ASCII
 	if (ch >= 0x20 && ch <= 0x7E) {

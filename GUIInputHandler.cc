@@ -62,6 +62,33 @@ map_key(const SDL_Keycode key, const SDL_Keymod mod, bool &k_prefix, MappedInput
 		break;
 	}
 
+	// If we are in k-prefix, the very next key must be interpreted via the
+	// C-k keymap first, even if Control is held (e.g., C-k C-d).
+	if (k_prefix) {
+		k_prefix = false;
+		// Normalize SDL key to ASCII where possible
+		int ascii_key = 0;
+		if (key >= SDLK_SPACE && key <= SDLK_z) {
+			ascii_key = static_cast<int>(key);
+		}
+		bool ctrl2 = (mod & KMOD_CTRL) != 0;
+		if (ascii_key != 0) {
+			ascii_key = KLowerAscii(ascii_key);
+			CommandId id;
+			if (KLookupKCommand(ascii_key, ctrl2, id)) {
+				out = {true, id, "", 0};
+				return true;
+			}
+			// Unknown k-command: report the typed character
+			char c = (ascii_key >= 0x20 && ascii_key <= 0x7e) ? static_cast<char>(ascii_key) : '?';
+			std::string arg(1, c);
+			out = {true, CommandId::UnknownKCommand, arg, 0};
+			return true;
+		}
+		out.hasCommand = false;
+		return true;
+	}
+
 	if (is_ctrl) {
 		if (key == SDLK_k || key == SDLK_KP_EQUALS) {
 			k_prefix = true;
@@ -91,30 +118,7 @@ map_key(const SDL_Keycode key, const SDL_Keymod mod, bool &k_prefix, MappedInput
 		}
 	}
 
-	if (k_prefix) {
-		k_prefix = false;
-		// Normalize SDL key to ASCII where possible
-		int ascii_key = 0;
-		if (key >= SDLK_SPACE && key <= SDLK_z) {
-			ascii_key = static_cast<int>(key);
-		}
-		bool ctrl2 = (mod & KMOD_CTRL) != 0;
-		if (ascii_key != 0) {
-			ascii_key = KLowerAscii(ascii_key);
-			CommandId id;
-			if (KLookupKCommand(ascii_key, ctrl2, id)) {
-				out = {true, id, "", 0};
-				return true;
-			}
-			// Unknown k-command: report the typed character
-			char c = (ascii_key >= 0x20 && ascii_key <= 0x7e) ? static_cast<char>(ascii_key) : '?';
-			std::string arg(1, c);
-			out = {true, CommandId::UnknownKCommand, arg, 0};
-			return true;
-		}
-		out.hasCommand = false;
-		return true;
-	}
+	// k_prefix handled earlier
 
 	return false;
 }
