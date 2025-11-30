@@ -82,6 +82,163 @@ ensure_at_least_one_line(Buffer &buf)
 }
 
 
+// Helper: compute ordered region between mark and cursor. Returns false if no mark set or zero-length.
+static bool
+compute_mark_region(Buffer &buf, std::size_t &sx, std::size_t &sy, std::size_t &ex, std::size_t &ey)
+{
+	if (!buf.MarkSet())
+		return false;
+	std::size_t cx = buf.Curx();
+	std::size_t cy = buf.Cury();
+	std::size_t mx = buf.MarkCurx();
+	std::size_t my = buf.MarkCury();
+	if (cy < my || (cy == my && cx < mx)) {
+		sy = cy;
+		sx = cx;
+		ey = my;
+		ex = mx;
+	} else {
+		sy = my;
+		sx = mx;
+		ey = cy;
+		ex = cx;
+	}
+	if (sy == ey && sx == ex)
+		return false; // empty region
+	return true;
+}
+
+
+// Helper: extract text from [sx,sy) to [ex,ey) without modifying buffer. Newlines inserted between lines.
+static std::string
+extract_region_text(const Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::size_t ey)
+{
+	const auto &rows = buf.Rows();
+	if (sy >= rows.size())
+		return std::string();
+	if (ey >= rows.size())
+		ey = rows.size() - 1;
+	if (sy == ey) {
+		const auto &line = rows[sy];
+		std::size_t xs   = std::min(sx, line.size());
+		std::size_t xe   = std::min(ex, line.size());
+		if (xe < xs)
+			std::swap(xs, xe);
+		return line.substr(xs, xe - xs);
+	}
+	std::string out;
+	// first line tail
+	{
+		const auto &line = rows[sy];
+		std::size_t xs   = std::min(sx, line.size());
+		out += line.substr(xs);
+		out += '\n';
+	}
+	// middle lines full
+	for (std::size_t y = sy + 1; y < ey; ++y) {
+		out += rows[y];
+		out += '\n';
+	}
+	// last line head
+	{
+		const auto &line = rows[ey];
+		std::size_t xe   = std::min(ex, line.size());
+		out += line.substr(0, xe);
+	}
+	return out;
+}
+
+
+// Helper: delete region and leave cursor at start (sx,sy). Adjust lines appropriately.
+static void
+delete_region(Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::size_t ey)
+{
+	auto &rows = buf.Rows();
+	if (rows.empty())
+		return;
+	if (sy >= rows.size())
+		return;
+	if (ey >= rows.size())
+		ey = rows.size() - 1;
+	if (sy == ey) {
+		auto &line     = rows[sy];
+		std::size_t xs = std::min(sx, line.size());
+		std::size_t xe = std::min(ex, line.size());
+		if (xe < xs)
+			std::swap(xs, xe);
+		line.erase(xs, xe - xs);
+	} else {
+		// Keep prefix of first and suffix of last then join
+		std::string prefix = rows[sy].substr(0, std::min(sx, rows[sy].size()));
+		std::string suffix;
+		{
+			const auto &last = rows[ey];
+			std::size_t xe   = std::min(ex, last.size());
+			suffix           = last.substr(xe);
+		}
+		rows[sy] = prefix + suffix;
+		// erase middle lines and the last line
+		rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(sy + 1),
+		           rows.begin() + static_cast<std::ptrdiff_t>(ey + 1));
+	}
+	buf.SetCursor(sx, sy);
+	buf.SetDirty(true);
+}
+
+
+// Insert arbitrary text at cursor, supporting newlines. Updates cursor position.
+static void
+insert_text_at_cursor(Buffer &buf, const std::string &text)
+{
+	auto &rows    = buf.Rows();
+	std::size_t y = buf.Cury();
+	std::size_t x = buf.Curx();
+	if (y > rows.size())
+		y = rows.size();
+	if (rows.empty())
+		rows.emplace_back("");
+	if (y >= rows.size())
+		rows.emplace_back("");
+
+	std::size_t cur_y = y;
+	std::size_t cur_x = x;
+
+	std::string remain = text;
+	while (true) {
+		auto pos = remain.find('\n');
+		if (pos == std::string::npos) {
+			// insert remaining into current line
+			if (cur_y >= rows.size())
+				rows.emplace_back("");
+			if (cur_x > rows[cur_y].size())
+				cur_x = rows[cur_y].size();
+			rows[cur_y].insert(cur_x, remain);
+			cur_x += remain.size();
+			break;
+		}
+		// insert segment before newline
+		std::string seg = remain.substr(0, pos);
+		if (cur_x > rows[cur_y].size())
+			cur_x = rows[cur_y].size();
+		rows[cur_y].insert(cur_x, seg);
+		// split line at cur_x + seg.size()
+		cur_x += seg.size();
+		std::string after = rows[cur_y].substr(cur_x);
+		rows[cur_y].erase(cur_x);
+		// create new line after current with the 'after' tail
+		rows.insert(rows.begin() + static_cast<std::ptrdiff_t>(cur_y + 1), after);
+		// move to start of next line
+		cur_y += 1;
+		cur_x = 0;
+		// advance remain after newline
+		remain.erase(0, pos + 1);
+	}
+
+	buf.SetCursor(cur_x, cur_y);
+	buf.SetDirty(true);
+}
+
+
 static std::size_t
 inverse_render_to_source_col(const std::string &line, std::size_t rx_target, std::size_t tabw)
 {
@@ -457,6 +614,99 @@ cmd_open_file_start(CommandContext &ctx)
 }
 
 
+// --- Buffers: switch/next/prev/close ---
+static bool
+cmd_buffer_switch_start(CommandContext &ctx)
+{
+	// If only one (or zero) buffer is open, do nothing per spec
+	if (ctx.editor.BufferCount() <= 1) {
+		ctx.editor.SetStatus("No other buffers open.");
+		return true;
+	}
+	ctx.editor.StartPrompt(Editor::PromptKind::BufferSwitch, "Buffer", "");
+	ctx.editor.SetStatus("Buffer: ");
+	return true;
+}
+
+
+static std::string
+buffer_display_name(const Buffer &b)
+{
+	if (!b.Filename().empty())
+		return b.Filename();
+	return std::string("<untitled>");
+}
+
+
+static std::string
+buffer_basename(const Buffer &b)
+{
+	const std::string &p = b.Filename();
+	if (p.empty())
+		return std::string("<untitled>");
+	auto pos = p.find_last_of("/\\");
+	if (pos == std::string::npos)
+		return p;
+	return p.substr(pos + 1);
+}
+
+
+static bool
+cmd_buffer_next(CommandContext &ctx)
+{
+	const auto cnt = ctx.editor.BufferCount();
+	if (cnt <= 1) {
+		ctx.editor.SetStatus("No other buffers open.");
+		return true;
+	}
+	std::size_t idx = ctx.editor.CurrentBufferIndex();
+	idx             = (idx + 1) % cnt;
+	ctx.editor.SwitchTo(idx);
+	const Buffer *b = ctx.editor.CurrentBuffer();
+	ctx.editor.SetStatus(std::string("Switched: ") + (b ? buffer_display_name(*b) : std::string("")));
+	return true;
+}
+
+
+static bool
+cmd_buffer_prev(CommandContext &ctx)
+{
+	const auto cnt = ctx.editor.BufferCount();
+	if (cnt <= 1) {
+		ctx.editor.SetStatus("No other buffers open.");
+		return true;
+	}
+	std::size_t idx = ctx.editor.CurrentBufferIndex();
+	idx             = (idx + cnt - 1) % cnt;
+	ctx.editor.SwitchTo(idx);
+	const Buffer *b = ctx.editor.CurrentBuffer();
+	ctx.editor.SetStatus(std::string("Switched: ") + (b ? buffer_display_name(*b) : std::string("")));
+	return true;
+}
+
+
+static bool
+cmd_buffer_close(CommandContext &ctx)
+{
+	if (ctx.editor.BufferCount() == 0)
+		return true;
+	std::size_t idx  = ctx.editor.CurrentBufferIndex();
+	const Buffer *b  = ctx.editor.CurrentBuffer();
+	std::string name = b ? buffer_display_name(*b) : std::string("");
+	ctx.editor.CloseBuffer(idx);
+	if (ctx.editor.BufferCount() == 0) {
+		// Open a fresh empty buffer
+		Buffer empty;
+		ctx.editor.AddBuffer(std::move(empty));
+		ctx.editor.SwitchTo(0);
+	}
+	const Buffer *cur = ctx.editor.CurrentBuffer();
+	ctx.editor.SetStatus(std::string("Closed: ") + name + std::string("  Now: ")
+	                     + (cur ? buffer_display_name(*cur) : std::string("")));
+	return true;
+}
+
+
 // --- Editing ---
 static bool
 cmd_insert_text(CommandContext &ctx)
@@ -468,6 +718,45 @@ cmd_insert_text(CommandContext &ctx)
 	}
 	// If a prompt is active, edit prompt text
 	if (ctx.editor.PromptActive()) {
+		// Special-case: buffer switch prompt supports Tab-completion
+		if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::BufferSwitch && ctx.arg == "\t") {
+			// Complete against buffer names (path and basename)
+			const std::string prefix = ctx.editor.PromptText();
+			std::vector<std::pair<std::string, std::size_t> > cands; // name, index
+			const auto &bs = ctx.editor.Buffers();
+			for (std::size_t i = 0; i < bs.size(); ++i) {
+				std::string full = buffer_display_name(bs[i]);
+				std::string base = buffer_basename(bs[i]);
+				if (full.rfind(prefix, 0) == 0) {
+					cands.emplace_back(full, i);
+				}
+				if (base.rfind(prefix, 0) == 0 && base != full) {
+					cands.emplace_back(base, i);
+				}
+			}
+			if (cands.empty()) {
+				// no change
+			} else if (cands.size() == 1) {
+				ctx.editor.SetPromptText(cands[0].first);
+			} else {
+				// extend to longest common prefix
+				std::string lcp = cands[0].first;
+				for (std::size_t i = 1; i < cands.size(); ++i) {
+					const std::string &s = cands[i].first;
+					std::size_t j        = 0;
+					while (j < lcp.size() && j < s.size() && lcp[j] == s[j])
+						++j;
+					lcp.resize(j);
+					if (lcp.empty())
+						break;
+				}
+				if (!lcp.empty() && lcp != ctx.editor.PromptText())
+					ctx.editor.SetPromptText(lcp);
+			}
+			ctx.editor.SetStatus(ctx.editor.PromptLabel() + ": " + ctx.editor.PromptText());
+			return true;
+		}
+
 		ctx.editor.AppendPromptText(ctx.arg);
 		// If it's a search prompt, mirror text to search state
 		if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search) {
@@ -575,6 +864,35 @@ cmd_newline(CommandContext &ctx)
 				ctx.editor.SetStatus(err.empty() ? std::string("Failed to open ") + value : err);
 			} else {
 				ctx.editor.SetStatus(std::string("Opened ") + value);
+			}
+		} else if (kind == Editor::PromptKind::BufferSwitch) {
+			// Resolve to a buffer index by exact match against path or basename;
+			// if multiple partial matches, prefer exact; if none, keep status.
+			const auto &bs = ctx.editor.Buffers();
+			std::vector<std::size_t> matches;
+			for (std::size_t i = 0; i < bs.size(); ++i) {
+				if (value == buffer_display_name(bs[i]) || value == buffer_basename(bs[i])) {
+					matches.push_back(i);
+				}
+			}
+			if (matches.empty()) {
+				// Try prefix match if no exact
+				for (std::size_t i = 0; i < bs.size(); ++i) {
+					const std::string full = buffer_display_name(bs[i]);
+					const std::string base = buffer_basename(bs[i]);
+					if ((!value.empty() && full.rfind(value, 0) == 0) || (
+						    !value.empty() && base.rfind(value, 0) == 0)) {
+						matches.push_back(i);
+					}
+				}
+			}
+			if (matches.empty()) {
+				ctx.editor.SetStatus("No such buffer: " + value);
+			} else {
+				ctx.editor.SwitchTo(matches[0]);
+				const Buffer *cur = ctx.editor.CurrentBuffer();
+				ctx.editor.SetStatus(std::string("Switched: ")
+				                     + (cur ? buffer_display_name(*cur) : std::string("")));
 			}
 		} else if (kind == Editor::PromptKind::SaveAs) {
 			// Optional: not wired yet
@@ -723,74 +1041,252 @@ cmd_delete_char(CommandContext &ctx)
 static bool
 cmd_kill_to_eol(CommandContext &ctx)
 {
-    Buffer *buf = ctx.editor.CurrentBuffer();
-    if (!buf) {
-        ctx.editor.SetStatus("No buffer to edit");
-        return false;
-    }
-    ensure_at_least_one_line(*buf);
-    auto &rows    = buf->Rows();
-    std::size_t y = buf->Cury();
-    std::size_t x = buf->Curx();
-    int repeat    = ctx.count > 0 ? ctx.count : 1;
-    for (int i = 0; i < repeat; ++i) {
-        if (y >= rows.size())
-            break;
-        if (x < rows[y].size()) {
-            // delete from cursor to end of line
-            rows[y].erase(x);
-        } else if (y + 1 < rows.size()) {
-            // at EOL: delete the newline (join with next line)
-            rows[y] += rows[y + 1];
-            rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(y + 1));
-        } else {
-            // nothing to delete
-            break;
-        }
-    }
-    buf->SetDirty(true);
-    ensure_cursor_visible(ctx.editor, *buf);
-    return true;
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf) {
+		ctx.editor.SetStatus("No buffer to edit");
+		return false;
+	}
+	ensure_at_least_one_line(*buf);
+	auto &rows    = buf->Rows();
+	std::size_t y = buf->Cury();
+	std::size_t x = buf->Curx();
+	int repeat    = ctx.count > 0 ? ctx.count : 1;
+	std::string killed_total;
+	for (int i = 0; i < repeat; ++i) {
+		if (y >= rows.size())
+			break;
+		if (x < rows[y].size()) {
+			// delete from cursor to end of line
+			killed_total += rows[y].substr(x);
+			rows[y].erase(x);
+		} else if (y + 1 < rows.size()) {
+			// at EOL: delete the newline (join with next line)
+			killed_total += "\n";
+			rows[y] += rows[y + 1];
+			rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(y + 1));
+		} else {
+			// nothing to delete
+			break;
+		}
+	}
+	buf->SetDirty(true);
+	ensure_cursor_visible(ctx.editor, *buf);
+	if (!killed_total.empty()) {
+		if (ctx.editor.KillChain())
+			ctx.editor.KillRingAppend(killed_total);
+		else
+			ctx.editor.KillRingPush(killed_total);
+		ctx.editor.SetKillChain(true);
+	}
+	return true;
 }
 
 
 static bool
 cmd_kill_line(CommandContext &ctx)
 {
-    Buffer *buf = ctx.editor.CurrentBuffer();
-    if (!buf) {
-        ctx.editor.SetStatus("No buffer to edit");
-        return false;
-    }
-    ensure_at_least_one_line(*buf);
-    auto &rows    = buf->Rows();
-    std::size_t y = buf->Cury();
-    std::size_t x = buf->Curx();
-    (void)x; // cursor x will be reset to 0
-    int repeat = ctx.count > 0 ? ctx.count : 1;
-    for (int i = 0; i < repeat; ++i) {
-        if (rows.empty())
-            break;
-        if (rows.size() == 1) {
-            // last remaining line: clear its contents
-            rows[0].clear();
-            y = 0;
-        } else if (y < rows.size()) {
-            // erase current line; keep y pointing at the next line
-            rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(y));
-            if (y >= rows.size()) {
-                // deleted last line; move to previous
-                y = rows.size() - 1;
-            }
-        } else {
-            // out of range
-            y = rows.empty() ? 0 : rows.size() - 1;
-        }
-    }
-    buf->SetCursor(0, y);
-    buf->SetDirty(true);
-    ensure_cursor_visible(ctx.editor, *buf);
-    return true;
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf) {
+		ctx.editor.SetStatus("No buffer to edit");
+		return false;
+	}
+	ensure_at_least_one_line(*buf);
+	auto &rows    = buf->Rows();
+	std::size_t y = buf->Cury();
+	std::size_t x = buf->Curx();
+	(void) x; // cursor x will be reset to 0
+	int repeat = ctx.count > 0 ? ctx.count : 1;
+	std::string killed_total;
+	for (int i = 0; i < repeat; ++i) {
+		if (rows.empty())
+			break;
+		if (rows.size() == 1) {
+			// last remaining line: clear its contents
+			killed_total += rows[0];
+			rows[0].clear();
+			y = 0;
+		} else if (y < rows.size()) {
+			// erase current line; keep y pointing at the next line
+			killed_total += rows[y];
+			killed_total += "\n";
+			rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(y));
+			if (y >= rows.size()) {
+				// deleted last line; move to previous
+				y = rows.size() - 1;
+			}
+		} else {
+			// out of range
+			y = rows.empty() ? 0 : rows.size() - 1;
+		}
+	}
+	buf->SetCursor(0, y);
+	buf->SetDirty(true);
+	ensure_cursor_visible(ctx.editor, *buf);
+	if (!killed_total.empty()) {
+		if (ctx.editor.KillChain())
+			ctx.editor.KillRingAppend(killed_total);
+		else
+			ctx.editor.KillRingPush(killed_total);
+		ctx.editor.SetKillChain(true);
+	}
+	return true;
+}
+
+
+static bool
+cmd_yank(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf) {
+		ctx.editor.SetStatus("No buffer to edit");
+		return false;
+	}
+	std::string text = ctx.editor.KillRingHead();
+	if (text.empty()) {
+		ctx.editor.SetStatus("Kill ring is empty");
+		return false;
+	}
+	ensure_at_least_one_line(*buf);
+	int repeat = ctx.count > 0 ? ctx.count : 1;
+	for (int i = 0; i < repeat; ++i) {
+		insert_text_at_cursor(*buf, text);
+	}
+	ensure_cursor_visible(ctx.editor, *buf);
+	// Start a new kill chain only from kill commands; yanking should break it
+	ctx.editor.SetKillChain(false);
+	return true;
+}
+
+
+// --- Marks/Regions and File boundaries ---
+static bool
+cmd_move_file_start(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	ensure_at_least_one_line(*buf);
+	buf->SetCursor(0, 0);
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
+}
+
+
+static bool
+cmd_move_file_end(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	ensure_at_least_one_line(*buf);
+	auto &rows    = buf->Rows();
+	std::size_t y = rows.empty() ? 0 : rows.size() - 1;
+	std::size_t x = rows.empty() ? 0 : rows[y].size();
+	buf->SetCursor(x, y);
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
+}
+
+
+static bool
+cmd_toggle_mark(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	if (buf->MarkSet()) {
+		buf->ClearMark();
+		ctx.editor.SetStatus("Mark cleared");
+	} else {
+		buf->SetMark(buf->Curx(), buf->Cury());
+		ctx.editor.SetStatus("Mark set");
+	}
+	return true;
+}
+
+
+static bool
+cmd_jump_to_mark(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	if (!buf->MarkSet()) {
+		ctx.editor.SetStatus("Mark not set");
+		return false;
+	}
+	std::size_t cx = buf->Curx();
+	std::size_t cy = buf->Cury();
+	std::size_t mx = buf->MarkCurx();
+	std::size_t my = buf->MarkCury();
+	buf->SetCursor(mx, my);
+	buf->SetMark(cx, cy);
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
+}
+
+
+static bool
+cmd_kill_region(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	ensure_at_least_one_line(*buf);
+	std::size_t sx, sy, ex, ey;
+	if (!compute_mark_region(*buf, sx, sy, ex, ey)) {
+		ctx.editor.SetStatus("No region to kill");
+		return false;
+	}
+	std::string text = extract_region_text(*buf, sx, sy, ex, ey);
+	delete_region(*buf, sx, sy, ex, ey);
+	ensure_cursor_visible(ctx.editor, *buf);
+	if (!text.empty()) {
+		if (ctx.editor.KillChain())
+			ctx.editor.KillRingAppend(text);
+		else
+			ctx.editor.KillRingPush(text);
+		ctx.editor.SetKillChain(true);
+	}
+
+	buf->ClearMark();
+	return true;
+}
+
+
+static bool
+cmd_copy_region(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	ensure_at_least_one_line(*buf);
+	std::size_t sx, sy, ex, ey;
+	if (!compute_mark_region(*buf, sx, sy, ex, ey)) {
+		ctx.editor.SetStatus("No region to copy");
+		return false;
+	}
+	std::string text = extract_region_text(*buf, sx, sy, ex, ey);
+	if (!text.empty()) {
+		if (ctx.editor.KillChain())
+			ctx.editor.KillRingAppend(text);
+		else
+			ctx.editor.KillRingPush(text);
+		ctx.editor.SetKillChain(true);
+	}
+
+	buf->ClearMark();
+	return true;
+}
+
+
+static bool
+cmd_flush_kill_ring(CommandContext &ctx)
+{
+	ctx.editor.KillRingClear();
+	ctx.editor.SetKillChain(false);
+	ctx.editor.SetStatus("Kill ring cleared");
+	return true;
 }
 
 
@@ -1275,6 +1771,14 @@ InstallDefaultCommands()
 	CommandRegistry::Register({
 		CommandId::OpenFileStart, "open-file-start", "Begin open-file prompt", cmd_open_file_start
 	});
+	// Buffers
+	CommandRegistry::Register({
+		CommandId::BufferSwitchStart, "buffer-switch-start", "Begin buffer switch prompt",
+		cmd_buffer_switch_start
+	});
+	CommandRegistry::Register({CommandId::BufferNext, "buffer-next", "Switch to next buffer", cmd_buffer_next});
+	CommandRegistry::Register({CommandId::BufferPrev, "buffer-prev", "Switch to previous buffer", cmd_buffer_prev});
+	CommandRegistry::Register({CommandId::BufferClose, "buffer-close", "Close current buffer", cmd_buffer_close});
 	// Editing
 	CommandRegistry::Register({
 		CommandId::InsertText, "insert", "Insert text at cursor (no newlines)", cmd_insert_text
@@ -1284,6 +1788,21 @@ InstallDefaultCommands()
 	CommandRegistry::Register({CommandId::DeleteChar, "delete-char", "Delete char at cursor", cmd_delete_char});
 	CommandRegistry::Register({CommandId::KillToEOL, "kill-to-eol", "Delete to end of line", cmd_kill_to_eol});
 	CommandRegistry::Register({CommandId::KillLine, "kill-line", "Delete entire line", cmd_kill_line});
+	CommandRegistry::Register({CommandId::Yank, "yank", "Yank from kill ring", cmd_yank});
+	// Marks/regions and file boundaries
+	CommandRegistry::Register({
+		CommandId::MoveFileStart, "file-start", "Move to beginning of file", cmd_move_file_start
+	});
+	CommandRegistry::Register({CommandId::MoveFileEnd, "file-end", "Move to end of file", cmd_move_file_end});
+	CommandRegistry::Register({CommandId::ToggleMark, "toggle-mark", "Toggle mark at cursor", cmd_toggle_mark});
+	CommandRegistry::Register({
+		CommandId::JumpToMark, "jump-to-mark", "Jump to mark (swap mark)", cmd_jump_to_mark
+	});
+	CommandRegistry::Register({CommandId::KillRegion, "kill-region", "Kill region to kill ring", cmd_kill_region});
+	CommandRegistry::Register({CommandId::CopyRegion, "copy-region", "Copy region to kill ring", cmd_copy_region});
+	CommandRegistry::Register({
+		CommandId::FlushKillRing, "flush-kill-ring", "Flush kill ring", cmd_flush_kill_ring
+	});
 	// Navigation
 	CommandRegistry::Register({CommandId::MoveLeft, "left", "Move cursor left", cmd_move_left});
 	CommandRegistry::Register({CommandId::MoveRight, "right", "Move cursor right", cmd_move_right});
@@ -1311,6 +1830,11 @@ Execute(Editor &ed, CommandId id, const std::string &arg, int count)
 	// than the soft quit again, cancel the pending confirmation.
 	if (ed.QuitConfirmPending() && id != CommandId::Quit && id != CommandId::KPrefix) {
 		ed.SetQuitConfirmPending(false);
+	}
+	// Reset kill chain unless this is a kill-like command (so consecutive kills append)
+	if (id != CommandId::KillToEOL && id != CommandId::KillLine && id != CommandId::KillRegion && id !=
+	    CommandId::CopyRegion) {
+		ed.SetKillChain(false);
 	}
 	CommandContext ctx{ed, arg, count};
 	return cmd->handler ? cmd->handler(ctx) : false;

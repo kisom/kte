@@ -108,7 +108,7 @@ map_key_to_command(const int ch, bool &k_prefix, bool &esc_meta, MappedInput &ou
 	// IMPORTANT: if we're in k-prefix, the very next key must be interpreted
 	// via the C-k keymap first, even if it's a Control chord like C-d.
 	if (k_prefix) {
-		k_prefix = false; // consume the prefix for this one key
+		k_prefix      = false; // consume the prefix for this one key
 		bool ctrl     = false;
 		int ascii_key = ch;
 		if (ch >= 1 && ch <= 26) {

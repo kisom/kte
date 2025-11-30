@@ -10,11 +10,27 @@
 bool
 TerminalFrontend::Init(Editor &ed)
 {
-	// Ensure Ctrl-S/Ctrl-Q reach the application by disabling XON/XOFF flow control
+	// Ensure Control keys reach the app: disable XON/XOFF and dsusp/susp bindings (e.g., ^S/^Q, ^Y on macOS)
 	{
 		struct termios tio{};
 		if (tcgetattr(STDIN_FILENO, &tio) == 0) {
+			// Save original to restore on shutdown
+			orig_tio_      = tio;
+			have_orig_tio_ = true;
+			// Disable software flow control so C-s/C-q work
 			tio.c_iflag &= static_cast<unsigned long>(~IXON);
+#ifdef IXOFF
+			tio.c_iflag &= static_cast<unsigned long>(~IXOFF);
+#endif
+			// Disable dsusp/susp characters so C-y (VDSUSP on macOS) and C-z don't signal-stop the app
+#ifdef _POSIX_VDISABLE
+#ifdef VSUSP
+			tio.c_cc[VSUSP] = _POSIX_VDISABLE;
+#endif
+#ifdef VDSUSP
+			tio.c_cc[VDSUSP] = _POSIX_VDISABLE;
+#endif
+#endif
 			(void) tcsetattr(STDIN_FILENO, TCSANOW, &tio);
 		}
 	}
@@ -78,5 +94,10 @@ TerminalFrontend::Step(Editor &ed, bool &running)
 void
 TerminalFrontend::Shutdown()
 {
+	// Restore original terminal settings if we changed them
+	if (have_orig_tio_) {
+		(void) tcsetattr(STDIN_FILENO, TCSANOW, &orig_tio_);
+		have_orig_tio_ = false;
+	}
 	endwin();
 }

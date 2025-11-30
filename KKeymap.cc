@@ -23,21 +23,42 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 		}
 	} else {
 		switch (k) {
+		case 'j':
+			out = CommandId::JumpToMark;
+			return true; // C-k j
+		case 'f':
+			out = CommandId::FlushKillRing;
+			return true; // C-k f
 		case 'd':
 			out = CommandId::KillToEOL;
 			return true; // C-k d
+		case 'y':
+			out = CommandId::Yank;
+			return true; // C-k y
 		case 's':
 			out = CommandId::Save;
 			return true; // C-k s
 		case 'e':
 			out = CommandId::OpenFileStart;
 			return true; // C-k e (open file)
+		case 'b':
+			out = CommandId::BufferSwitchStart;
+			return true; // C-k b (switch buffer by name)
+		case 'c':
+			out = CommandId::BufferClose;
+			return true; // C-k c (close current buffer)
+		case 'n':
+			out = CommandId::BufferPrev;
+			return true; // C-k n (switch to previous buffer)
 		case 'x':
 			out = CommandId::SaveAndQuit;
 			return true; // C-k x
 		case 'q':
 			out = CommandId::Quit;
 			return true; // C-k q
+		case 'p':
+			out = CommandId::BufferNext;
+			return true; // C-k p (switch to next buffer)
 		default:
 			break;
 		}
@@ -51,6 +72,12 @@ KLookupCtrlCommand(const int ascii_key, CommandId &out) -> bool
 {
 	const int k = KLowerAscii(ascii_key);
 	switch (k) {
+	case 'w':
+		out = CommandId::KillRegion; // C-w
+		return true;
+	case 'y':
+		out = CommandId::Yank; // C-y
+		return true;
 	case 'd':
 		out = CommandId::DeleteChar; // C-d
 		return true;
@@ -96,6 +123,18 @@ KLookupEscCommand(const int ascii_key, CommandId &out) -> bool
 {
 	const int k = KLowerAscii(ascii_key);
 	switch (k) {
+	case '<':
+		out = CommandId::MoveFileStart; // Esc <
+		return true;
+	case '>':
+		out = CommandId::MoveFileEnd; // Esc >
+		return true;
+	case 'm':
+		out = CommandId::ToggleMark; // Esc m
+		return true;
+	case 'w':
+		out = CommandId::CopyRegion; // Esc w (Alt-w)
+		return true;
 	case 'b':
 		out = CommandId::WordPrev;
 		return true;

@@ -24,13 +24,27 @@ enum class CommandId {
 	KPrefix, // show "C-k _" prompt in status when entering k-command
 	FindStart, // begin incremental search (placeholder)
 	OpenFileStart, // begin open-file prompt
+	// Buffers
+	BufferSwitchStart, // begin buffer switch prompt
+	BufferClose,
+	BufferNext,
+	BufferPrev,
 	// Editing
 	InsertText, // arg: text to insert at cursor (UTF-8, no newlines)
 	Newline, // insert a newline at cursor
 	Backspace, // delete char before cursor (may join lines)
 	DeleteChar, // delete char at cursor (may join lines)
 	KillToEOL, // delete from cursor to end of line; if at EOL, delete newline
-	KillLine,  // delete the entire current line (including newline)
+	KillLine, // delete the entire current line (including newline)
+	Yank, // insert most recently killed text at cursor
+	// Region/mark and file-boundary navigation
+	MoveFileStart, // move to beginning of file
+	MoveFileEnd, // move to end of file
+	ToggleMark, // toggle mark at cursor
+	JumpToMark, // jump to mark, set mark to previous cursor
+	KillRegion, // kill region between mark and cursor (to kill ring)
+	CopyRegion, // copy region to kill ring (Alt-w)
+	FlushKillRing, // clear kill ring
 	// Navigation (basic)
 	MoveLeft,
 	MoveRight,

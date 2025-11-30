@@ -7,6 +7,7 @@
 #include "Frontend.h"
 #include "TerminalInputHandler.h"
 #include "TerminalRenderer.h"
+#include <termios.h>
 
 
 class TerminalFrontend final : public Frontend {
@@ -26,6 +27,9 @@ private:
 	TerminalRenderer renderer_{};
 	int prev_r_ = 0;
 	int prev_c_ = 0;
+	// Saved terminal attributes to restore on shutdown
+	bool have_orig_tio_ = false;
+	struct termios orig_tio_{};
 };
 
 #endif // KTE_TERMINAL_FRONTEND_H

@@ -69,6 +69,42 @@ public:
 	}
 
 
+	// Kill ring API
+	void KillRingClear()
+	{
+		kill_ring_.clear();
+	}
+
+
+	void KillRingPush(const std::string &text)
+	{
+		if (text.empty())
+			return;
+		// push to front
+		kill_ring_.insert(kill_ring_.begin(), text);
+		if (kill_ring_.size() > kill_ring_max_)
+			kill_ring_.resize(kill_ring_max_);
+	}
+
+
+	void KillRingAppend(const std::string &text)
+	{
+		if (text.empty())
+			return;
+		if (kill_ring_.empty()) {
+			KillRingPush(text);
+		} else {
+			kill_ring_.front() += text;
+		}
+	}
+
+
+	[[nodiscard]] std::string KillRingHead() const
+	{
+		return kill_ring_.empty() ? std::string() : kill_ring_.front();
+	}
+
+
 	void SetDirtyEx(int d)
 	{
 		dirtyex_ = d;
@@ -254,7 +290,7 @@ public:
 
 
 	// --- Generic Prompt subsystem (for search, open-file, save-as, etc.) ---
-	enum class PromptKind { None = 0, Search, OpenFile, SaveAs, Confirm };
+	enum class PromptKind { None = 0, Search, OpenFile, SaveAs, Confirm, BufferSwitch };
 
 
 	void StartPrompt(PromptKind kind, const std::string &label, const std::string &initial)
@@ -381,6 +417,10 @@ private:
 
 	std::vector<Buffer> buffers_;
 	std::size_t curbuf_ = 0; // index into buffers_
+
+	// Kill ring (Emacs-like)
+	std::vector<std::string> kill_ring_;
+	std::size_t kill_ring_max_ = 60;
 
 	// Quit state
 	bool quit_requested_       = false;
