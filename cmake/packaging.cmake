@@ -1,0 +1,62 @@
+# Packaging support
+include(InstallRequiredSystemLibraries)
+
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CPACK_DEBIAN_PACKAGE_DEBUG ON)
+endif()
+
+set(CPACK_PACKAGE_VENDOR "Shimmering Clarity")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "kyle's editor")
+set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
+set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
+set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
+
+###################
+### DEBIANESQUE ###
+###################
+if(${BUILD_GUI})
+    set(CPACK_COMPONENTS_ALL gui nox)
+else()
+    set(CPACK_COMPONENTS_ALL nox)
+endif()
+
+set(CPACK_COMPONENTS_GROUPING ONE_PER_GROUP)
+set(CPACK_DEBIAN_ENABLE_COMPONENT_DEPENDS ON)
+set(CPACK_DEBIAN_PACKAGE_SECTION universe/editors)
+set(CPACK_DEB_COMPONENT_INSTALL ON)
+
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "K. Isom")
+set(CPACK_PACKAGE_nox_DESCRIPTION_SUMMARY "kyle's editor")
+set(CPACK_PACKAGE_nox_DESCRIPTION ${CPACK_PACKAGE_DESCRIPTION})
+set(CPACK_PACKAGE_nox_PACKAGE_NAME "kge")
+set(CPACK_DEBIAN_nox_PACKAGE_NAME "ke")
+
+if(BUILD_GUI)
+    set(CPACK_PACKAGE_gui_PACKAGE_NAME "kge")
+    set(CPACK_DEBIAN_gui_PACKAGE_NAME "kge")
+    set(CPACK_PACKAGE_gui_DESCRIPTION_SUMMARY " graphical front-end for kyle's editor")
+    set(CPACK_PACKAGE_gui_DESCRIPTION "graphical front-end for ${CPACK_PACKAGE_DESCRIPTION} ")
+endif()
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+set(CPACK_DEBIAN_PACKAGE_GENERATE_SHLIBS ON)
+
+
+if(LINUX)
+    set(CPACK_GENERATOR "DEB;STGZ;TGZ")
+elseif(APPLE)
+    set(CPACK_GENERATOR "productbuild;TGZ")
+elseif(MSVC OR MSYS OR MINGW)
+    set(CPACK_GENERATOR "NSIS;ZIP")
+else()
+    set(CPACK_GENERATOR "ZIP")
+endif()
+
+set(CPACK_SOURCE_GENERATOR "TGZ;ZIP ")
+set(CPACK_SOURCE_IGNORE_FILES
+        /.git
+        /.idea
+        /dist
+        /.*build.*)
+
+include(CPack)
+cpack_add_component(gui DEPENDS nox)
