@@ -8,8 +8,8 @@
 let
   cmakeContent = builtins.readFile ./CMakeLists.txt;
   cmakeLines = lib.splitString "\n" cmakeContent;
-  versionLine = lib.findFirst (l: builtins.match ".*set\\(KE_VERSION \".+\"\\).*" l
-  version = builtins.head (builtins.match ".*set\\(KE_VERSION \"(.+)\"\\).*" versio
+  versionLine = lib.findFirst (l: builtins.match ".*set\\(KTE_VERSION \".+\"\\).*" l
+  version = builtins.head (builtins.match ".*set\\(KTE_VERSION \"(.+)\"\\).*" versio
 in
 pkgs.stdenv.mkDerivation {
   pname = "kte";
