@@ -149,7 +149,7 @@ if (${BUILD_GUI})
     # On macOS, build kge as a proper .app bundle
     if (APPLE)
         # Configure Info.plist with version and identifiers
-        set(KGE_BUNDLE_ID "dev.kyle.kge")
+        set(KGE_BUNDLE_ID "dev.wntrmute.kge")
         configure_file(
                 ${CMAKE_CURRENT_LIST_DIR}/cmake/Info.plist.in
                 ${CMAKE_CURRENT_BINARY_DIR}/kge-Info.plist
