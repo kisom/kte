@@ -20,6 +20,7 @@ enum class CommandId {
     Quit,
     SaveAndQuit,
     Refresh,    // force redraw
+    KPrefix,    // show "C-k _" prompt in status when entering k-command
     FindStart,  // begin incremental search (placeholder)
     // Editing
     InsertText,   // arg: text to insert at cursor (UTF-8, no newlines)

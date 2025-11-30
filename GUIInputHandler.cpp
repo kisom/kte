@@ -1,6 +1,7 @@
 #include "GUIInputHandler.h"
 
 #include <SDL.h>
+#include "KKeymap.h"
 
 static bool map_key(SDL_Keycode key, SDL_Keymod mod, bool &k_prefix, MappedInput &out)
 {
@@ -26,7 +27,7 @@ static bool map_key(SDL_Keycode key, SDL_Keymod mod, bool &k_prefix, MappedInput
         switch (key) {
             case SDLK_k: case SDLK_KP_EQUALS: // treat Ctrl-K
                 k_prefix = true;
-                out = {true, CommandId::Refresh, "", 0};
+                out = {true, CommandId::KPrefix, "", 0};
                 return true;
             case SDLK_g:
                 k_prefix = false;
@@ -42,11 +43,19 @@ static bool map_key(SDL_Keycode key, SDL_Keymod mod, bool &k_prefix, MappedInput
 
     if (k_prefix) {
         k_prefix = false;
-        switch (key) {
-            case SDLK_s: out = {true, CommandId::Save,        "", 0}; return true;
-            case SDLK_x: out = {true, CommandId::SaveAndQuit, "", 0}; return true;
-            case SDLK_q: out = {true, CommandId::Quit,        "", 0}; return true;
-            default: break;
+        // Normalize SDL key to ASCII where possible
+        int ascii_key = 0;
+        if (key >= SDLK_SPACE && key <= SDLK_z) {
+            ascii_key = static_cast<int>(key);
+        }
+        bool ctrl2 = (mod & KMOD_CTRL) != 0;
+        if (ascii_key != 0) {
+            ascii_key = KLowerAscii(ascii_key);
+            CommandId id;
+            if (KLookupKCommand(ascii_key, ctrl2, id)) {
+                out = {true, id, "", 0};
+                return true;
+            }
         }
         out.hasCommand = false;
         return true;

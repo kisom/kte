@@ -23,6 +23,7 @@
     <generated>
       <config projectName="kte" targetName="kte" />
       <config projectName="kte" targetName="imgui" />
+      <config projectName="kte" targetName="kge" />
     </generated>
   </component>
   <component name="CMakeSettings">
@@ -32,11 +33,17 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/KKeymap.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/KKeymap.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Buffer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Buffer.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Command.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Command.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Command.h" beforeDir="false" afterPath="$PROJECT_DIR$/Command.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIInputHandler.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUIInputHandler.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/GUIRenderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUIRenderer.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/main.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TerminalInputHandler.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalInputHandler.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TerminalRenderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalRenderer.cpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -49,6 +56,9 @@
   <component name="ExecutionTargetManager" SELECTED_TARGET="CMakeBuildProfile:Debug" />
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="HighlightingSettingsPerFile">
+    <setting file="mock:///AIAssistantSnippet.." root0="SKIP_HIGHLIGHTING" />
   </component>
   <component name="ProjectApplicationVersion">
     <option name="ide" value="CLion" />
@@ -106,6 +116,11 @@
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
+    <configuration name="kge" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="kte" TARGET_NAME="kge" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="kte" RUN_TARGET_NAME="kge">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
     <configuration name="kte" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="kte" TARGET_NAME="kte" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="kte" RUN_TARGET_NAME="kte">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
@@ -113,6 +128,7 @@
     </configuration>
     <list>
       <item itemvalue="CMake Application.imgui" />
+      <item itemvalue="CMake Application.kge" />
       <item itemvalue="CMake Application.kte" />
     </list>
   </component>
@@ -123,7 +139,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1764457173148</updated>
-      <workItem from="1764457174208" duration="9674000" />
+      <workItem from="1764457174208" duration="10626000" />
     </task>
     <servers />
   </component>

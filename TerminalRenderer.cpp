@@ -43,12 +43,27 @@ void TerminalRenderer::Draw(const Editor &ed)
             clrtoeol();
         }
 
-        // Place cursor (best-effort; tabs etc. not handled yet)
+        // Draw a visible cursor cell by inverting the character at the cursor
+        // position (or a space at EOL). This makes the cursor obvious even when
+        // the terminal's native cursor is hidden or not prominent.
         std::size_t cy = buf->Cury();
         std::size_t cx = buf->Curx();
         int cur_y      = static_cast<int>(cy - buf->Rowoffs());
         int cur_x      = static_cast<int>(cx - buf->Coloffs());
         if (cur_y >= 0 && cur_y < content_rows && cur_x >= 0 && cur_x < cols) {
+            // Determine the character under the cursor (if any)
+            char ch = ' ';
+            if (cy < lines.size()) {
+                const std::string &cline = lines[cy];
+                if (cx < cline.size()) {
+                    ch = cline[static_cast<long>(cx)];
+                }
+            }
+            move(cur_y, cur_x);
+            attron(A_REVERSE);
+            addch(static_cast<unsigned char>(ch));
+            attroff(A_REVERSE);
+            // Also place the terminal cursor at the same spot
             move(cur_y, cur_x);
         }
     } else {

@@ -18,29 +18,29 @@ Buffer::Buffer(const std::string &path)
 bool
 Buffer::OpenFromFile(const std::string &path, std::string &err)
 {
-    // If the file doesn't exist, initialize an empty, non-file-backed buffer
-    // with the provided filename. Do not touch the filesystem until Save/SaveAs.
-    if (!std::filesystem::exists(path)) {
-        rows_.clear();
-        nrows_          = 0;
-        filename_       = path;
-        is_file_backed_ = false;
-        dirty_          = false;
+	// If the file doesn't exist, initialize an empty, non-file-backed buffer
+	// with the provided filename. Do not touch the filesystem until Save/SaveAs.
+	if (!std::filesystem::exists(path)) {
+		rows_.clear();
+		nrows_          = 0;
+		filename_       = path;
+		is_file_backed_ = false;
+		dirty_          = false;
 
-        // Reset cursor/viewport state
-        curx_      = cury_    = rx_ = 0;
-        rowoffs_   = coloffs_ = 0;
-        mark_set_  = false;
-        mark_curx_ = mark_cury_ = 0;
+		// Reset cursor/viewport state
+		curx_      = cury_    = rx_ = 0;
+		rowoffs_   = coloffs_ = 0;
+		mark_set_  = false;
+		mark_curx_ = mark_cury_ = 0;
 
-        return true;
-    }
+		return true;
+	}
 
-    std::ifstream in(path, std::ios::in | std::ios::binary);
-    if (!in) {
-        err = "Failed to open file: " + path;
-        return false;
-    }
+	std::ifstream in(path, std::ios::in | std::ios::binary);
+	if (!in) {
+		err = "Failed to open file: " + path;
+		return false;
+	}
 
 	rows_.clear();
 	std::string line;

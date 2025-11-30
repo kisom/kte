@@ -50,6 +50,7 @@ set(COMMON_SOURCES
         Buffer.cpp
         Editor.cpp
         Command.cpp
+        KKeymap.cpp
         TerminalInputHandler.cpp
         TerminalRenderer.cpp
         TerminalFrontend.cpp
@@ -62,6 +63,7 @@ set(COMMON_HEADERS
         Editor.h
         AppendBuffer.h
         Command.h
+        KKeymap.h
         InputHandler.h
         TerminalInputHandler.h
         Renderer.h

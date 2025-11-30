@@ -1,6 +1,7 @@
 #include "TerminalInputHandler.h"
 
 #include <ncurses.h>
+#include "KKeymap.h"
 
 namespace {
 constexpr int CTRL(char c) { return c & 0x1F; }
@@ -35,7 +36,7 @@ static bool map_key_to_command(int ch, bool &k_prefix, MappedInput &out)
     // Control keys
     if (ch == CTRL('K')) { // C-k prefix
         k_prefix = true;
-        out = {true, CommandId::Refresh, "", 0};
+        out = {true, CommandId::KPrefix, "", 0};
         return true;
     }
     if (ch == CTRL('G')) { // cancel
@@ -53,14 +54,22 @@ static bool map_key_to_command(int ch, bool &k_prefix, MappedInput &out)
 
     if (k_prefix) {
         k_prefix = false; // single next key only
-        switch (ch) {
-            case 's': case 'S': out = {true, CommandId::Save,        "", 0}; return true;
-            case 'x': case 'X': out = {true, CommandId::SaveAndQuit, "", 0}; return true;
-            case 'q': case 'Q': out = {true, CommandId::Quit,        "", 0}; return true;
-            default: break;
+        // Determine if this is a control chord (e.g., C-x) and normalize
+        bool ctrl = false;
+        int ascii_key = ch;
+        if (ch >= 1 && ch <= 26) {
+            ctrl = true;
+            ascii_key = 'a' + (ch - 1);
         }
-        if (ch == CTRL('Q')) { out = {true, CommandId::Quit, "", 0}; return true; }
-        out.hasCommand = false; // unknown chord
+        // For letters, normalize to lowercase ASCII
+        ascii_key = KLowerAscii(ascii_key);
+
+        CommandId id;
+        if (KLookupKCommand(ascii_key, ctrl, id)) {
+            out = {true, id, "", 0};
+        } else {
+            out.hasCommand = false; // unknown chord after C-k
+        }
         return true;
     }
 
