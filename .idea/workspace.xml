@@ -36,14 +36,6 @@
     <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Command.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Command.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Command.h" beforeDir="false" afterPath="$PROJECT_DIR$/Command.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUIFrontend.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIFrontend.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUIInputHandler.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIInputHandler.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUIRenderer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIRenderer.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TerminalFrontend.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalFrontend.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TerminalInputHandler.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalInputHandler.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TerminalRenderer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalRenderer.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.cc" beforeDir="false" afterPath="$PROJECT_DIR$/main.cc" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -148,7 +140,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1764457173148</updated>
-      <workItem from="1764457174208" duration="19741000" />
+      <workItem from="1764457174208" duration="20181000" />
     </task>
     <servers />
   </component>
