@@ -22,31 +22,40 @@
   <component name="CMakeRunConfigurationManager">
     <generated>
       <config projectName="kte" targetName="kte" />
+      <config projectName="kte" targetName="imgui" />
     </generated>
   </component>
   <component name="CMakeSettings">
     <configurations>
-      <configuration PROFILE_NAME="Debug" ENABLED="true" CONFIG_NAME="Debug" />
+      <configuration PROFILE_NAME="Debug" ENABLED="true" CONFIG_NAME="Debug" GENERATION_OPTIONS="-G &quot;Unix Makefiles&quot; -DKTE_USE_PIECE_TABLE:BOOL=ON" />
     </configurations>
   </component>
   <component name="ChangeListManager">
     <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.junie/guidelines.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AppendBuffer.h" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Buffer.cpp" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Buffer.h" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Editor.cpp" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Editor.h" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/GapBuffer.cpp" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/GapBuffer.h" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/PieceTable.cpp" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/PieceTable.h" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/cmake/imgui.cmake" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/cmake/packaging.cmake" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/ke.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/main.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Command.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Command.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Frontend.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/GUIFrontend.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/GUIFrontend.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/GUIInputHandler.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/GUIInputHandler.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/GUIRenderer.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/GUIRenderer.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/InputHandler.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/ROADMAP.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Renderer.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/TerminalFrontend.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/TerminalFrontend.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/TerminalInputHandler.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/TerminalInputHandler.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/TerminalRenderer.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/TerminalRenderer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.junie/guidelines.md" beforeDir="false" afterPath="$PROJECT_DIR$/.junie/guidelines.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cmake/packaging.cmake" beforeDir="false" afterPath="$PROJECT_DIR$/cmake/packaging.cmake" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/main.cpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -100,13 +109,18 @@
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
     "onboarding.tips.debug.path": "/Users/kyle/src/kte/main.cpp",
-    "settings.editor.selected.configurable": "preferences.sourceCode.C++",
+    "settings.editor.selected.configurable": "CMakeSettings",
     "to.speed.mode.migration.done": "true",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
-  <component name="RunManager">
+  <component name="RunManager" selected="CMake Application.kte">
     <configuration default="true" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="imgui" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="kte" TARGET_NAME="imgui" CONFIG_NAME="Debug">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
@@ -116,6 +130,10 @@
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
+    <list>
+      <item itemvalue="CMake Application.imgui" />
+      <item itemvalue="CMake Application.kte" />
+    </list>
   </component>
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
@@ -124,7 +142,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1764457173148</updated>
-      <workItem from="1764457174208" duration="5713000" />
+      <workItem from="1764457174208" duration="9070000" />
     </task>
     <servers />
   </component>

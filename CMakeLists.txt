@@ -2,8 +2,11 @@ cmake_minimum_required(VERSION 3.15)
 project(kte)
 
 set(CMAKE_CXX_STANDARD 17)
+set (KTE_VERSION    "0.0.1")
 
-set(BUILD_GUI ON CACHE BOOL "Disable building the graphical version.")
+# Default to terminal-only build to avoid SDL/OpenGL dependency by default.
+# Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
+set(BUILD_GUI OFF CACHE BOOL "Enable building the graphical version.")
 option(KTE_USE_PIECE_TABLE "Use PieceTable instead of GapBuffer implementation" OFF)
 
 
@@ -20,7 +23,6 @@ else ()
             "-Wall"
             "-Wextra"
             "-Werror"
-            "-static"
             "$<$<CONFIG:DEBUG>:-g>"
             "$<$<CONFIG:RELEASE>:-O2>")
     if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
@@ -38,11 +40,19 @@ if (${BUILD_GUI})
     include(cmake/imgui.cmake)
 endif ()
 
+# NCurses for terminal mode
+find_package(Curses REQUIRED)
+include_directories(${CURSES_INCLUDE_DIR})
+
 set(SOURCES
         GapBuffer.cpp
         PieceTable.cpp
         Buffer.cpp
         Editor.cpp
+        Command.cpp
+        TerminalInputHandler.cpp
+        TerminalRenderer.cpp
+        TerminalFrontend.cpp
 )
 
 set(HEADERS
@@ -51,6 +61,13 @@ set(HEADERS
         Buffer.h
         Editor.h
         AppendBuffer.h
+        Command.h
+        InputHandler.h
+        TerminalInputHandler.h
+        Renderer.h
+        TerminalRenderer.h
+        Frontend.h
+        TerminalFrontend.h
 )
 
 add_executable(kte
@@ -63,6 +80,16 @@ if (KTE_USE_PIECE_TABLE)
     target_compile_definitions(kte PRIVATE KTE_USE_PIECE_TABLE=1)
 endif ()
 
+target_link_libraries(kte ${CURSES_LIBRARIES})
+
 if (${BUILD_GUI})
-    target_link_libraries(kge imgui)
+    target_sources(kte PRIVATE
+            GUIRenderer.cpp
+            GUIRenderer.h
+            GUIInputHandler.cpp
+            GUIInputHandler.h
+            GUIFrontend.cpp
+            GUIFrontend.h)
+    target_compile_definitions(kte PRIVATE KTE_BUILD_GUI=1)
+    target_link_libraries(kte imgui)
 endif ()

@@ -11,7 +11,7 @@ development practices for kte.
 ## Goals
 
 - Keep the core small, fast, and understandable.
-- Provide a terminal-first editing experience, with an optional ImGui GUI.
+- Provide an ncurses-based terminal-first editing experience, with an optional ImGui GUI.
 - Preserve familiar keybindings from ke while modernizing the internals.
 - Favor simple data structures (e.g., gap buffer) and incremental evolution.
 
@@ -22,7 +22,10 @@ development practices for kte.
 
 ## Build and Run
 
-Prerequisites: a C++17 compiler and CMake.
+Prerequisites: a C++17 compiler, CMake, and ncurses development headers/libs.
+
+- macOS (Homebrew): `brew install ncurses`
+- Debian/Ubuntu: `sudo apt-get install libncurses5-dev libncursesw5-dev`
 
 - Configure and build (example):
   - `cmake -S . -B cmake-build-debug -DCMAKE_BUILD_TYPE=Debug`
@@ -38,9 +41,9 @@ Project entry point: `main.cpp`
 - GapBuffer: editable in-memory text representation (`GapBuffer.h/.cpp`).
 - PieceTable: experimental/alternative representation (`PieceTable.h/.cpp`).
 - InputHandler: interface for handling text input (`InputHandler.h/`), along
-  with `TerminalInputHandler` and `GUIInputHandler`.
+  with `TerminalInputHandler` (ncurses-based) and `GUIInputHandler`.
 - Renderer: interface for rendering text (`Renderer.h`), along with
-  `TerminalRenderer` and `GUIRenderer`.
+  `TerminalRenderer` (ncurses-based) and `GUIRenderer`.
 - Editor: top-level editor state (`Editor.h/.cpp`).
 - Command: command model (`Command.h/.cpp`).
 - General purpose editor functionality (`Editing.h/.cpp`)

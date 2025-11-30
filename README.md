@@ -75,7 +75,8 @@ Interfaces
 ----------
 
 - CLI: the primary interface. `kte [files]` starts in the terminal,
-  adopting your `$TERM` capabilities.
+  adopting your `$TERM` capabilities. Terminal mode is implemented
+  using ncurses.
 - GUI: an optional ImGui‑based frontend that embeds the same editor
   core.
 
@@ -130,7 +131,41 @@ See `ke.md` for the canonical ke reference retained for now.
 
 Build and Run
 -------------
-Prerequisites: C++17 compiler and CMake.
+Prerequisites: C++17 compiler, CMake, and ncurses development headers/libs.
+
+Dependencies by platform
+------------------------
+
+- macOS (Homebrew)
+  - Terminal (default):
+    - `brew install ncurses`
+  - Optional GUI (enable with `-DBUILD_GUI=ON`):
+    - `brew install sdl2 freetype`
+    - OpenGL is provided by the system framework on macOS; no package needed.
+
+- Debian/Ubuntu
+  - Terminal (default):
+    - `sudo apt-get install -y libncurses5-dev libncursesw5-dev`
+  - Optional GUI (enable with `-DBUILD_GUI=ON`):
+    - `sudo apt-get install -y libsdl2-dev libfreetype6-dev mesa-common-dev`
+    - The `mesa-common-dev` package provides OpenGL headers/libs (`libGL`).
+
+- NixOS/Nix
+  - Terminal (default):
+    - Ad-hoc shell: `nix-shell -p cmake gcc ncurses`
+  - Optional GUI (enable with `-DBUILD_GUI=ON`):
+    - Ad-hoc shell: `nix-shell -p cmake gcc ncurses SDL2 freetype libGL`
+  - With flakes/devshell (example `flake.nix` inputs not provided): include
+    `ncurses` for TUI, and `SDL2`, `freetype`, `libGL` for GUI in your devShell.
+
+Notes
+-----
+
+- The GUI is OFF by default to keep SDL/OpenGL/Freetype optional. Enable it by
+  configuring with `-DBUILD_GUI=ON` and ensuring the GUI deps above are
+  installed for your platform.
+- If you previously configured with GUI ON and want to disable it, reconfigure
+  the build directory with `-DBUILD_GUI=OFF`.
 
 Example build:
 
@@ -145,13 +180,50 @@ Run:
 ./cmake-build-debug/kte [files]
 ```
 
+CLI usage
+---------
+
+```
+kte [OPTIONS] [files]
+
+Options:
+  -g, --gui        Use GUI frontend (if built)
+  -t, --term       Use terminal (ncurses) frontend [default]
+  -h, --help       Show help and exit
+  -V, --version    Show version and exit
+```
+
+Examples:
+
+```
+# Terminal (default)
+kte foo.txt bar.txt
+
+# Explicit terminal
+kte -t foo.txt
+
+# GUI (requires building with -DBUILD_GUI=ON and GUI deps installed)
+kte --gui foo.txt
+```
+
+GUI build example
+-----------------
+
+To build with the optional GUI (after installing the GUI dependencies listed above):
+
+```
+cmake -S . -B cmake-build-debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_GUI=ON
+cmake --build cmake-build-debug
+./cmake-build-debug/kte --gui [files]
+```
+
 Status
 ------
 
 - The project is under active evolution toward the above architecture
-  and UX. The terminal interface is the leading target; GUI work will
-  follow as a thin, optional layer. ke compatibility remains a primary
-  constraint while internals modernize.
+  and UX. The terminal interface now uses ncurses for input and
+  rendering. GUI work will follow as a thin, optional layer. ke
+  compatibility remains a primary constraint while internals modernize.
 
 Roadmap (high level)
 --------------------
@@ -161,7 +233,7 @@ Roadmap (high level)
 2. Introduce structured undo/redo and search/replace with
    highlighting.
 3. Stabilize terminal renderer and input handling across common
-   terminals.
+   terminals. (initial ncurses implementation landed)
 4. Add piece table as an alternative backend with runtime selection
    per buffer.
 5. Optional GUI frontend using ImGui; shared command palette.
