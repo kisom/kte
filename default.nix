@@ -2,33 +2,31 @@
   lib,
   stdenv,
   cmake,
+  ncurses,
   installShellFiles,
   ...
 }:
 let
   cmakeContent = builtins.readFile ./CMakeLists.txt;
   cmakeLines = lib.splitString "\n" cmakeContent;
-  versionLine = lib.findFirst (l: builtins.match ".*set\\(KTE_VERSION \".+\"\\).*" l
-  version = builtins.head (builtins.match ".*set\\(KTE_VERSION \"(.+)\"\\).*" versio
+  versionLine = lib.findFirst (l: builtins.match ".*set\\(KTE_VERSION \".+\"\\).*" l != null) (throw "KTE_VERSION not found in CMakeLists.txt") cmakeLines;
+  version = builtins.head (builtins.match ".*set\\(KTE_VERSION \"(.+)\"\\).*" versionLine);
 in
-pkgs.stdenv.mkDerivation {
-  pname = "kte";
+stdenv.mkDerivation {
+  pname = "ke";
   inherit version;
 
-  src = ./.;
+  src = lib.cleanSource ./.;
 
-  nativeBuildInputs = [ pkgs.cmake pkgs.pkg-config ];
-  buildInputs = with pkgs; [
+  nativeBuildInputs = [
+    cmake
     ncurses
-    SDL2
-    libGL
-    xorg.libX11
+    installShellFiles
   ];
 
   cmakeFlags = [
     "-DKTE_USE_PIECE_TABLE=ON"
-    "-DCURSES_NEED_NCURSES=TRUE"
-    "-DCURSES_NEED_WIDE=TRUE"
+    "-DCMAKE_BUILD_TYPE=Debug"
   ];
 
   installPhase = ''
