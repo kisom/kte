@@ -922,9 +922,9 @@ cmd_newline(CommandContext &ctx)
 	std::size_t x = buf->Curx();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
 	for (int i = 0; i < repeat; ++i) {
-		if (y >= rows.size())
-			rows.resize(y + 1);
-		std::string &line = rows[y];
+  if (y >= rows.size())
+            rows.resize(y + 1);
+        auto &line = rows[y];
 		std::string tail;
 		if (x < line.size()) {
 			tail = line.substr(x);
@@ -1103,7 +1103,7 @@ cmd_kill_line(CommandContext &ctx)
 		if (rows.size() == 1) {
 			// last remaining line: clear its contents
 			killed_total += rows[0];
-			rows[0].clear();
+   rows[0].Clear();
 			y = 0;
 		} else if (y < rows.size()) {
 			// erase current line; keep y pointing at the next line

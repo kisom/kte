@@ -33,31 +33,11 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/UndoNode.cc" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/UndoNode.h" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/UndoTree.cc" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/UndoTree.h" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/kte-cloc" afterDir="false" />
+    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Add undo/redo infrastructure and buffer management additions.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Buffer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Buffer.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Buffer.h" beforeDir="false" afterPath="$PROJECT_DIR$/Buffer.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Command.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Command.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Command.h" beforeDir="false" afterPath="$PROJECT_DIR$/Command.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Editor.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Editor.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Editor.h" beforeDir="false" afterPath="$PROJECT_DIR$/Editor.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUIFrontend.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIFrontend.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUIInputHandler.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIInputHandler.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUIInputHandler.h" beforeDir="false" afterPath="$PROJECT_DIR$/GUIInputHandler.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUIRenderer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIRenderer.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GapBuffer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GapBuffer.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/KKeymap.cc" beforeDir="false" afterPath="$PROJECT_DIR$/KKeymap.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/PieceTable.cc" beforeDir="false" afterPath="$PROJECT_DIR$/PieceTable.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TerminalFrontend.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalFrontend.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TerminalFrontend.h" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalFrontend.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TerminalInputHandler.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalInputHandler.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TerminalRenderer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalRenderer.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.cc" beforeDir="false" afterPath="$PROJECT_DIR$/main.cc" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -164,8 +144,17 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1764457173148</updated>
-      <workItem from="1764457174208" duration="26658000" />
+      <workItem from="1764457174208" duration="27302000" />
     </task>
+    <task id="LOCAL-00001" summary="Add undo/redo infrastructure and buffer management additions.">
+      <option name="closed" value="true" />
+      <created>1764485311566</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1764485311566</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -175,6 +164,11 @@
     <isAutomaticCheckingOnLaunch value="false" />
     <isAutomaticFoundErrors value="true" />
     <isAutomaticReloadCMake value="true" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Refactoring" />
+    <MESSAGE value="Add undo/redo infrastructure and buffer management additions." />
+    <option name="LAST_COMMIT_MESSAGE" value="Add undo/redo infrastructure and buffer management additions." />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

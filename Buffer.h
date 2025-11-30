@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "AppendBuffer.h"
+
 class Buffer {
 public:
 	Buffer();
@@ -57,13 +59,129 @@ public:
 	}
 
 
-	[[nodiscard]] const std::vector<std::string> &Rows() const
+	// Line wrapper backed by AppendBuffer (GapBuffer/PieceTable)
+	class Line {
+	public:
+		Line() = default;
+
+		Line(const char *s)
+		{
+			assign_from(s ? std::string(s) : std::string());
+		}
+
+		Line(const std::string &s)
+		{
+			assign_from(s);
+		}
+
+		Line(const Line &other) = default;
+		Line &operator=(const Line &other) = default;
+		Line(Line &&other) noexcept = default;
+		Line &operator=(Line &&other) noexcept = default;
+
+		// capacity helpers
+		void Clear() { buf_.Clear(); }
+
+		// size/access
+		[[nodiscard]] std::size_t size() const { return buf_.Size(); }
+		[[nodiscard]] bool empty() const { return size() == 0; }
+
+		// read-only raw view
+		[[nodiscard]] const char *Data() const { return buf_.Data(); }
+		[[nodiscard]] std::size_t Size() const { return buf_.Size(); }
+
+		// element access (read-only)
+		[[nodiscard]] char operator[](std::size_t i) const
+		{
+			const char *d = buf_.Data();
+			return (i < buf_.Size() && d) ? d[i] : '\0';
+		}
+
+		// conversions
+		operator std::string() const { return std::string(buf_.Data() ? buf_.Data() : "", buf_.Size()); }
+
+		// string-like API used by command/renderer layers (implemented via materialization for now)
+		std::string substr(std::size_t pos) const
+		{
+			const std::size_t n = buf_.Size();
+			if (pos >= n) return std::string();
+			return std::string(buf_.Data() + pos, n - pos);
+		}
+
+		std::string substr(std::size_t pos, std::size_t len) const
+		{
+			const std::size_t n = buf_.Size();
+			if (pos >= n) return std::string();
+			const std::size_t take = (pos + len > n) ? (n - pos) : len;
+			return std::string(buf_.Data() + pos, take);
+		}
+
+		void erase(std::size_t pos)
+		{
+			// erase to end
+			material_edit([&](std::string &s) {
+				if (pos < s.size()) s.erase(pos);
+			});
+		}
+
+		void erase(std::size_t pos, std::size_t len)
+		{
+			material_edit([&](std::string &s) {
+				if (pos < s.size()) s.erase(pos, len);
+			});
+		}
+
+		void insert(std::size_t pos, const std::string &seg)
+		{
+			material_edit([&](std::string &s) {
+				if (pos > s.size()) pos = s.size();
+				s.insert(pos, seg);
+			});
+		}
+
+		Line &operator+=(const Line &other)
+		{
+			buf_.Append(other.buf_.Data(), other.buf_.Size());
+			return *this;
+		}
+
+		Line &operator+=(const std::string &s)
+		{
+			buf_.Append(s.data(), s.size());
+			return *this;
+		}
+
+		Line &operator=(const std::string &s)
+		{
+			assign_from(s);
+			return *this;
+		}
+
+	private:
+		void assign_from(const std::string &s)
+		{
+			buf_.Clear();
+			if (!s.empty()) buf_.Append(s.data(), s.size());
+		}
+
+		template <typename F>
+		void material_edit(F fn)
+		{
+			std::string tmp = static_cast<std::string>(*this);
+			fn(tmp);
+			assign_from(tmp);
+		}
+
+		AppendBuffer buf_;
+	};
+
+	[[nodiscard]] const std::vector<Line> &Rows() const
 	{
 		return rows_;
 	}
 
 
-	[[nodiscard]] std::vector<std::string> &Rows()
+	[[nodiscard]] std::vector<Line> &Rows()
 	{
 		return rows_;
 	}
@@ -154,7 +272,7 @@ private:
 	std::size_t rx_      = 0; // render x (tabs expanded)
 	std::size_t nrows_   = 0; // number of rows
 	std::size_t rowoffs_ = 0, coloffs_ = 0; // viewport offsets
-	std::vector<std::string> rows_; // buffer rows (without trailing newlines)
+	std::vector<Line> rows_; // buffer rows (without trailing newlines)
 	std::string filename_;
 	bool is_file_backed_   = false;
 	bool dirty_            = false;

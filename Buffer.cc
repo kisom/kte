@@ -20,21 +20,21 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 {
 	// If the file doesn't exist, initialize an empty, non-file-backed buffer
 	// with the provided filename. Do not touch the filesystem until Save/SaveAs.
-	if (!std::filesystem::exists(path)) {
-		rows_.clear();
-		nrows_          = 0;
-		filename_       = path;
-		is_file_backed_ = false;
-		dirty_          = false;
+ if (!std::filesystem::exists(path)) {
+        rows_.clear();
+        nrows_          = 0;
+        filename_       = path;
+        is_file_backed_ = false;
+        dirty_          = false;
 
-		// Reset cursor/viewport state
-		curx_      = cury_    = rx_ = 0;
-		rowoffs_   = coloffs_ = 0;
-		mark_set_  = false;
-		mark_curx_ = mark_cury_ = 0;
+        // Reset cursor/viewport state
+        curx_      = cury_    = rx_ = 0;
+        rowoffs_   = coloffs_ = 0;
+        mark_set_  = false;
+        mark_curx_ = mark_cury_ = 0;
 
-		return true;
-	}
+        return true;
+    }
 
 	std::ifstream in(path, std::ios::in | std::ios::binary);
 	if (!in) {
@@ -42,19 +42,19 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		return false;
 	}
 
-	rows_.clear();
-	std::string line;
-	while (std::getline(in, line)) {
-		// std::getline strips the '\n', keep raw line
-		if (!line.empty() && !in.good()) {
-			// fallthrough
-		}
-		// Handle potential Windows CRLF: strip trailing '\r'
-		if (!line.empty() && line.back() == '\r') {
-			line.pop_back();
-		}
-		rows_.push_back(line);
-	}
+ rows_.clear();
+ std::string line;
+ while (std::getline(in, line)) {
+     // std::getline strips the '\n', keep raw line
+     if (!line.empty() && !in.good()) {
+         // fallthrough
+     }
+     // Handle potential Windows CRLF: strip trailing '\r'
+     if (!line.empty() && line.back() == '\r') {
+         line.pop_back();
+     }
+     rows_.emplace_back(line);
+ }
 
 	// If file ends with a trailing newline, getline will have produced an empty
 	// last line already. If the file is empty and no lines were read, keep rows_ empty.
@@ -86,12 +86,14 @@ Buffer::Save(std::string &err) const
 		err = "Failed to open for write: " + filename_;
 		return false;
 	}
-	for (std::size_t i = 0; i < rows_.size(); ++i) {
-		out.write(rows_[i].data(), static_cast<std::streamsize>(rows_[i].size()));
-		if (i + 1 < rows_.size()) {
-			out.put('\n');
-		}
-	}
+ for (std::size_t i = 0; i < rows_.size(); ++i) {
+        const char *d = rows_[i].Data();
+        std::size_t n = rows_[i].Size();
+        if (d && n) out.write(d, static_cast<std::streamsize>(n));
+        if (i + 1 < rows_.size()) {
+            out.put('\n');
+        }
+    }
 	if (!out.good()) {
 		err = "Write error";
 		return false;
@@ -111,12 +113,14 @@ Buffer::SaveAs(const std::string &path, std::string &err)
 		err = "Failed to open for write: " + path;
 		return false;
 	}
-	for (std::size_t i = 0; i < rows_.size(); ++i) {
-		out.write(rows_[i].data(), static_cast<std::streamsize>(rows_[i].size()));
-		if (i + 1 < rows_.size()) {
-			out.put('\n');
-		}
-	}
+ for (std::size_t i = 0; i < rows_.size(); ++i) {
+        const char *d = rows_[i].Data();
+        std::size_t n = rows_[i].Size();
+        if (d && n) out.write(d, static_cast<std::streamsize>(n));
+        if (i + 1 < rows_.size()) {
+            out.put('\n');
+        }
+    }
 	if (!out.good()) {
 		err = "Write error";
 		return false;
