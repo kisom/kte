@@ -2,6 +2,9 @@
 
 #include <ncurses.h>
 #include <cstdio>
+#include <string>
+#include <algorithm>
+#include <filesystem>
 
 #include "Editor.h"
 #include "Buffer.h"
@@ -23,8 +26,8 @@ TerminalRenderer::Draw(Editor &ed)
 	int rows, cols;
 	getmaxyx(stdscr, rows, cols);
 
-	// Clear screen
-	erase();
+ // Clear screen
+ erase();
 
 	const Buffer *buf = ed.CurrentBuffer();
 	int content_rows  = rows - 1; // last line is status
@@ -140,44 +143,99 @@ TerminalRenderer::Draw(Editor &ed)
 		}
 	} else {
 		mvaddstr(0, 0, "[no buffer]");
-	}
+ }
 
-	// Status line (inverse)
-	move(rows - 1, 0);
-	attron(A_REVERSE);
-	char status[1024];
-	const char *fname = (buf && buf->IsFileBacked()) ? buf->Filename().c_str() : "(new)";
-	int dirty         = (buf && buf->Dirty()) ? 1 : 0;
- // New compact status: "kte v<version> | <filename>* | row:col [mk row:col]"
- int row1 = 0, col1 = 0;
- int mrow1 = 0, mcol1 = 0;
- int have_mark = 0;
- if (buf) {
-     row1 = static_cast<int>(buf->Cury()) + 1;
-     col1 = static_cast<int>(buf->Curx()) + 1;
-     if (buf->MarkSet()) {
-         have_mark = 1;
-         mrow1 = static_cast<int>(buf->MarkCury()) + 1;
-         mcol1 = static_cast<int>(buf->MarkCurx()) + 1;
+ // Status line (inverse) — left: app/version/buffer/dirty, middle: message, right: cursor/mark
+ move(rows - 1, 0);
+ attron(A_REVERSE);
+
+ // Fill the status line with spaces first
+ for (int i = 0; i < cols; ++i) addch(' ');
+
+ // Build left segment
+ std::string left;
+ {
+     const char *app = "kte";
+     left.reserve(256);
+     left += app;
+     left += " ";
+     left += KTE_VERSION_STR; // already includes leading 'v'
+     const Buffer *b = buf;
+     std::string fname;
+     if (b) {
+         fname = b->Filename();
+     }
+     if (!fname.empty()) {
+         try {
+             fname = std::filesystem::path(fname).filename().string();
+         } catch (...) {
+             // keep original on any error
+         }
+     } else {
+         fname = "[no name]";
+     }
+     left += "  ";
+     left += fname;
+     if (b && b->Dirty())
+         left += " *";
+ }
+
+ // Build right segment (cursor and mark)
+ std::string right;
+ {
+     int row1 = 0, col1 = 0;
+     int mrow1 = 0, mcol1 = 0;
+     bool have_mark = false;
+     if (buf) {
+         row1 = static_cast<int>(buf->Cury()) + 1;
+         col1 = static_cast<int>(buf->Curx()) + 1;
+         if (buf->MarkSet()) {
+             have_mark = true;
+             mrow1 = static_cast<int>(buf->MarkCury()) + 1;
+             mcol1 = static_cast<int>(buf->MarkCurx()) + 1;
+         }
+     }
+     char rbuf[128];
+     if (have_mark)
+         std::snprintf(rbuf, sizeof(rbuf), "%d,%d | M: %d,%d", row1, col1, mrow1, mcol1);
+     else
+         std::snprintf(rbuf, sizeof(rbuf), "%d,%d | M: not set", row1, col1);
+     right = rbuf;
+ }
+
+ // Compute placements with truncation rules: prioritize left and right; middle gets remaining
+ int rlen = static_cast<int>(right.size());
+ if (rlen > cols) {
+     // Hard clip right if too long
+     right = right.substr(static_cast<std::size_t>(rlen - cols), static_cast<std::size_t>(cols));
+     rlen  = cols;
+ }
+ int left_max = std::max(0, cols - rlen - 1); // leave at least 1 space between left and right areas
+ int llen     = static_cast<int>(left.size());
+ if (llen > left_max) llen = left_max;
+
+ // Draw left
+ if (llen > 0) mvaddnstr(rows - 1, 0, left.c_str(), llen);
+
+ // Draw right, flush to end
+ int rstart = std::max(0, cols - rlen);
+ if (rlen > 0) mvaddnstr(rows - 1, rstart, right.c_str(), rlen);
+
+ // Middle message
+ const std::string &msg = ed.Status();
+ if (!msg.empty()) {
+     int mid_start = llen + 1;     // one space after left
+     int mid_end   = rstart - 1;   // one space before right
+     if (mid_end >= mid_start) {
+         int avail   = mid_end - mid_start + 1;
+         int mlen    = static_cast<int>(msg.size());
+         int mdraw   = std::min(avail, mlen);
+         int mstart  = mid_start + std::max(0, (avail - mdraw) / 2); // center within middle area
+         mvaddnstr(rows - 1, mstart, msg.c_str(), mdraw);
      }
  }
- if (have_mark) {
-     snprintf(status, sizeof(status), " kte %s | %s%s | %d:%d | mk %d:%d ",
-              KTE_VERSION_STR,
-              fname,
-              dirty ? "*" : "",
-              row1, col1,
-              mrow1, mcol1);
- } else {
-     snprintf(status, sizeof(status), " kte %s | %s%s | %d:%d ",
-              KTE_VERSION_STR,
-              fname,
-              dirty ? "*" : "",
-              row1, col1);
- }
-	addnstr(status, cols);
-	clrtoeol();
-	attroff(A_REVERSE);
 
-	refresh();
+ attroff(A_REVERSE);
+
+    refresh();
 }

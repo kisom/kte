@@ -7,11 +7,12 @@
 static bool
 map_key(const SDL_Keycode key, const SDL_Keymod mod, bool &k_prefix, MappedInput &out)
 {
-	// Ctrl handling
-	const bool is_ctrl = (mod & KMOD_CTRL) != 0;
+    // Ctrl handling
+    const bool is_ctrl = (mod & KMOD_CTRL) != 0;
+    const bool is_alt  = (mod & (KMOD_ALT | KMOD_LALT | KMOD_RALT)) != 0;
 
-	// Movement and basic keys
-	switch (key) {
+ // Movement and basic keys
+ switch (key) {
 	case SDLK_LEFT:
 		out = {true, CommandId::MoveLeft, "", 0};
 		return true;
@@ -27,12 +28,18 @@ map_key(const SDL_Keycode key, const SDL_Keymod mod, bool &k_prefix, MappedInput
 	case SDLK_HOME:
 		out = {true, CommandId::MoveHome, "", 0};
 		return true;
-	case SDLK_END:
-		out = {true, CommandId::MoveEnd, "", 0};
-		return true;
-	case SDLK_DELETE:
-		out = {true, CommandId::DeleteChar, "", 0};
-		return true;
+ case SDLK_END:
+            out = {true, CommandId::MoveEnd, "", 0};
+            return true;
+        case SDLK_PAGEUP:
+            out = {true, CommandId::PageUp, "", 0};
+            return true;
+        case SDLK_PAGEDOWN:
+            out = {true, CommandId::PageDown, "", 0};
+            return true;
+        case SDLK_DELETE:
+            out = {true, CommandId::DeleteChar, "", 0};
+            return true;
 	case SDLK_BACKSPACE:
 		out = {true, CommandId::Backspace, "", 0};
 		return true;
@@ -48,33 +55,53 @@ map_key(const SDL_Keycode key, const SDL_Keymod mod, bool &k_prefix, MappedInput
 		break;
 	}
 
-	if (is_ctrl) {
-		switch (key) {
-		case SDLK_k:
-		case SDLK_KP_EQUALS: // treat Ctrl-K
-			k_prefix = true;
-			out = {true, CommandId::KPrefix, "", 0};
-			return true;
-		case SDLK_g:
-			k_prefix = false;
-			out = {true, CommandId::Refresh, "", 0};
-			return true;
-		case SDLK_l:
-			out = {true, CommandId::Refresh, "", 0};
-			return true;
-		case SDLK_s:
-			out = {true, CommandId::FindStart, "", 0};
-			return true;
-		case SDLK_q:
-			out = {true, CommandId::Quit, "", 0};
-			return true;
-		case SDLK_x:
-			out = {true, CommandId::SaveAndQuit, "", 0};
-			return true;
-		default:
-			break;
-		}
-	}
+ if (is_ctrl) {
+        switch (key) {
+        case SDLK_k:
+        case SDLK_KP_EQUALS: // treat Ctrl-K
+            k_prefix = true;
+            out = {true, CommandId::KPrefix, "", 0};
+            return true;
+        case SDLK_a:
+            out = {true, CommandId::MoveHome, "", 0};
+            return true;
+        case SDLK_e:
+            out = {true, CommandId::MoveEnd, "", 0};
+            return true;
+        case SDLK_g:
+            k_prefix = false;
+            out = {true, CommandId::Refresh, "", 0};
+            return true;
+        case SDLK_l:
+            out = {true, CommandId::Refresh, "", 0};
+            return true;
+        case SDLK_s:
+            out = {true, CommandId::FindStart, "", 0};
+            return true;
+        case SDLK_q:
+            out = {true, CommandId::Quit, "", 0};
+            return true;
+        case SDLK_x:
+            out = {true, CommandId::SaveAndQuit, "", 0};
+            return true;
+        default:
+            break;
+        }
+    }
+
+    // Alt/Meta bindings (ESC f/b equivalent)
+    if (is_alt) {
+        switch (key) {
+        case SDLK_b:
+            out = {true, CommandId::WordPrev, "", 0};
+            return true;
+        case SDLK_f:
+            out = {true, CommandId::WordNext, "", 0};
+            return true;
+        default:
+            break;
+        }
+    }
 
 	if (k_prefix) {
 		k_prefix = false;

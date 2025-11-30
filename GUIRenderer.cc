@@ -6,6 +6,8 @@
 
 #include <imgui.h>
 #include <cstdio>
+#include <string>
+#include <filesystem>
 
 // Version string expected to be provided by build system as KTE_VERSION_STR
 #ifndef KTE_VERSION_STR
@@ -151,47 +153,98 @@ GUIRenderer::Draw(Editor &ed)
 				ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
 			}
 		}
-		ImGui::EndChild();
+        ImGui::EndChild();
 
-		// Status bar spanning full width
-		ImGui::Separator();
-		// Build status string: "kge v<version> | <filename>*"
-		const char *fname = (buf->IsFileBacked()) ? buf->Filename().c_str() : "(new)";
-		bool dirty        = buf->Dirty();
-		int row1          = static_cast<int>(buf->Cury()) + 1;
-		int col1          = static_cast<int>(buf->Curx()) + 1;
-		bool have_mark    = buf->MarkSet();
-		int mrow1         = have_mark ? static_cast<int>(buf->MarkCury()) + 1 : 0;
-		int mcol1         = have_mark ? static_cast<int>(buf->MarkCurx()) + 1 : 0;
-		char left[512];
-		if (have_mark) {
-			std::snprintf(left, sizeof(left), " kge %s | %s%s | %d:%d | mk %d:%d ",
-			              KTE_VERSION_STR, fname, dirty ? "*" : "", row1, col1, mrow1, mcol1);
-		} else {
-			std::snprintf(left, sizeof(left), " kge %s | %s%s | %d:%d ",
-			              KTE_VERSION_STR, fname, dirty ? "*" : "", row1, col1);
-		}
+        // Status bar spanning full width
+        ImGui::Separator();
 
-		// Compute full content width and draw a filled background rectangle
-		ImVec2 win_pos = ImGui::GetWindowPos();
-		ImVec2 cr_min  = ImGui::GetWindowContentRegionMin();
-		ImVec2 cr_max  = ImGui::GetWindowContentRegionMax();
-		float x0       = win_pos.x + cr_min.x;
-		float x1       = win_pos.x + cr_max.x;
-		ImVec2 cursor  = ImGui::GetCursorScreenPos();
-		float bar_h    = ImGui::GetFrameHeight();
-		ImVec2 p0(x0, cursor.y);
-		ImVec2 p1(x1, cursor.y + bar_h);
-		ImU32 bg_col = ImGui::GetColorU32(ImGuiCol_HeaderActive);
-		ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, bg_col);
-		// Place status text within the bar
-		// Draw status text (left-aligned)
-		ImVec2 left_sz = ImGui::CalcTextSize(left);
-		ImGui::SetCursorScreenPos(ImVec2(p0.x + 6.f, p0.y + (bar_h - left_sz.y) * 0.5f));
-		ImGui::TextUnformatted(left);
-		// Advance cursor to after the bar to keep layout consistent
-		ImGui::Dummy(ImVec2(x1 - x0, bar_h));
-	}
+        // Build three segments: left (app/version/buffer/dirty), middle (message), right (cursor/mark)
+        // Compute full content width and draw a filled background rectangle
+        ImVec2 win_pos = ImGui::GetWindowPos();
+        ImVec2 cr_min  = ImGui::GetWindowContentRegionMin();
+        ImVec2 cr_max  = ImGui::GetWindowContentRegionMax();
+        float x0       = win_pos.x + cr_min.x;
+        float x1       = win_pos.x + cr_max.x;
+        ImVec2 cursor  = ImGui::GetCursorScreenPos();
+        float bar_h    = ImGui::GetFrameHeight();
+        ImVec2 p0(x0, cursor.y);
+        ImVec2 p1(x1, cursor.y + bar_h);
+        ImU32 bg_col = ImGui::GetColorU32(ImGuiCol_HeaderActive);
+        ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, bg_col);
+        // Build left text
+        std::string left;
+        left.reserve(256);
+        left += "kge"; // GUI app name
+        left += " ";
+        left += KTE_VERSION_STR;
+        std::string fname = buf->Filename();
+        if (!fname.empty()) {
+            try { fname = std::filesystem::path(fname).filename().string(); } catch (...) {}
+        } else {
+            fname = "[no name]";
+        }
+        left += "  ";
+        left += fname;
+        if (buf->Dirty()) left += " *";
+
+        // Build right text (cursor/mark)
+        int row1 = static_cast<int>(buf->Cury()) + 1;
+        int col1 = static_cast<int>(buf->Curx()) + 1;
+        bool have_mark = buf->MarkSet();
+        int mrow1 = have_mark ? static_cast<int>(buf->MarkCury()) + 1 : 0;
+        int mcol1 = have_mark ? static_cast<int>(buf->MarkCurx()) + 1 : 0;
+        char rbuf[128];
+        if (have_mark) std::snprintf(rbuf, sizeof(rbuf), "%d,%d | M: %d,%d", row1, col1, mrow1, mcol1);
+        else           std::snprintf(rbuf, sizeof(rbuf), "%d,%d | M: not set", row1, col1);
+        std::string right = rbuf;
+
+        // Middle message
+        const std::string &msg = ed.Status();
+
+        // Measurements
+        ImVec2 left_sz  = ImGui::CalcTextSize(left.c_str());
+        ImVec2 right_sz = ImGui::CalcTextSize(right.c_str());
+        float pad = 6.f;
+        float left_x  = p0.x + pad;
+        float right_x = p1.x - pad - right_sz.x;
+        if (right_x < left_x + left_sz.x + pad) {
+            // Not enough room; clip left to fit
+            float max_left = std::max(0.0f, right_x - left_x - pad);
+            if (max_left < left_sz.x && max_left > 10.0f) {
+                // Render a clipped left using a child region
+                ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - left_sz.y) * 0.5f));
+                ImGui::PushClipRect(ImVec2(left_x, p0.y), ImVec2(right_x - pad, p1.y), true);
+                ImGui::TextUnformatted(left.c_str());
+                ImGui::PopClipRect();
+            }
+        } else {
+            // Draw left normally
+            ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - left_sz.y) * 0.5f));
+            ImGui::TextUnformatted(left.c_str());
+        }
+
+        // Draw right
+        ImGui::SetCursorScreenPos(ImVec2(std::max(right_x, left_x), p0.y + (bar_h - right_sz.y) * 0.5f));
+        ImGui::TextUnformatted(right.c_str());
+
+        // Draw middle message centered in remaining space
+        if (!msg.empty()) {
+            float mid_left  = left_x + left_sz.x + pad;
+            float mid_right = std::max(right_x - pad, mid_left);
+            float mid_w     = std::max(0.0f, mid_right - mid_left);
+            if (mid_w > 1.0f) {
+                ImVec2 msg_sz = ImGui::CalcTextSize(msg.c_str());
+                float msg_x   = mid_left + std::max(0.0f, (mid_w - msg_sz.x) * 0.5f);
+                // Clip to middle region
+                ImGui::PushClipRect(ImVec2(mid_left, p0.y), ImVec2(mid_right, p1.y), true);
+                ImGui::SetCursorScreenPos(ImVec2(msg_x, p0.y + (bar_h - msg_sz.y) * 0.5f));
+                ImGui::TextUnformatted(msg.c_str());
+                ImGui::PopClipRect();
+            }
+        }
+        // Advance cursor to after the bar to keep layout consistent
+        ImGui::Dummy(ImVec2(x1 - x0, bar_h));
+    }
 
 	ImGui::End();
 	ImGui::PopStyleVar(3);
