@@ -35,6 +35,19 @@ map_key_to_command(const int ch,
 	case KEY_MOUSE: {
 		MEVENT ev{};
 		if (getmouse(&ev) == OK) {
+			// Mouse wheel → map to MoveUp/MoveDown one line per wheel notch
+#ifdef BUTTON4_PRESSED
+			if (ev.bstate & (BUTTON4_PRESSED | BUTTON4_RELEASED | BUTTON4_CLICKED)) {
+				out = {true, CommandId::MoveUp, "", 0};
+				return true;
+			}
+#endif
+#ifdef BUTTON5_PRESSED
+			if (ev.bstate & (BUTTON5_PRESSED | BUTTON5_RELEASED | BUTTON5_CLICKED)) {
+				out = {true, CommandId::MoveDown, "", 0};
+				return true;
+			}
+#endif
 			// React to left button click/press
 			if (ev.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED | BUTTON1_RELEASED)) {
 				char buf[64];

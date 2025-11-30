@@ -1,7 +1,12 @@
 #include <iostream>
+#include <memory>
 #include <string>
+#include <cctype>
 #include <unistd.h>
 #include <getopt.h>
+#include <signal.h>
+#include <cstdio>
+#include <sys/stat.h>
 
 #include "Editor.h"
 #include "Command.h"
@@ -26,6 +31,109 @@ PrintUsage(const char *prog)
 		<< "  -h, --help       Show this help and exit\n"
 		<< "  -V, --version    Show version and exit\n";
 }
+
+
+#if defined(KTE_BUILD_GUI)
+// Detach the process from the controlling terminal when running the GUI so the
+// launching terminal can be closed. This mirrors typical GUI app behavior on
+// POSIX systems.
+static void
+DetachFromTerminalIfGUI(bool use_gui)
+{
+#if defined(__APPLE__) || defined(__linux__) || defined(__unix__)
+	if (!use_gui)
+		return;
+
+	// Ignore SIGHUP so closing the terminal won't terminate us.
+	signal(SIGHUP, SIG_IGN);
+
+	// Helper: redirect stdio to /dev/null and optionally close extra FDs.
+	auto redirect_stdio_and_close = []() {
+		// Reset file mode creation mask and working directory to a safe default
+		umask(0);
+		chdir("/");
+
+		FILE *fnull_r = fopen("/dev/null", "r");
+		if (fnull_r) {
+			dup2(fileno(fnull_r), STDIN_FILENO);
+		}
+		FILE *fnull_w = fopen("/dev/null", "w");
+		if (fnull_w) {
+			dup2(fileno(fnull_w), STDOUT_FILENO);
+			dup2(fileno(fnull_w), STDERR_FILENO);
+		}
+
+		// Close any other inherited FDs to avoid keeping terminal/pty or pipes open
+		long max_fd = sysconf(_SC_OPEN_MAX);
+		if (max_fd < 0)
+			max_fd = 256; // conservative fallback
+		for (long fd = 3; fd < max_fd; ++fd) {
+			close(static_cast<int>(fd));
+		}
+	};
+
+#if defined(__APPLE__)
+	// macOS: daemon(3) is deprecated and treated as an error with -Werror.
+	// Use double-fork + setsid and redirect stdio to /dev/null.
+	pid_t pid = fork();
+	if (pid < 0) {
+		return;
+	}
+
+	if (pid > 0) {
+		_exit(0);
+	}
+
+	if (setsid() < 0) {
+		return;
+	}
+
+	pid_t pid2 = fork();
+	if (pid2 < 0) {
+		return;
+	}
+
+	if (pid2 > 0) {
+		_exit(0);
+	}
+
+	redirect_stdio_and_close();
+#else
+	// Prefer daemon(3) on non-Apple POSIX; fall back to manual detach if it fails.
+	if (daemon(0, 0) == 0) {
+		redirect_stdio_and_close();
+		return;
+	}
+
+	pid_t pid = fork();
+	if (pid < 0) {
+		return;
+	}
+
+	if (pid > 0) {
+		_exit(0);
+	}
+
+	if (setsid() < 0) {
+		// bogus check
+	}
+
+	pid_t pid2 = fork();
+	if (pid2 < 0) {
+		return;
+	}
+
+	if (pid2 > 0) {
+		_exit(0);
+	}
+
+	redirect_stdio_and_close();
+#endif
+#else
+	(void) use_gui;
+#endif
+}
+#endif
 
 
 int
@@ -104,18 +212,67 @@ main(int argc, const char *argv[])
 		use_gui = false;
 #endif
 	}
+	// If using GUI, detach from the controlling terminal so the terminal can be closed.
+	DetachFromTerminalIfGUI(use_gui);
 #endif
 
-	// Open files passed on the CLI; if none, create an empty buffer
+	// Open files passed on the CLI; support +N to jump to line N in the next file.
+	// If no files are provided, create an empty buffer.
 	if (optind < argc) {
+		std::size_t pending_line = 0; // 0 = no pending line
 		for (int i = optind; i < argc; ++i) {
+			const char *arg = argv[i];
+			if (arg && arg[0] == '+') {
+				// Parse +<digits>
+				const char *p = arg + 1;
+				if (*p != '\0') {
+					bool all_digits = true;
+					for (const char *q = p; *q; ++q) {
+						if (!std::isdigit(static_cast<unsigned char>(*q))) {
+							all_digits = false;
+							break;
+						}
+					}
+					if (all_digits) {
+						// Clamp to >=1 later; 0 disables.
+						try {
+							unsigned long v = std::stoul(p);
+							pending_line    = static_cast<std::size_t>(v);
+						} catch (...) {
+							// Ignore malformed huge numbers
+							pending_line = 0;
+						}
+						continue; // look for the next file arg
+					}
+				}
+				// Fall through: not a +number, treat as filename starting with '+'
+			}
+
 			std::string err;
-			const std::string path = argv[i];
+			const std::string path = arg;
 			if (!editor.OpenFile(path, err)) {
 				editor.SetStatus("open: " + err);
 				std::cerr << "kte: " << err << "\n";
+			} else if (pending_line > 0) {
+				// Apply pending +N to the just-opened (current) buffer
+				if (Buffer *b = editor.CurrentBuffer()) {
+					std::size_t nrows = b->Nrows();
+					std::size_t line  = pending_line > 0 ? pending_line - 1 : 0;
+					// 1-based to 0-based
+					if (nrows > 0) {
+						if (line >= nrows)
+							line = nrows - 1;
+					} else {
+						line = 0;
+					}
+					b->SetCursor(0, line);
+					// Do not force viewport offsets here; the frontend/renderer
+					// will establish dimensions and normalize visibility on first draw.
+				}
+				pending_line = 0; // consumed
 			}
 		}
+		// If we ended with a pending +N but no subsequent file, ignore it.
 	} else {
 		// Create a single empty buffer
 		editor.AddBuffer(Buffer());
@@ -129,11 +286,11 @@ main(int argc, const char *argv[])
 	std::unique_ptr<Frontend> fe;
 #if defined(KTE_BUILD_GUI)
 	if (use_gui) {
-		fe.reset(new GUIFrontend());
+		fe = std::make_unique<GUIFrontend>();
 	} else
 #endif
 	{
-		fe.reset(new TerminalFrontend());
+		fe = std::make_unique<TerminalFrontend>();
 	}
 
 	if (!fe->Init(editor)) {

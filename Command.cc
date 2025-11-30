@@ -646,6 +646,16 @@ cmd_open_file_start(CommandContext &ctx)
 }
 
 
+static bool
+cmd_jump_to_line_start(CommandContext &ctx)
+{
+	// Start a prompt to read a 1-based line number and jump there (clamped)
+	ctx.editor.StartPrompt(Editor::PromptKind::GotoLine, "Goto", "");
+	ctx.editor.SetStatus("Goto line: ");
+	return true;
+}
+
+
 // --- Buffers: switch/next/prev/close ---
 static bool
 cmd_buffer_switch_start(CommandContext &ctx)
@@ -990,6 +1000,37 @@ cmd_newline(CommandContext &ctx)
 			} else {
 				ctx.editor.SetStatus("Nothing to confirm");
 			}
+		} else if (kind == Editor::PromptKind::GotoLine) {
+			Buffer *buf = ctx.editor.CurrentBuffer();
+			if (!buf) {
+				ctx.editor.SetStatus("No buffer");
+				return true;
+			}
+			std::size_t nrows = buf->Nrows();
+			if (nrows == 0) {
+				buf->SetCursor(0, 0);
+				ensure_cursor_visible(ctx.editor, *buf);
+				ctx.editor.SetStatus("Empty buffer");
+				return true;
+			}
+			// Parse 1-based line number; on failure, keep cursor and show status
+			std::size_t line1 = 0;
+			try {
+				if (!value.empty())
+					line1 = static_cast<std::size_t>(std::stoull(value));
+			} catch (...) {
+				line1 = 0;
+			}
+			if (line1 == 0) {
+				ctx.editor.SetStatus("Goto canceled (invalid line)");
+				return true;
+			}
+			std::size_t y = line1 - 1; // convert to 0-based
+			if (y >= nrows)
+				y = nrows - 1; // clamp to last line
+			buf->SetCursor(0, y);
+			ensure_cursor_visible(ctx.editor, *buf);
+			ctx.editor.SetStatus("Goto line " + std::to_string(line1));
 		}
 		return true;
 	}
@@ -2371,6 +2412,10 @@ InstallDefaultCommands()
 	});
 	CommandRegistry::Register({
 		CommandId::MoveCursorTo, "move-cursor-to", "Move cursor to y:x", cmd_move_cursor_to
+	});
+	// Direct navigation by line number
+	CommandRegistry::Register({
+		CommandId::JumpToLine, "goto-line", "Prompt for line and jump", cmd_jump_to_line_start
 	});
 	// Undo/Redo
 	CommandRegistry::Register({CommandId::Undo, "undo", "Undo last edit", cmd_undo});

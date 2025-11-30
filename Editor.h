@@ -302,7 +302,7 @@ public:
 
 
 	// --- Generic Prompt subsystem (for search, open-file, save-as, etc.) ---
-	enum class PromptKind { None = 0, Search, OpenFile, SaveAs, Confirm, BufferSwitch };
+	enum class PromptKind { None = 0, Search, OpenFile, SaveAs, Confirm, BufferSwitch, GotoLine };
 
 
 	void StartPrompt(PromptKind kind, const std::string &label, const std::string &initial)

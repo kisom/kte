@@ -33,8 +33,17 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Remove `packaging.cmake`, deprecate `test_undo` setup, and add new testing infrastructure.&#10;&#10;- Delete `packaging.cmake` to streamline build system.&#10;- Deprecate `test_undo` in CMake setup; condition builds on `BUILD_TESTS`.&#10;- Introduce `TestFrontend`, `TestRenderer`, and `TestInputHandler` for structured testing.&#10;- Update `GUIInputHandler` and `Command` for enhanced buffer save handling and overwrite confirmation.&#10;- Enhance kill ring operations and new prompt workflows in `Editor`.">
+    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Add man pages for `kge` and `kte` with installation targets in CMake.&#10;&#10;- Introduce `docs/kge.1` and `docs/kte.1` man pages covering usage, options, keybindings, and examples.&#10;- Update `CMakeLists.txt` to install man pages under `${CMAKE_INSTALL_MANDIR}/man1`.&#10;- Ensure `kge` man page installation is conditional on GUI being built.">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Command.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Command.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Command.h" beforeDir="false" afterPath="$PROJECT_DIR$/Command.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Editor.h" beforeDir="false" afterPath="$PROJECT_DIR$/Editor.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIInputHandler.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIInputHandler.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIRenderer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIRenderer.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KKeymap.cc" beforeDir="false" afterPath="$PROJECT_DIR$/KKeymap.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TerminalInputHandler.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalInputHandler.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.cc" beforeDir="false" afterPath="$PROJECT_DIR$/main.cc" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -128,7 +137,7 @@
       <recent name="$PROJECT_DIR$/docs" />
     </key>
   </component>
-  <component name="RunManager" selected="CMake Application.imgui">
+  <component name="RunManager" selected="CMake Application.kge">
     <configuration default="true" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
@@ -162,7 +171,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1764457173148</updated>
-      <workItem from="1764457174208" duration="42867000" />
+      <workItem from="1764457174208" duration="46874000" />
     </task>
     <task id="LOCAL-00001" summary="Add undo/redo infrastructure and buffer management additions.">
       <option name="closed" value="true" />
@@ -220,7 +229,15 @@
       <option name="project" value="LOCAL" />
       <updated>1764501532446</updated>
     </task>
-    <option name="localTasksCounter" value="8" />
+    <task id="LOCAL-00008" summary="Add man pages for `kge` and `kte` with installation targets in CMake.&#10;&#10;- Introduce `docs/kge.1` and `docs/kte.1` man pages covering usage, options, keybindings, and examples.&#10;- Update `CMakeLists.txt` to install man pages under `${CMAKE_INSTALL_MANDIR}/man1`.&#10;- Ensure `kge` man page installation is conditional on GUI being built.">
+      <option name="closed" value="true" />
+      <created>1764502480274</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1764502480274</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -241,7 +258,8 @@
     <MESSAGE value="Add non-linear undo/redo design documentation and improve `UndoSystem` with backspace batching and GUI integration fixes." />
     <MESSAGE value="Add `TestFrontend` documentation and `UndoSystem` buffer reference update.&#10;&#10;- Document `TestFrontend` for programmatic testing, including examples and usage details.&#10;- Add `UpdateBufferReference` to `UndoSystem` to support updating buffer associations." />
     <MESSAGE value="Remove `packaging.cmake`, deprecate `test_undo` setup, and add new testing infrastructure.&#10;&#10;- Delete `packaging.cmake` to streamline build system.&#10;- Deprecate `test_undo` in CMake setup; condition builds on `BUILD_TESTS`.&#10;- Introduce `TestFrontend`, `TestRenderer`, and `TestInputHandler` for structured testing.&#10;- Update `GUIInputHandler` and `Command` for enhanced buffer save handling and overwrite confirmation.&#10;- Enhance kill ring operations and new prompt workflows in `Editor`." />
-    <option name="LAST_COMMIT_MESSAGE" value="Remove `packaging.cmake`, deprecate `test_undo` setup, and add new testing infrastructure.&#10;&#10;- Delete `packaging.cmake` to streamline build system.&#10;- Deprecate `test_undo` in CMake setup; condition builds on `BUILD_TESTS`.&#10;- Introduce `TestFrontend`, `TestRenderer`, and `TestInputHandler` for structured testing.&#10;- Update `GUIInputHandler` and `Command` for enhanced buffer save handling and overwrite confirmation.&#10;- Enhance kill ring operations and new prompt workflows in `Editor`." />
+    <MESSAGE value="Add man pages for `kge` and `kte` with installation targets in CMake.&#10;&#10;- Introduce `docs/kge.1` and `docs/kte.1` man pages covering usage, options, keybindings, and examples.&#10;- Update `CMakeLists.txt` to install man pages under `${CMAKE_INSTALL_MANDIR}/man1`.&#10;- Ensure `kge` man page installation is conditional on GUI being built." />
+    <option name="LAST_COMMIT_MESSAGE" value="Add man pages for `kge` and `kte` with installation targets in CMake.&#10;&#10;- Introduce `docs/kge.1` and `docs/kte.1` man pages covering usage, options, keybindings, and examples.&#10;- Update `CMakeLists.txt` to install man pages under `${CMAKE_INSTALL_MANDIR}/man1`.&#10;- Ensure `kge` man page installation is conditional on GUI being built." />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

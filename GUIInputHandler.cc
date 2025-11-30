@@ -279,6 +279,24 @@ GUIInputHandler::ProcessSDLEvent(const SDL_Event &e)
 	MappedInput mi;
 	bool produced = false;
 	switch (e.type) {
+	case SDL_MOUSEWHEEL: {
+		// Map vertical wheel to line-wise cursor movement (MoveUp/MoveDown)
+		int dy = e.wheel.y;
+#ifdef SDL_MOUSEWHEEL_FLIPPED
+		if (e.wheel.direction == SDL_MOUSEWHEEL_FLIPPED)
+			dy = -dy;
+#endif
+		if (dy != 0) {
+			int repeat   = dy > 0 ? dy : -dy;
+			CommandId id = dy > 0 ? CommandId::MoveUp : CommandId::MoveDown;
+			std::lock_guard<std::mutex> lk(mu_);
+			for (int i = 0; i < repeat; ++i) {
+				q_.push(MappedInput{true, id, std::string(), 0});
+			}
+			return true; // consumed
+		}
+		return false;
+	}
 	case SDL_KEYDOWN: {
 		// Remember state before mapping; used for TEXTINPUT suppression heuristics
 		const bool was_k_prefix = k_prefix_;

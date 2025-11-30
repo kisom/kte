@@ -4,7 +4,7 @@ project(kte)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 17)
-set(KTE_VERSION "0.1.0")
+set(KTE_VERSION "1.0.0")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
@@ -167,11 +167,11 @@ if (${BUILD_GUI})
         install(TARGETS kge
                 BUNDLE DESTINATION .
         )
-    else()
+    else ()
         install(TARGETS kge
                 RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         )
-    endif()
+    endif ()
     # Install kge man page only when GUI is built
     install(FILES docs/kge.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 endif ()

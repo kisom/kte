@@ -86,6 +86,9 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 	case 'a':
 		out = CommandId::MarkAllAndJumpEnd;
 		return true; // C-k a (mark all and jump to end)
+	case 'g':
+		out = CommandId::JumpToLine;
+		return true; // C-k g (goto line)
 	default:
 		break;
 	}

@@ -72,6 +72,8 @@ enum class CommandId {
 	// Buffer operations
 	ReloadBuffer, // reload buffer from disk (C-k l)
 	MarkAllAndJumpEnd, // set mark at beginning, jump to end (C-k a)
+	// Direct navigation by line number
+	JumpToLine, // prompt for line and jump (C-k g)
 	// Meta
 	UnknownKCommand, // arg: single character that was not recognized after C-k
 };
