@@ -23,8 +23,6 @@
   <component name="CMakeRunConfigurationManager">
     <generated>
       <config projectName="kte" targetName="kte" />
-      <config projectName="kte" targetName="imgui" />
-      <config projectName="kte" targetName="kge" />
     </generated>
   </component>
   <component name="CMakeSettings" AUTO_RELOAD="true">
@@ -33,9 +31,27 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Refactor `Buffer` to use `Line` abstraction and improve handling of row operations.&#10;&#10;This uses either a GapBuffer or PieceTable depending on the compilation.">
+    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Handle end-of-file newline semantics and improve scroll alignment logic.">
+      <change afterPath="$PROJECT_DIR$/UndoSystem.cc" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/UndoSystem.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/kte.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/kte.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Buffer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Buffer.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Buffer.h" beforeDir="false" afterPath="$PROJECT_DIR$/Buffer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Command.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Command.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Command.h" beforeDir="false" afterPath="$PROJECT_DIR$/Command.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIRenderer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIRenderer.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KKeymap.cc" beforeDir="false" afterPath="$PROJECT_DIR$/KKeymap.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/UndoNode.cc" beforeDir="false" afterPath="$PROJECT_DIR$/UndoNode.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/UndoNode.h" beforeDir="false" afterPath="$PROJECT_DIR$/UndoNode.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/UndoTree.cc" beforeDir="false" afterPath="$PROJECT_DIR$/UndoTree.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/UndoTree.h" beforeDir="false" afterPath="$PROJECT_DIR$/UndoTree.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cmake/packaging.cmake" beforeDir="false" afterPath="$PROJECT_DIR$/cmake/packaging.cmake" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/b612_mono.h" beforeDir="false" afterPath="$PROJECT_DIR$/fonts/b612_mono.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/fonts/brassmono.h" beforeDir="false" afterPath="$PROJECT_DIR$/fonts/brassmono.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.cc" beforeDir="false" afterPath="$PROJECT_DIR$/main.cc" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -103,23 +119,18 @@
     "nodejs_package_manager_path": "npm",
     "onboarding.tips.debug.path": "/Users/kyle/src/kte/main.cpp",
     "rearrange.code.on.save": "true",
-    "settings.editor.selected.configurable": "CMakeSettings",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable",
     "to.speed.mode.migration.done": "true",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
-  <component name="RunManager" selected="CMake Application.kge">
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/docs" />
+    </key>
+  </component>
+  <component name="RunManager">
     <configuration default="true" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
-      <method v="2">
-        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
-      </method>
-    </configuration>
-    <configuration name="imgui" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="kte" TARGET_NAME="imgui" CONFIG_NAME="Debug">
-      <method v="2">
-        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
-      </method>
-    </configuration>
-    <configuration name="kge" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="kte" TARGET_NAME="kge" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="kte" RUN_TARGET_NAME="kge">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
@@ -129,11 +140,6 @@
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
-    <list>
-      <item itemvalue="CMake Application.imgui" />
-      <item itemvalue="CMake Application.kge" />
-      <item itemvalue="CMake Application.kte" />
-    </list>
   </component>
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
@@ -142,7 +148,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1764457173148</updated>
-      <workItem from="1764457174208" duration="27972000" />
+      <workItem from="1764457174208" duration="31043000" />
     </task>
     <task id="LOCAL-00001" summary="Add undo/redo infrastructure and buffer management additions.">
       <option name="closed" value="true" />
@@ -160,7 +166,15 @@
       <option name="project" value="LOCAL" />
       <updated>1764486011231</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="Handle end-of-file newline semantics and improve scroll alignment logic.">
+      <option name="closed" value="true" />
+      <created>1764486876984</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1764486876984</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -175,7 +189,8 @@
     <MESSAGE value="Refactoring" />
     <MESSAGE value="Add undo/redo infrastructure and buffer management additions." />
     <MESSAGE value="Refactor `Buffer` to use `Line` abstraction and improve handling of row operations.&#10;&#10;This uses either a GapBuffer or PieceTable depending on the compilation." />
-    <option name="LAST_COMMIT_MESSAGE" value="Refactor `Buffer` to use `Line` abstraction and improve handling of row operations.&#10;&#10;This uses either a GapBuffer or PieceTable depending on the compilation." />
+    <MESSAGE value="Handle end-of-file newline semantics and improve scroll alignment logic." />
+    <option name="LAST_COMMIT_MESSAGE" value="Handle end-of-file newline semantics and improve scroll alignment logic." />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

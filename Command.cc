@@ -3,6 +3,7 @@
 #include "Command.h"
 #include "Editor.h"
 #include "Buffer.h"
+#include "UndoSystem.h"
 // Note: Command layer must remain UI-agnostic. Do not include frontend/IO headers here.
 
 
@@ -424,6 +425,8 @@ cmd_save(CommandContext &ctx)
 	}
 	buf->SetDirty(false);
 	ctx.editor.SetStatus("Saved " + buf->Filename());
+	if (auto *u = buf->Undo())
+		u->mark_saved();
 	return true;
 }
 
@@ -446,6 +449,8 @@ cmd_save_as(CommandContext &ctx)
 		return false;
 	}
 	ctx.editor.SetStatus("Saved as " + ctx.arg);
+	if (auto *u = buf->Undo())
+		u->mark_saved();
 	return true;
 }
 
@@ -691,8 +696,10 @@ cmd_buffer_close(CommandContext &ctx)
 	if (ctx.editor.BufferCount() == 0)
 		return true;
 	std::size_t idx  = ctx.editor.CurrentBufferIndex();
-	const Buffer *b  = ctx.editor.CurrentBuffer();
+	Buffer *b        = ctx.editor.CurrentBuffer();
 	std::string name = b ? buffer_display_name(*b) : std::string("");
+	if (b && b->Undo())
+		b->Undo()->discard_pending();
 	ctx.editor.CloseBuffer(idx);
 	if (ctx.editor.BufferCount() == 0) {
 		// Open a fresh empty buffer
@@ -715,6 +722,11 @@ cmd_insert_text(CommandContext &ctx)
 	if (!buf) {
 		ctx.editor.SetStatus("No buffer to edit");
 		return false;
+	}
+	// Start/extend an insert batch for undo
+	if (auto *u = buf->Undo()) {
+		u->Begin(UndoType::Insert);
+		u->Append(std::string_view(ctx.arg));
 	}
 	// If a prompt is active, edit prompt text
 	if (ctx.editor.PromptActive()) {
@@ -916,15 +928,19 @@ cmd_newline(CommandContext &ctx)
 		ctx.editor.SetStatus("No buffer to edit");
 		return false;
 	}
+	// Start a newline batch for undo at current cursor
+	if (auto *u = buf->Undo()) {
+		u->Begin(UndoType::Newline);
+	}
 	ensure_at_least_one_line(*buf);
 	auto &rows    = buf->Rows();
 	std::size_t y = buf->Cury();
 	std::size_t x = buf->Curx();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
 	for (int i = 0; i < repeat; ++i) {
-  if (y >= rows.size())
-            rows.resize(y + 1);
-        auto &line = rows[y];
+		if (y >= rows.size())
+			rows.resize(y + 1);
+		auto &line = rows[y];
 		std::string tail;
 		if (x < line.size()) {
 			tail = line.substr(x);
@@ -1038,6 +1054,38 @@ cmd_delete_char(CommandContext &ctx)
 }
 
 
+// --- Undo/Redo ---
+static bool
+cmd_undo(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	if (auto *u = buf->Undo()) {
+		u->undo();
+		// Keep cursor within buffer bounds
+		ensure_cursor_visible(ctx.editor, *buf);
+		return true;
+	}
+	return false;
+}
+
+
+static bool
+cmd_redo(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	if (auto *u = buf->Undo()) {
+		u->redo();
+		ensure_cursor_visible(ctx.editor, *buf);
+		return true;
+	}
+	return false;
+}
+
+
 static bool
 cmd_kill_to_eol(CommandContext &ctx)
 {
@@ -1103,7 +1151,7 @@ cmd_kill_line(CommandContext &ctx)
 		if (rows.size() == 1) {
 			// last remaining line: clear its contents
 			killed_total += rows[0];
-   rows[0].Clear();
+			rows[0].Clear();
 			y = 0;
 		} else if (y < rows.size()) {
 			// erase current line; keep y pointing at the next line
@@ -1299,6 +1347,8 @@ cmd_move_left(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
 	// If a prompt is active and it's search, go to previous match
 	if (ctx.editor.PromptActive() && ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search) {
 		auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
@@ -1353,6 +1403,8 @@ cmd_move_right(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
 	if (ctx.editor.PromptActive() && ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search) {
 		auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
 		if (!matches.empty()) {
@@ -1406,6 +1458,8 @@ cmd_move_up(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
 	if ((ctx.editor.PromptActive() && ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search) || ctx.editor.
 	    SearchActive()) {
 		// Up == previous match
@@ -1444,6 +1498,8 @@ cmd_move_down(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
 	if ((ctx.editor.PromptActive() && ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search) || ctx.editor.
 	    SearchActive()) {
 		// Down == next match
@@ -1483,6 +1539,8 @@ cmd_move_home(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
 	ensure_at_least_one_line(*buf);
 	std::size_t y = buf->Cury();
 	buf->SetCursor(0, y);
@@ -1497,6 +1555,8 @@ cmd_move_end(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
 	ensure_at_least_one_line(*buf);
 	auto &rows    = buf->Rows();
 	std::size_t y = buf->Cury();
@@ -1513,6 +1573,8 @@ cmd_page_up(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
 	ensure_at_least_one_line(*buf);
 	auto &rows               = buf->Rows();
 	int repeat               = ctx.count > 0 ? ctx.count : 1;
@@ -1553,6 +1615,8 @@ cmd_page_down(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
 	ensure_at_least_one_line(*buf);
 	auto &rows               = buf->Rows();
 	int repeat               = ctx.count > 0 ? ctx.count : 1;
@@ -1597,6 +1661,8 @@ cmd_word_prev(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
 	ensure_at_least_one_line(*buf);
 	auto &rows    = buf->Rows();
 	std::size_t y = buf->Cury();
@@ -1652,6 +1718,8 @@ cmd_word_next(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
 	ensure_at_least_one_line(*buf);
 	auto &rows    = buf->Rows();
 	std::size_t y = buf->Cury();
@@ -1817,6 +1885,9 @@ InstallDefaultCommands()
 	CommandRegistry::Register({
 		CommandId::MoveCursorTo, "move-cursor-to", "Move cursor to y:x", cmd_move_cursor_to
 	});
+	// Undo/Redo
+	CommandRegistry::Register({CommandId::Undo, "undo", "Undo last edit", cmd_undo});
+	CommandRegistry::Register({CommandId::Redo, "redo", "Redo edit", cmd_redo});
 }
 
 

@@ -2,18 +2,13 @@
 #define KTE_UNDOTREE_H
 
 #include "UndoNode.h"
+#include <memory>
 
-class UndoTree {
-	UndoTree() : root{nullptr}, current{nullptr}, pending{nullptr} {}
-
-	void Begin(UndoKind kind, size_t row, size_t col);
-
-	void Commit();
-
-private:
-	UndoNode *root{nullptr};
-	UndoNode *current{nullptr};
-	UndoNode *pending{nullptr};
+struct UndoTree {
+	UndoNode *root    = nullptr; // first edit ever
+	UndoNode *current = nullptr; // current state of buffer
+	UndoNode *saved   = nullptr; // points to node matching last save (for dirty flag)
+	UndoNode *pending = nullptr; // in-progress batch (detached)
 };
 
 

@@ -4,11 +4,11 @@
 auto
 KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 {
-	// Normalize to lowercase letter if applicable
-	int k = KLowerAscii(ascii_key);
+	// For k-prefix, preserve case to allow distinct mappings (e.g., 'U' vs 'u').
+	const int k_lower = KLowerAscii(ascii_key);
 
 	if (ctrl) {
-		switch (k) {
+		switch (k_lower) {
 		case 'd':
 			out = CommandId::KillLine;
 			return true; // C-k C-d
@@ -22,7 +22,7 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 			break;
 		}
 	} else {
-		switch (k) {
+		switch (k_lower) {
 		case 'j':
 			out = CommandId::JumpToMark;
 			return true; // C-k j
@@ -59,8 +59,16 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 		case 'p':
 			out = CommandId::BufferNext;
 			return true; // C-k p (switch to next buffer)
+		case 'u':
+			out = CommandId::Undo;
+			return true; // C-k u (undo)
 		default:
 			break;
+		}
+		// Case-sensitive bindings after k-prefix
+		if (ascii_key == 'U') {
+			out = CommandId::Redo; // C-k U (redo)
+			return true;
 		}
 	}
 	return false;

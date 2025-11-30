@@ -55,8 +55,9 @@ set(COMMON_SOURCES
         TerminalInputHandler.cc
         TerminalRenderer.cc
         TerminalFrontend.cc
-        #        UndoNode.cc
-        #        UndoTree.cc
+        UndoNode.cc
+        UndoTree.cc
+        UndoSystem.cc
 )
 
 set(COMMON_HEADERS
@@ -73,8 +74,9 @@ set(COMMON_HEADERS
         TerminalRenderer.h
         Frontend.h
         TerminalFrontend.h
-        #        UndoNode.h
-        #        UndoTree.h
+        UndoNode.h
+        UndoTree.h
+        UndoSystem.h
 )
 
 # kte (terminal-first) executable

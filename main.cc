@@ -97,11 +97,12 @@ main(int argc, const char *argv[])
 	} else if (req_term) {
 		use_gui = false;
 	} else {
-		// Default depends on build target: kge defaults to GUI, kte to terminal
+
+	// Default depends on build target: kge defaults to GUI, kte to terminal
 #if defined(KTE_DEFAULT_GUI)
-		use_gui = true;
+	use_gui = true;
 #else
-		use_gui = false;
+	use_gui = false;
 #endif
 	}
 #endif

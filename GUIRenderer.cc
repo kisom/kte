@@ -82,14 +82,14 @@ GUIRenderer::Draw(Editor &ed)
 				vis_rows = 1;
 			long last_row = first_row + vis_rows - 1;
 
-   // A) If user scrolled (scroll_y changed), and cursor outside, move cursor to nearest visible row
-   // Skip this when we just forced a scroll alignment this frame (programmatic change).
-   if (!forced_scroll && prev_scroll_y >= 0.0f && scroll_y != prev_scroll_y) {
-       long cyr = static_cast<long>(cy);
-       if (cyr < first_row || cyr > last_row) {
-           long new_row = (cyr < first_row) ? first_row : last_row;
-           if (new_row < 0)
-               new_row = 0;
+			// A) If user scrolled (scroll_y changed), and cursor outside, move cursor to nearest visible row
+			// Skip this when we just forced a scroll alignment this frame (programmatic change).
+			if (!forced_scroll && prev_scroll_y >= 0.0f && scroll_y != prev_scroll_y) {
+				long cyr = static_cast<long>(cy);
+				if (cyr < first_row || cyr > last_row) {
+					long new_row = (cyr < first_row) ? first_row : last_row;
+					if (new_row < 0)
+						new_row = 0;
 					if (new_row >= static_cast<long>(lines.size()))
 						new_row = static_cast<long>(lines.empty() ? 0 : (lines.size() - 1));
 					// Clamp column to line length

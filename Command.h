@@ -58,6 +58,9 @@ enum class CommandId {
 	WordNext,
 	// Direct cursor placement
 	MoveCursorTo, // arg: "y:x" (zero-based row:col)
+	// Undo/Redo
+	Undo,
+	Redo,
 	// Meta
 	UnknownKCommand, // arg: single character that was not recognized after C-k
 };

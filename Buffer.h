@@ -7,12 +7,22 @@
 #include <cstddef>
 #include <string>
 #include <vector>
+#include <string_view>
 
 #include "AppendBuffer.h"
+#include "UndoSystem.h"
 
 class Buffer {
 public:
 	Buffer();
+
+	Buffer(const Buffer &other);
+
+	Buffer &operator=(const Buffer &other);
+
+	Buffer(Buffer &&) noexcept = default;
+
+	Buffer &operator=(Buffer &&) noexcept = default;
 
 	explicit Buffer(const std::string &path);
 
@@ -64,31 +74,59 @@ public:
 	public:
 		Line() = default;
 
+
 		Line(const char *s)
 		{
 			assign_from(s ? std::string(s) : std::string());
 		}
+
 
 		Line(const std::string &s)
 		{
 			assign_from(s);
 		}
 
+
 		Line(const Line &other) = default;
+
 		Line &operator=(const Line &other) = default;
+
 		Line(Line &&other) noexcept = default;
+
 		Line &operator=(Line &&other) noexcept = default;
 
 		// capacity helpers
-		void Clear() { buf_.Clear(); }
+		void Clear()
+		{
+			buf_.Clear();
+		}
+
 
 		// size/access
-		[[nodiscard]] std::size_t size() const { return buf_.Size(); }
-		[[nodiscard]] bool empty() const { return size() == 0; }
+		[[nodiscard]] std::size_t size() const
+		{
+			return buf_.Size();
+		}
+
+
+		[[nodiscard]] bool empty() const
+		{
+			return size() == 0;
+		}
+
 
 		// read-only raw view
-		[[nodiscard]] const char *Data() const { return buf_.Data(); }
-		[[nodiscard]] std::size_t Size() const { return buf_.Size(); }
+		[[nodiscard]] const char *Data() const
+		{
+			return buf_.Data();
+		}
+
+
+		[[nodiscard]] std::size_t Size() const
+		{
+			return buf_.Size();
+		}
+
 
 		// element access (read-only)
 		[[nodiscard]] char operator[](std::size_t i) const
@@ -97,47 +135,62 @@ public:
 			return (i < buf_.Size() && d) ? d[i] : '\0';
 		}
 
+
 		// conversions
-		operator std::string() const { return std::string(buf_.Data() ? buf_.Data() : "", buf_.Size()); }
+		operator std::string() const
+		{
+			return std::string(buf_.Data() ? buf_.Data() : "", buf_.Size());
+		}
+
 
 		// string-like API used by command/renderer layers (implemented via materialization for now)
 		std::string substr(std::size_t pos) const
 		{
 			const std::size_t n = buf_.Size();
-			if (pos >= n) return std::string();
+			if (pos >= n)
+				return std::string();
 			return std::string(buf_.Data() + pos, n - pos);
 		}
+
 
 		std::string substr(std::size_t pos, std::size_t len) const
 		{
 			const std::size_t n = buf_.Size();
-			if (pos >= n) return std::string();
+			if (pos >= n)
+				return std::string();
 			const std::size_t take = (pos + len > n) ? (n - pos) : len;
 			return std::string(buf_.Data() + pos, take);
 		}
+
 
 		void erase(std::size_t pos)
 		{
 			// erase to end
 			material_edit([&](std::string &s) {
-				if (pos < s.size()) s.erase(pos);
+				if (pos < s.size())
+					s.erase(pos);
 			});
 		}
+
 
 		void erase(std::size_t pos, std::size_t len)
 		{
 			material_edit([&](std::string &s) {
-				if (pos < s.size()) s.erase(pos, len);
+				if (pos < s.size())
+					s.erase(pos, len);
 			});
 		}
+
 
 		void insert(std::size_t pos, const std::string &seg)
 		{
 			material_edit([&](std::string &s) {
-				if (pos > s.size()) pos = s.size();
+				if (pos > s.size())
+					pos = s.size();
 				s.insert(pos, seg);
 			});
 		}
+
 
 		Line &operator+=(const Line &other)
 		{
@@ -145,11 +198,13 @@ public:
 			return *this;
 		}
 
+
 		Line &operator+=(const std::string &s)
 		{
 			buf_.Append(s.data(), s.size());
 			return *this;
 		}
+
 
 		Line &operator=(const std::string &s)
 		{
@@ -161,10 +216,12 @@ public:
 		void assign_from(const std::string &s)
 		{
 			buf_.Clear();
-			if (!s.empty()) buf_.Append(s.data(), s.size());
+			if (!s.empty())
+				buf_.Append(s.data(), s.size());
 		}
 
-		template <typename F>
+
+		template<typename F>
 		void material_edit(F fn)
 		{
 			std::string tmp = static_cast<std::string>(*this);
@@ -172,8 +229,10 @@ public:
 			assign_from(tmp);
 		}
 
+
 		AppendBuffer buf_;
 	};
+
 
 	[[nodiscard]] const std::vector<Line> &Rows() const
 	{
@@ -266,6 +325,25 @@ public:
 
 	[[nodiscard]] std::string AsString() const;
 
+	// Raw, low-level editing APIs used by UndoSystem apply().
+	// These must NOT trigger undo recording. They also do not move the cursor.
+	void insert_text(int row, int col, std::string_view text);
+
+	void delete_text(int row, int col, std::size_t len);
+
+	void split_line(int row, int col);
+
+	void join_lines(int row);
+
+	void insert_row(int row, std::string_view text);
+
+	void delete_row(int row);
+
+	// Undo system accessors (created per-buffer)
+	UndoSystem *Undo();
+
+	const UndoSystem *Undo() const;
+
 private:
 	// State mirroring original C struct (without undo_tree)
 	std::size_t curx_    = 0, cury_ = 0; // cursor position in characters
@@ -278,6 +356,10 @@ private:
 	bool dirty_            = false;
 	bool mark_set_         = false;
 	std::size_t mark_curx_ = 0, mark_cury_ = 0;
+
+	// Per-buffer undo state
+	std::unique_ptr<struct UndoTree> undo_tree_;
+	std::unique_ptr<UndoSystem> undo_sys_;
 };
 
 #endif // KTE_BUFFER_H
