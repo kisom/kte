@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <filesystem>
 
 #include "Command.h"
 #include "Editor.h"
@@ -418,13 +419,22 @@ cmd_save(CommandContext &ctx)
 	// non-existent path (not yet file-backed but has a filename).
 	if (!buf->IsFileBacked()) {
 		if (!buf->Filename().empty()) {
-			if (!buf->SaveAs(buf->Filename(), err)) {
-				ctx.editor.SetStatus(err);
-				return false;
+			// If first-time save to an existing path, confirm overwrite
+			if (std::filesystem::exists(buf->Filename())) {
+				ctx.editor.StartPrompt(Editor::PromptKind::Confirm, "Overwrite", "");
+				ctx.editor.SetPendingOverwritePath(buf->Filename());
+				ctx.editor.SetStatus(
+					std::string("Overwrite existing file '") + buf->Filename() + "'? (y/N)");
+				return true;
+			} else {
+				if (!buf->SaveAs(buf->Filename(), err)) {
+					ctx.editor.SetStatus(err);
+					return false;
+				}
+				buf->SetDirty(false);
+				ctx.editor.SetStatus("Saved " + buf->Filename());
+				return true;
 			}
-			buf->SetDirty(false);
-			ctx.editor.SetStatus("Saved " + buf->Filename());
-			return true;
 		}
 		// If buffer has no name, prompt for a filename
 		ctx.editor.StartPrompt(Editor::PromptKind::SaveAs, "Save as", "");
@@ -933,16 +943,52 @@ cmd_newline(CommandContext &ctx)
 				if (!buf) {
 					ctx.editor.SetStatus("No buffer to save");
 				} else {
+					// If this is a first-time save (unnamed/non-file-backed) and the
+					// target exists, ask for confirmation before overwriting.
+					if (!buf->IsFileBacked() && std::filesystem::exists(value)) {
+						ctx.editor.StartPrompt(Editor::PromptKind::Confirm, "Overwrite", "");
+						ctx.editor.SetPendingOverwritePath(value);
+						ctx.editor.SetStatus(
+							std::string("Overwrite existing file '") + value + "'? (y/N)");
+					} else {
+						std::string err;
+						if (!buf->SaveAs(value, err)) {
+							ctx.editor.SetStatus(err);
+						} else {
+							buf->SetDirty(false);
+							ctx.editor.SetStatus("Saved as " + value);
+							if (auto *u = buf->Undo())
+								u->mark_saved();
+						}
+					}
+				}
+			}
+		} else if (kind == Editor::PromptKind::Confirm) {
+			// Confirmation for potentially destructive operations (e.g., overwrite on save-as)
+			Buffer *buf              = ctx.editor.CurrentBuffer();
+			const std::string target = ctx.editor.PendingOverwritePath();
+			if (!target.empty() && buf) {
+				bool yes = false;
+				if (!value.empty()) {
+					char c = value[0];
+					yes    = (c == 'y' || c == 'Y');
+				}
+				if (yes) {
 					std::string err;
-					if (!buf->SaveAs(value, err)) {
+					if (!buf->SaveAs(target, err)) {
 						ctx.editor.SetStatus(err);
 					} else {
 						buf->SetDirty(false);
-						ctx.editor.SetStatus("Saved as " + value);
+						ctx.editor.SetStatus("Saved as " + target);
 						if (auto *u = buf->Undo())
 							u->mark_saved();
 					}
+				} else {
+					ctx.editor.SetStatus("Save canceled");
 				}
+				ctx.editor.ClearPendingOverwritePath();
+			} else {
+				ctx.editor.SetStatus("Nothing to confirm");
 			}
 		}
 		return true;
@@ -1924,7 +1970,7 @@ cmd_delete_word_prev(CommandContext &ctx)
 	ensure_cursor_visible(ctx.editor, *buf);
 	if (!killed_total.empty()) {
 		if (ctx.editor.KillChain())
-			ctx.editor.KillRingAppend(killed_total);
+			ctx.editor.KillRingPrepend(killed_total);
 		else
 			ctx.editor.KillRingPush(killed_total);
 		ctx.editor.SetKillChain(true);

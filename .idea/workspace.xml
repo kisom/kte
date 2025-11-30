@@ -25,7 +25,6 @@
       <config projectName="kte" targetName="kte" />
       <config projectName="kte" targetName="imgui" />
       <config projectName="kte" targetName="kge" />
-      <config projectName="kte" targetName="test_undo" />
     </generated>
   </component>
   <component name="CMakeSettings" AUTO_RELOAD="true">
@@ -34,26 +33,17 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Add non-linear undo/redo design documentation and improve `UndoSystem` with backspace batching and GUI integration fixes.">
-      <change afterPath="$PROJECT_DIR$/TestFrontend.cc" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/TestInputHandler.cc" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/TestRenderer.cc" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/docs/TestFrontend.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test_undo.cc" afterDir="false" />
+    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Add `TestFrontend` documentation and `UndoSystem` buffer reference update.&#10;&#10;- Document `TestFrontend` for programmatic testing, including examples and usage details.&#10;- Add `UpdateBufferReference` to `UndoSystem` to support updating buffer associations.">
+      <change afterPath="$PROJECT_DIR$/TestFrontend.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/TestInputHandler.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/TestRenderer.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Buffer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Buffer.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Buffer.h" beforeDir="false" afterPath="$PROJECT_DIR$/Buffer.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Command.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Command.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Command.h" beforeDir="false" afterPath="$PROJECT_DIR$/Command.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUIFrontend.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIFrontend.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/KKeymap.cc" beforeDir="false" afterPath="$PROJECT_DIR$/KKeymap.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Editor.h" beforeDir="false" afterPath="$PROJECT_DIR$/Editor.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIInputHandler.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIInputHandler.cc" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/TerminalInputHandler.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalInputHandler.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/UndoSystem.cc" beforeDir="false" afterPath="$PROJECT_DIR$/UndoSystem.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/UndoSystem.h" beforeDir="false" afterPath="$PROJECT_DIR$/UndoSystem.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/ke.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/ke.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/undo-state.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/undo-state.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/fonts/brassmono.h" beforeDir="false" afterPath="$PROJECT_DIR$/fonts/brassmono.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cmake/packaging.cmake" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -147,7 +137,7 @@
       <recent name="$PROJECT_DIR$/docs" />
     </key>
   </component>
-  <component name="RunManager" selected="CMake Application.test_undo">
+  <component name="RunManager" selected="CMake Application.imgui">
     <configuration default="true" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
@@ -168,16 +158,10 @@
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
-    <configuration name="test_undo" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="kte" TARGET_NAME="test_undo" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="kte" RUN_TARGET_NAME="test_undo">
-      <method v="2">
-        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
-      </method>
-    </configuration>
     <list>
       <item itemvalue="CMake Application.imgui" />
       <item itemvalue="CMake Application.kge" />
       <item itemvalue="CMake Application.kte" />
-      <item itemvalue="CMake Application.test_undo" />
     </list>
   </component>
   <component name="TaskManager">
@@ -187,7 +171,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1764457173148</updated>
-      <workItem from="1764457174208" duration="41399000" />
+      <workItem from="1764457174208" duration="42780000" />
     </task>
     <task id="LOCAL-00001" summary="Add undo/redo infrastructure and buffer management additions.">
       <option name="closed" value="true" />
@@ -229,7 +213,15 @@
       <option name="project" value="LOCAL" />
       <updated>1764496151303</updated>
     </task>
-    <option name="localTasksCounter" value="6" />
+    <task id="LOCAL-00006" summary="Add `TestFrontend` documentation and `UndoSystem` buffer reference update.&#10;&#10;- Document `TestFrontend` for programmatic testing, including examples and usage details.&#10;- Add `UpdateBufferReference` to `UndoSystem` to support updating buffer associations.">
+      <option name="closed" value="true" />
+      <created>1764500200942</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1764500200942</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -248,7 +240,8 @@
     <MESSAGE value="Enable installation targets." />
     <MESSAGE value="Add `UndoSystem` implementation and refactor `UndoNode` for simplicity." />
     <MESSAGE value="Add non-linear undo/redo design documentation and improve `UndoSystem` with backspace batching and GUI integration fixes." />
-    <option name="LAST_COMMIT_MESSAGE" value="Add non-linear undo/redo design documentation and improve `UndoSystem` with backspace batching and GUI integration fixes." />
+    <MESSAGE value="Add `TestFrontend` documentation and `UndoSystem` buffer reference update.&#10;&#10;- Document `TestFrontend` for programmatic testing, including examples and usage details.&#10;- Add `UpdateBufferReference` to `UndoSystem` to support updating buffer associations." />
+    <option name="LAST_COMMIT_MESSAGE" value="Add `TestFrontend` documentation and `UndoSystem` buffer reference update.&#10;&#10;- Document `TestFrontend` for programmatic testing, including examples and usage details.&#10;- Add `UpdateBufferReference` to `UndoSystem` to support updating buffer associations." />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

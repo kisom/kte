@@ -4,11 +4,12 @@ project(kte)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 17)
-set(KTE_VERSION "0.0.1")
+set(KTE_VERSION "0.1.0")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
 set(BUILD_GUI OFF CACHE BOOL "Enable building the graphical version.")
+set(BUILD_TESTS OFF CACHE BOOL "Enable building test programs.")
 option(KTE_USE_PIECE_TABLE "Use PieceTable instead of GapBuffer implementation" OFF)
 set(KTE_FONT_SIZE "18.0" CACHE STRING "Default font size for GUI")
 
@@ -103,18 +104,21 @@ install(TARGETS kte
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-# test_undo executable for testing undo/redo system
-add_executable(test_undo
-        test_undo.cc
-        ${COMMON_SOURCES}
-        ${COMMON_HEADERS}
-)
+if (BUILD_TESTS)
+    # test_undo executable for testing undo/redo system
+    add_executable(test_undo
+            test_undo.cc
+            ${COMMON_SOURCES}
+            ${COMMON_HEADERS}
+    )
 
-if (KTE_USE_PIECE_TABLE)
-    target_compile_definitions(test_undo PRIVATE KTE_USE_PIECE_TABLE=1)
+    if (KTE_USE_PIECE_TABLE)
+        target_compile_definitions(test_undo PRIVATE KTE_USE_PIECE_TABLE=1)
+    endif ()
+
+
+    target_link_libraries(test_undo ${CURSES_LIBRARIES})
 endif ()
-
-target_link_libraries(test_undo ${CURSES_LIBRARIES})
 
 if (${BUILD_GUI})
     target_sources(kte PRIVATE
@@ -142,7 +146,27 @@ if (${BUILD_GUI})
     target_compile_definitions(kge PRIVATE KTE_BUILD_GUI=1 KTE_DEFAULT_GUI=1 KTE_FONT_SIZE=${KTE_FONT_SIZE})
     target_link_libraries(kge ${CURSES_LIBRARIES} imgui)
 
-    install(TARGETS kge
-            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    )
+    # On macOS, build kge as a proper .app bundle
+    if (APPLE)
+        # Configure Info.plist with version and identifiers
+        set(KGE_BUNDLE_ID "dev.kyle.kge")
+        configure_file(
+                ${CMAKE_CURRENT_LIST_DIR}/cmake/Info.plist.in
+                ${CMAKE_CURRENT_BINARY_DIR}/kge-Info.plist
+                @ONLY)
+
+        set_target_properties(kge PROPERTIES
+                MACOSX_BUNDLE TRUE
+                MACOSX_BUNDLE_GUI_IDENTIFIER ${KGE_BUNDLE_ID}
+                MACOSX_BUNDLE_BUNDLE_NAME "kge"
+                MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/kge-Info.plist")
+
+        install(TARGETS kge
+                BUNDLE DESTINATION .
+        )
+    else()
+        install(TARGETS kge
+                RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        )
+    endif()
 endif ()

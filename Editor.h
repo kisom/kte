@@ -99,6 +99,18 @@ public:
 	}
 
 
+	void KillRingPrepend(const std::string &text)
+	{
+		if (text.empty())
+			return;
+		if (kill_ring_.empty()) {
+			KillRingPush(text);
+		} else {
+			kill_ring_.front() = text + kill_ring_.front();
+		}
+	}
+
+
 	[[nodiscard]] std::string KillRingHead() const
 	{
 		return kill_ring_.empty() ? std::string() : kill_ring_.front();
@@ -349,6 +361,25 @@ public:
 	}
 
 
+	// --- Overwrite confirmation (save-as on existing file) ---
+	void SetPendingOverwritePath(const std::string &path)
+	{
+		pending_overwrite_path_ = path;
+	}
+
+
+	void ClearPendingOverwritePath()
+	{
+		pending_overwrite_path_.clear();
+	}
+
+
+	[[nodiscard]] const std::string &PendingOverwritePath() const
+	{
+		return pending_overwrite_path_;
+	}
+
+
 	[[nodiscard]] const std::string &PromptLabel() const
 	{
 		return prompt_label_;
@@ -441,6 +472,7 @@ private:
 	PromptKind prompt_kind_ = PromptKind::None;
 	std::string prompt_label_;
 	std::string prompt_text_;
+	std::string pending_overwrite_path_;
 };
 
 #endif // KTE_EDITOR_H

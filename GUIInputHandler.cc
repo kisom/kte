@@ -1,5 +1,6 @@
 #include <SDL.h>
 #include <cstdio>
+#include <ncurses.h>
 
 #include "GUIInputHandler.h"
 #include "KKeymap.h"
@@ -26,7 +27,10 @@ map_key(const SDL_Keycode key,
 	// If previous key was ESC, interpret this as Meta via ESC keymap
 	if (esc_meta) {
 		int ascii_key = 0;
-		if (key >= SDLK_a && key <= SDLK_z) {
+		if (key == SDLK_BACKSPACE) {
+			// ESC BACKSPACE: map to DeleteWordPrev using ncurses KEY_BACKSPACE constant
+			ascii_key = KEY_BACKSPACE;
+		} else if (key >= SDLK_a && key <= SDLK_z) {
 			ascii_key = static_cast<int>('a' + (key - SDLK_a));
 		} else if (key == SDLK_COMMA) {
 			ascii_key = '<';
@@ -98,14 +102,7 @@ map_key(const SDL_Keycode key,
 		return true;
 	case SDLK_ESCAPE:
 		k_prefix = false;
-		esc_meta = true; // next key will be treated as Meta
-		// Cancel any universal argument collection
-		uarg_active     = false;
-		uarg_collecting = false;
-		uarg_negative   = false;
-		uarg_had_digits = false;
-		uarg_value      = 0;
-		uarg_text.clear();
+		esc_meta       = true; // next key will be treated as Meta
 		out.hasCommand = false; // no immediate command for bare ESC in GUI
 		return true;
 	default:
@@ -222,7 +219,10 @@ map_key(const SDL_Keycode key,
 	// Alt/Meta bindings (ESC f/b equivalent)
 	if (is_alt) {
 		int ascii_key = 0;
-		if (key >= SDLK_a && key <= SDLK_z) {
+		if (key == SDLK_BACKSPACE) {
+			// Alt BACKSPACE: map to DeleteWordPrev using ncurses KEY_BACKSPACE constant
+			ascii_key = KEY_BACKSPACE;
+		} else if (key >= SDLK_a && key <= SDLK_z) {
 			ascii_key = static_cast<int>('a' + (key - SDLK_a));
 		} else if (key == SDLK_COMMA) {
 			ascii_key = '<';

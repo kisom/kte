@@ -85,15 +85,8 @@ map_key_to_command(const int ch,
 	// ESC as cancel of prefix; many terminals send meta sequences as ESC+...
 	if (ch == 27) {
 		// ESC
-		k_prefix = false;
-		esc_meta = true; // next key will be considered meta-modified
-		// Cancel any universal argument collection
-		uarg_active     = false;
-		uarg_collecting = false;
-		uarg_negative   = false;
-		uarg_had_digits = false;
-		uarg_value      = 0;
-		uarg_text.clear();
+		k_prefix       = false;
+		esc_meta       = true; // next key will be considered meta-modified
 		out.hasCommand = false; // no command yet
 		return true;
 	}
