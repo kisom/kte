@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 project(kte)
 
+include(GNUInstallDirs)
+
 set(CMAKE_CXX_STANDARD 17)
 set(KTE_VERSION "0.0.1")
 
@@ -8,10 +10,6 @@ set(KTE_VERSION "0.0.1")
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
 set(BUILD_GUI OFF CACHE BOOL "Enable building the graphical version.")
 option(KTE_USE_PIECE_TABLE "Use PieceTable instead of GapBuffer implementation" OFF)
-
-# GUI font configuration: use embedded font from Font.h exclusively for now.
-# Font selection via external paths is disabled until revisited later.
-
 
 if (CMAKE_HOST_UNIX)
     message(STATUS "Build system is POSIX.")
@@ -35,7 +33,6 @@ else ()
     endif ()
 endif ()
 add_compile_definitions(KGE_PLATFORM=${CMAKE_HOST_SYSTEM_NAME})
-# Propagate configured version to code as a string macro KTE_VERSION_STR
 add_compile_definitions(KTE_VERSION_STR="v${KTE_VERSION}")
 
 message(STATUS "Build system: ${CMAKE_HOST_SYSTEM_NAME}")
@@ -93,10 +90,11 @@ endif ()
 
 target_link_libraries(kte ${CURSES_LIBRARIES})
 
-# No GUI font-related preprocessor defines are emitted; GUI uses embedded font.
+install(TARGETS kte
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
 
 if (${BUILD_GUI})
-    # Add GUI support to kte so it can be started with -g
     target_sources(kte PRIVATE
             Font.h
             GUIRenderer.cc
@@ -122,5 +120,7 @@ if (${BUILD_GUI})
     target_compile_definitions(kge PRIVATE KTE_BUILD_GUI=1 KTE_DEFAULT_GUI=1)
     target_link_libraries(kge ${CURSES_LIBRARIES} imgui)
 
-    # No GUI font-related preprocessor defines are emitted; GUI uses embedded font.
+    install(TARGETS kge
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
 endif ()
