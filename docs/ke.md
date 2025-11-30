@@ -14,7 +14,7 @@ someone's writeup of the process of writing a text editor from scratch.
 It has keybindings inspired by VDE (and the Wordstar family) and emacs;
 its spiritual parent is mg(1).
 
-## KEYBINDINGS 
+## KEYBINDINGS
 
 K-command mode is entered using C-k. This is taken from
 Wordstar and just so happens to be blessed with starting with a most
@@ -30,6 +30,8 @@ k-command mode can be exited with ESC or C-g.
 * C-k SPACE: Toggle the mark.
 * C-k -: If the mark is set, unindent the region.
 * C-k =: If the mark is set, indent the region.
+* C-k a: Set the mark at the beginning of the file, then jump to the end of
+  the file.
 * C-k b: Switch to a buffer.
 * C-k c: Close the current buffer. If no other buffers are open, an empty
   buffer will be opened. To exit, use C-k q.
@@ -39,16 +41,16 @@ k-command mode can be exited with ESC or C-g.
 * C-k f: Flush the kill ring.
 * C-k g: Go to a specific line.
 * C-k j: Jump to the mark.
-* C-k l: List the number of lines of code in a saved file.
+* C-k l: Reload the current buffer from disk.
 * C-k m: Run make(1), reporting success or failure.
 * C-k p: Switch to the next buffer.
 * C-k q: Exit the editor. If the file has unsaved changes, a warning will
   be printed; a second C-k q will exit.
 * C-k C-q: Immediately exit the editor.
-* C-k C-r: Reload the current buffer from disk.
+* C-k l: Reload the current buffer from disk.
 * C-k s: Save the file, prompting for a filename if needed.
 * C-k u: Undo.
-* C-k U: Redo changes (not implemented; marking this k-command as taken).
+* C-k r: Redo changes.
 * C-k x: save the file and exit. Also C-k C-x.
 * C-k y: Yank the kill ring.
 * C-k \\: Dump core.
@@ -67,6 +69,8 @@ k-command mode can be exited with ESC or C-g.
 * ESC b: Move to the previous word.
 * ESC d: Delete the next word.
 * ESC f: Move to the next word.
+* ESC q: Reflow the paragraph to 72 columns or the value of the universal
+  argument.
 * ESC w: Save the region (if the mark is set) to the kill ring.
 
 ## FIND

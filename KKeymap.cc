@@ -1,4 +1,5 @@
 #include "KKeymap.h"
+#include <ncurses.h>
 
 
 auto
@@ -27,8 +28,8 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 	}
 
 	// 2) Case-sensitive bindings must be checked before case-insensitive table.
-	if (ascii_key == 'U') {
-		out = CommandId::Redo; // C-k U (redo)
+	if (ascii_key == 'r') {
+		out = CommandId::Redo; // C-k r (redo)
 		return true;
 	}
 
@@ -73,6 +74,18 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 	case 'u':
 		out = CommandId::Undo;
 		return true; // C-k u (undo)
+	case '-':
+		out = CommandId::UnindentRegion;
+		return true; // C-k - (unindent region)
+	case '=':
+		out = CommandId::IndentRegion;
+		return true; // C-k = (indent region)
+	case 'l':
+		out = CommandId::ReloadBuffer;
+		return true; // C-k l (reload buffer)
+	case 'a':
+		out = CommandId::MarkAllAndJumpEnd;
+		return true; // C-k a (mark all and jump to end)
 	default:
 		break;
 	}
@@ -135,6 +148,11 @@ auto
 KLookupEscCommand(const int ascii_key, CommandId &out) -> bool
 {
 	const int k = KLowerAscii(ascii_key);
+	// Handle KEY_BACKSPACE (ESC BACKSPACE, Alt-Backspace)
+	if (ascii_key == KEY_BACKSPACE) {
+		out = CommandId::DeleteWordPrev;
+		return true;
+	}
 	switch (k) {
 	case '<':
 		out = CommandId::MoveFileStart; // Esc <
@@ -153,6 +171,12 @@ KLookupEscCommand(const int ascii_key, CommandId &out) -> bool
 		return true;
 	case 'f':
 		out = CommandId::WordNext;
+		return true;
+	case 'd':
+		out = CommandId::DeleteWordNext; // Esc d (Alt-d)
+		return true;
+	case 'q':
+		out = CommandId::ReflowParagraph; // Esc q (reflow paragraph)
 		return true;
 	default:
 		break;

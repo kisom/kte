@@ -93,3 +93,36 @@ Owner pointers & file locations
  - Undo batching entry points: Command.cc (cmd_insert_text, cmd_backspace, cmd_delete_char, cmd_newline)
 
 End of snapshot — safe to resume from here.
+
+---
+
+RESOLUTION (2025-11-30)
+
+Root Cause Identified and Fixed
+The undo system failure was caused by incorrect timing of UndoSystem::Begin() and Append() calls relative to buffer modifications in Command.cc.
+
+Problem:
+- In cmd_insert_text, cmd_backspace, cmd_delete_char, and cmd_newline, the undo recording (Begin/Append) was called BEFORE the actual buffer modification and cursor update.
+- UndoSystem::Begin() checks the current cursor position to determine if it can batch with the pending node.
+- For Insert type: Begin() checks if col == pending->col + pending->text.size()
+- For Delete type: Begin() checks if the cursor is at the expected position based on whether it's forward delete or backspace
+- When Begin/Append were called before cursor updates, the batching condition would fail on the second character because the cursor hadn't moved yet from the first insertion.
+- This caused each character to create a separate batch, but since commit() was never called between characters (only at k-prefix or undo), the pending node would be overwritten rather than committed, resulting in no undo history.
+
+Fix Applied:
+- cmd_insert_text: Moved Begin/Append to AFTER buffer insertion (lines 854-856) and cursor update (line 857).
+- cmd_backspace: Moved Begin/Append to AFTER character deletion (lines 1024-1025) and cursor decrement (line 1026).
+- cmd_delete_char: Moved Begin/Append to AFTER character deletion (lines 1074-1076).
+- cmd_newline: Moved Begin/commit to AFTER line split (lines 956-966) and cursor update (lines 963-967).
+
+Result:
+- Begin() now sees the correct cursor position after each edit, allowing proper batching of consecutive characters.
+- Typing "Hello" will now create a single pending batch with all 5 characters that can be undone as one unit.
+- The fix applies to both terminal (kte) and GUI (kge) builds.
+
+Testing Recommendation:
+- Type several characters (e.g., "Hello")
+- Press C-k u to undo - the entire word should disappear
+- Press C-k U to redo - the word should reappear
+- Test backspace batching: type several characters, then backspace multiple times, then undo - should undo the backspace batch
+- Test delete batching similarly

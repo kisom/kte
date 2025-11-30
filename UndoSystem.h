@@ -28,6 +28,8 @@ public:
 
 	void clear();
 
+	void UpdateBufferReference(Buffer &new_buf);
+
 private:
 	void apply(const UndoNode *node, int direction); // +1 redo, -1 undo
 	void free_node(UndoNode *node);
@@ -38,7 +40,7 @@ private:
 	void update_dirty_flag();
 
 private:
-	Buffer &buf_;
+	Buffer *buf_;
 	UndoTree &tree_;
 	// Internal hint for Delete batching: whether next Append() should prepend
 	bool pending_prepend_ = false;

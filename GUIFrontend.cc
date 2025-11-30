@@ -65,7 +65,10 @@ GUIFrontend::Init(Editor &ed)
 	height_ = h;
 
 	// Initialize GUI font from embedded default
-	LoadGuiFont_(nullptr, 16.f);
+#ifndef KTE_FONT_SIZE
+#define KTE_FONT_SIZE 16.0f
+#endif
+	LoadGuiFont_(nullptr, (float) KTE_FONT_SIZE);
 
 	return true;
 }

@@ -426,8 +426,10 @@ cmd_save(CommandContext &ctx)
 			ctx.editor.SetStatus("Saved " + buf->Filename());
 			return true;
 		}
-		ctx.editor.SetStatus("Buffer is not file-backed; use save-as");
-		return false;
+		// If buffer has no name, prompt for a filename
+		ctx.editor.StartPrompt(Editor::PromptKind::SaveAs, "Save as", "");
+		ctx.editor.SetStatus("Save as: ");
+		return true;
 	}
 	if (!buf->Save(err)) {
 		ctx.editor.SetStatus(err);
@@ -738,11 +740,6 @@ cmd_insert_text(CommandContext &ctx)
 		ctx.editor.SetStatus("No buffer to edit");
 		return false;
 	}
-	// Start/extend an insert batch for undo
-	if (auto *u = buf->Undo()) {
-		u->Begin(UndoType::Insert);
-		u->Append(std::string_view(ctx.arg));
-	}
 	// If a prompt is active, edit prompt text
 	if (ctx.editor.PromptActive()) {
 		// Special-case: buffer switch prompt supports Tab-completion
@@ -859,8 +856,15 @@ cmd_insert_text(CommandContext &ctx)
 		rows[y].insert(x, ctx.arg);
 		x += ctx.arg.size();
 	}
-	buf->SetCursor(x, y);
 	buf->SetDirty(true);
+	// Record undo after buffer modification but before cursor update
+	if (auto *u = buf->Undo()) {
+		u->Begin(UndoType::Insert);
+		for (int i = 0; i < repeat; ++i) {
+			u->Append(std::string_view(ctx.arg));
+		}
+	}
+	buf->SetCursor(x, y);
 	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
 }
@@ -922,8 +926,24 @@ cmd_newline(CommandContext &ctx)
 				                     + (cur ? buffer_display_name(*cur) : std::string("")));
 			}
 		} else if (kind == Editor::PromptKind::SaveAs) {
-			// Optional: not wired yet
-			ctx.editor.SetStatus("Save As not implemented");
+			if (value.empty()) {
+				ctx.editor.SetStatus("Save canceled (empty filename)");
+			} else {
+				Buffer *buf = ctx.editor.CurrentBuffer();
+				if (!buf) {
+					ctx.editor.SetStatus("No buffer to save");
+				} else {
+					std::string err;
+					if (!buf->SaveAs(value, err)) {
+						ctx.editor.SetStatus(err);
+					} else {
+						buf->SetDirty(false);
+						ctx.editor.SetStatus("Saved as " + value);
+						if (auto *u = buf->Undo())
+							u->mark_saved();
+					}
+				}
+			}
 		}
 		return true;
 	}
@@ -942,10 +962,6 @@ cmd_newline(CommandContext &ctx)
 	if (!buf) {
 		ctx.editor.SetStatus("No buffer to edit");
 		return false;
-	}
-	// Start a newline batch for undo at current cursor
-	if (auto *u = buf->Undo()) {
-		u->Begin(UndoType::Newline);
 	}
 	ensure_at_least_one_line(*buf);
 	auto &rows    = buf->Rows();
@@ -967,6 +983,11 @@ cmd_newline(CommandContext &ctx)
 	}
 	buf->SetCursor(x, y);
 	buf->SetDirty(true);
+	// Record newline after buffer modification; commit immediately for single-step undo
+	if (auto *u = buf->Undo()) {
+		u->Begin(UndoType::Newline);
+		u->commit();
+	}
 	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
 }
@@ -1017,26 +1038,27 @@ cmd_backspace(CommandContext &ctx)
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
 	for (int i = 0; i < repeat; ++i) {
 		if (x > 0) {
-			// Batch contiguous character deletes (backspace)
-			if (u)
-				u->Begin(UndoType::Delete);
+			// Delete character before cursor
 			char deleted = rows[y][x - 1];
 			rows[y].erase(x - 1, 1);
 			--x;
-			if (u)
+			// Record undo after deletion and cursor update
+			if (u) {
+				u->Begin(UndoType::Delete);
 				u->Append(deleted);
+			}
 		} else if (y > 0) {
 			// join with previous line
 			std::size_t prev_len = rows[y - 1].size();
-			if (u) {
-				// Record a newline deletion that joined lines; commit immediately
-				u->Begin(UndoType::Newline);
-				u->commit();
-			}
 			rows[y - 1] += rows[y];
 			rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(y));
 			y = y - 1;
 			x = prev_len;
+			// Record a newline deletion that joined lines; commit immediately
+			if (u) {
+				u->Begin(UndoType::Newline);
+				u->commit();
+			}
 		} else {
 			// at very start; nothing to do
 			break;
@@ -1067,22 +1089,23 @@ cmd_delete_char(CommandContext &ctx)
 		if (y >= rows.size())
 			break;
 		if (x < rows[y].size()) {
-			// Forward delete at cursor, batch contiguous
-			if (u)
-				u->Begin(UndoType::Delete);
+			// Forward delete at cursor
 			char deleted = rows[y][x];
 			rows[y].erase(x, 1);
-			if (u)
+			// Record undo after deletion (cursor stays at same position)
+			if (u) {
+				u->Begin(UndoType::Delete);
 				u->Append(deleted);
+			}
 		} else if (y + 1 < rows.size()) {
 			// join next line
+			rows[y] += rows[y + 1];
+			rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(y + 1));
+			// Record newline deletion at end of this line; commit immediately
 			if (u) {
-				// Record newline deletion at end of this line; commit immediately
 				u->Begin(UndoType::Newline);
 				u->commit();
 			}
-			rows[y] += rows[y + 1];
-			rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(y + 1));
 		} else {
 			break;
 		}
@@ -1812,6 +1835,373 @@ cmd_word_next(CommandContext &ctx)
 }
 
 
+static bool
+cmd_delete_word_prev(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
+	ensure_at_least_one_line(*buf);
+	auto &rows    = buf->Rows();
+	std::size_t y = buf->Cury();
+	std::size_t x = buf->Curx();
+	int repeat    = ctx.count > 0 ? ctx.count : 1;
+	std::string killed_total;
+	for (int i = 0; i < repeat; ++i) {
+		if (y >= rows.size()) {
+			y = rows.empty() ? 0 : rows.size() - 1;
+			x = rows[y].size();
+		}
+		std::size_t start_y = y;
+		std::size_t start_x = x;
+		// If at start of line and not first line, move to end of previous line
+		if (x == 0) {
+			if (y == 0)
+				break;
+			--y;
+			x = rows[y].size();
+		}
+		// Move left one first
+		if (x > 0)
+			--x;
+		// Skip any whitespace leftwards
+		while (y < rows.size() && (x > 0 || (x == 0 && y > 0))) {
+			if (x == 0) {
+				--y;
+				x = rows[y].size();
+				if (x == 0)
+					continue;
+			}
+			unsigned char c = x > 0 ? static_cast<unsigned char>(rows[y][x - 1]) : 0;
+			if (!std::isspace(c))
+				break;
+			--x;
+		}
+		// Skip word characters leftwards
+		while (y < rows.size() && (x > 0 || (x == 0 && y > 0))) {
+			if (x == 0)
+				break;
+			unsigned char c = static_cast<unsigned char>(rows[y][x - 1]);
+			if (!is_word_char(c))
+				break;
+			--x;
+		}
+		// Now delete from (x, y) to (start_x, start_y)
+		std::string deleted;
+		if (y == start_y) {
+			// same line
+			if (x < start_x) {
+				deleted = rows[y].substr(x, start_x - x);
+				rows[y].erase(x, start_x - x);
+			}
+		} else {
+			// spans multiple lines
+			// First, collect text from (x, y) to end of line y
+			deleted = rows[y].substr(x);
+			rows[y].erase(x);
+			// Then collect complete lines between y and start_y
+			for (std::size_t ly = y + 1; ly < start_y; ++ly) {
+				deleted += "\n";
+				deleted += rows[ly];
+			}
+			// Finally, collect from beginning of start_y to start_x
+			if (start_y < rows.size()) {
+				deleted += "\n";
+				deleted += rows[start_y].substr(0, start_x);
+				rows[y] += rows[start_y].substr(start_x);
+				// Remove lines from y+1 to start_y inclusive
+				rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(y + 1),
+				           rows.begin() + static_cast<std::ptrdiff_t>(start_y + 1));
+			}
+		}
+		// Prepend to killed_total (since we're deleting backwards)
+		killed_total = deleted + killed_total;
+	}
+	buf->SetCursor(x, y);
+	buf->SetDirty(true);
+	ensure_cursor_visible(ctx.editor, *buf);
+	if (!killed_total.empty()) {
+		if (ctx.editor.KillChain())
+			ctx.editor.KillRingAppend(killed_total);
+		else
+			ctx.editor.KillRingPush(killed_total);
+		ctx.editor.SetKillChain(true);
+	}
+	return true;
+}
+
+
+static bool
+cmd_delete_word_next(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
+	ensure_at_least_one_line(*buf);
+	auto &rows    = buf->Rows();
+	std::size_t y = buf->Cury();
+	std::size_t x = buf->Curx();
+	int repeat    = ctx.count > 0 ? ctx.count : 1;
+	std::string killed_total;
+	for (int i = 0; i < repeat; ++i) {
+		if (y >= rows.size())
+			break;
+		std::size_t start_y = y;
+		std::size_t start_x = x;
+		// First, if currently on a word, skip to its end
+		while (y < rows.size()) {
+			if (x < rows[y].size() && is_word_char(static_cast<unsigned char>(rows[y][x]))) {
+				++x;
+				continue;
+			}
+			if (x >= rows[y].size()) {
+				if (y + 1 >= rows.size())
+					break;
+				++y;
+				x = 0;
+				continue;
+			}
+			break;
+		}
+		// Then, skip any non-word characters (including punctuation and whitespace)
+		while (y < rows.size()) {
+			if (x < rows[y].size()) {
+				unsigned char c = static_cast<unsigned char>(rows[y][x]);
+				if (is_word_char(c))
+					break;
+				++x;
+				continue;
+			}
+			if (x >= rows[y].size()) {
+				if (y + 1 >= rows.size())
+					break;
+				++y;
+				x = 0;
+				continue;
+			}
+		}
+		// Now delete from (start_x, start_y) to (x, y)
+		std::string deleted;
+		if (start_y == y) {
+			// same line
+			if (start_x < x) {
+				deleted = rows[y].substr(start_x, x - start_x);
+				rows[y].erase(start_x, x - start_x);
+				x = start_x;
+			}
+		} else {
+			// spans multiple lines
+			// First, collect text from start_x to end of line start_y
+			deleted = rows[start_y].substr(start_x);
+			rows[start_y].erase(start_x);
+			// Then collect complete lines between start_y and y
+			for (std::size_t ly = start_y + 1; ly < y; ++ly) {
+				deleted += "\n";
+				deleted += rows[ly];
+			}
+			// Finally, collect from beginning of y to x
+			if (y < rows.size()) {
+				deleted += "\n";
+				deleted += rows[y].substr(0, x);
+				rows[start_y] += rows[y].substr(x);
+				// Remove lines from start_y+1 to y inclusive
+				rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(start_y + 1),
+				           rows.begin() + static_cast<std::ptrdiff_t>(y + 1));
+			}
+			y = start_y;
+			x = start_x;
+		}
+		killed_total += deleted;
+	}
+	buf->SetCursor(x, y);
+	buf->SetDirty(true);
+	ensure_cursor_visible(ctx.editor, *buf);
+	if (!killed_total.empty()) {
+		if (ctx.editor.KillChain())
+			ctx.editor.KillRingAppend(killed_total);
+		else
+			ctx.editor.KillRingPush(killed_total);
+		ctx.editor.SetKillChain(true);
+	}
+	return true;
+}
+
+
+static bool
+cmd_indent_region(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	if (!buf->MarkSet()) {
+		ctx.editor.SetStatus("No mark set");
+		return false;
+	}
+	std::size_t sx, sy, ex, ey;
+	if (!compute_mark_region(*buf, sx, sy, ex, ey)) {
+		ctx.editor.SetStatus("No region to indent");
+		return false;
+	}
+	auto &rows = buf->Rows();
+	for (std::size_t y = sy; y <= ey && y < rows.size(); ++y) {
+		rows[y].insert(0, "\t");
+	}
+	buf->SetDirty(true);
+	buf->ClearMark();
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
+}
+
+
+static bool
+cmd_unindent_region(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	if (!buf->MarkSet()) {
+		ctx.editor.SetStatus("No mark set");
+		return false;
+	}
+	std::size_t sx, sy, ex, ey;
+	if (!compute_mark_region(*buf, sx, sy, ex, ey)) {
+		ctx.editor.SetStatus("No region to unindent");
+		return false;
+	}
+	auto &rows = buf->Rows();
+	for (std::size_t y = sy; y <= ey && y < rows.size(); ++y) {
+		auto &line = rows[y];
+		if (!line.empty()) {
+			if (line[0] == '\t') {
+				line.erase(0, 1);
+			} else if (line[0] == ' ') {
+				std::size_t spaces = 0;
+				while (spaces < line.size() && spaces < 8 && line[spaces] == ' ') {
+					++spaces;
+				}
+				if (spaces > 0)
+					line.erase(0, spaces);
+			}
+		}
+	}
+	buf->SetDirty(true);
+	buf->ClearMark();
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
+}
+
+
+static bool
+cmd_reflow_paragraph(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	ensure_at_least_one_line(*buf);
+	auto &rows             = buf->Rows();
+	std::size_t y          = buf->Cury();
+	int width              = ctx.count > 0 ? ctx.count : 72;
+	std::size_t para_start = y;
+	while (para_start > 0 && !rows[para_start - 1].empty())
+		--para_start;
+	std::size_t para_end = y;
+	while (para_end + 1 < rows.size() && !rows[para_end + 1].empty())
+		++para_end;
+	if (para_start > para_end)
+		return false;
+	std::string text;
+	for (std::size_t i = para_start; i <= para_end; ++i) {
+		if (i > para_start && !text.empty() && text.back() != ' ')
+			text += ' ';
+		const auto &line = rows[i];
+		for (std::size_t j = 0; j < line.size(); ++j) {
+			char c = line[j];
+			if (c == '\t')
+				text += ' ';
+			else
+				text += c;
+		}
+	}
+	std::vector<std::string> new_lines;
+	std::string line;
+	std::size_t pos = 0;
+	while (pos < text.size()) {
+		while (pos < text.size() && text[pos] == ' ')
+			++pos;
+		if (pos >= text.size())
+			break;
+		std::size_t word_start = pos;
+		while (pos < text.size() && text[pos] != ' ')
+			++pos;
+		std::string word = text.substr(word_start, pos - word_start);
+		if (line.empty()) {
+			line = word;
+		} else if (static_cast<int>(line.size() + 1 + word.size()) <= width) {
+			line += ' ';
+			line += word;
+		} else {
+			new_lines.push_back(line);
+			line = word;
+		}
+	}
+	if (!line.empty())
+		new_lines.push_back(line);
+	if (new_lines.empty())
+		new_lines.push_back("");
+	rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(para_start),
+	           rows.begin() + static_cast<std::ptrdiff_t>(para_end + 1));
+	rows.insert(rows.begin() + static_cast<std::ptrdiff_t>(para_start),
+	            new_lines.begin(), new_lines.end());
+	buf->SetCursor(0, para_start);
+	buf->SetDirty(true);
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
+}
+
+
+static bool
+cmd_reload_buffer(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	const std::string &filename = buf->Filename();
+	if (filename.empty()) {
+		ctx.editor.SetStatus("Cannot reload unnamed buffer");
+		return false;
+	}
+	std::string err;
+	if (!buf->OpenFromFile(filename, err)) {
+		ctx.editor.SetStatus(std::string("Reload failed: ") + err);
+		return false;
+	}
+	ctx.editor.SetStatus(std::string("Reloaded ") + filename);
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
+}
+
+
+static bool
+cmd_mark_all_and_jump_end(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	ensure_at_least_one_line(*buf);
+	buf->SetMark(0, 0);
+	auto &rows         = buf->Rows();
+	std::size_t last_y = rows.empty() ? 0 : rows.size() - 1;
+	std::size_t last_x = last_y < rows.size() ? rows[last_y].size() : 0;
+	buf->SetCursor(last_x, last_y);
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
+}
+
+
 std::vector<Command> &
 CommandRegistry::storage_()
 {
@@ -1928,11 +2318,32 @@ InstallDefaultCommands()
 	CommandRegistry::Register({CommandId::WordPrev, "word-prev", "Move to previous word", cmd_word_prev});
 	CommandRegistry::Register({CommandId::WordNext, "word-next", "Move to next word", cmd_word_next});
 	CommandRegistry::Register({
+		CommandId::DeleteWordPrev, "delete-word-prev", "Delete previous word", cmd_delete_word_prev
+	});
+	CommandRegistry::Register({
+		CommandId::DeleteWordNext, "delete-word-next", "Delete next word", cmd_delete_word_next
+	});
+	CommandRegistry::Register({
 		CommandId::MoveCursorTo, "move-cursor-to", "Move cursor to y:x", cmd_move_cursor_to
 	});
 	// Undo/Redo
 	CommandRegistry::Register({CommandId::Undo, "undo", "Undo last edit", cmd_undo});
 	CommandRegistry::Register({CommandId::Redo, "redo", "Redo edit", cmd_redo});
+	// Region formatting
+	CommandRegistry::Register({CommandId::IndentRegion, "indent-region", "Indent region", cmd_indent_region});
+	CommandRegistry::Register(
+		{CommandId::UnindentRegion, "unindent-region", "Unindent region", cmd_unindent_region});
+	CommandRegistry::Register({
+		CommandId::ReflowParagraph, "reflow-paragraph", "Reflow paragraph to column width", cmd_reflow_paragraph
+	});
+	// Buffer operations
+	CommandRegistry::Register({
+		CommandId::ReloadBuffer, "reload-buffer", "Reload buffer from disk", cmd_reload_buffer
+	});
+	CommandRegistry::Register({
+		CommandId::MarkAllAndJumpEnd, "mark-all-jump-end", "Set mark at beginning and jump to end",
+		cmd_mark_all_and_jump_end
+	});
 	// UI helpers
 	CommandRegistry::Register(
 		{CommandId::UArgStatus, "uarg-status", "Update universal-arg status", cmd_uarg_status});
@@ -1952,7 +2363,7 @@ Execute(Editor &ed, CommandId id, const std::string &arg, int count)
 	}
 	// Reset kill chain unless this is a kill-like command (so consecutive kills append)
 	if (id != CommandId::KillToEOL && id != CommandId::KillLine && id != CommandId::KillRegion && id !=
-	    CommandId::CopyRegion) {
+	    CommandId::CopyRegion && id != CommandId::DeleteWordPrev && id != CommandId::DeleteWordNext) {
 		ed.SetKillChain(false);
 	}
 	CommandContext ctx{ed, arg, count};

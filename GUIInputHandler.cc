@@ -447,8 +447,8 @@ GUIInputHandler::ProcessSDLEvent(const SDL_Event &e)
 						// Unknown k-command via TEXTINPUT path
 						int shown = KLowerAscii(ascii_key);
 						char c    = (shown >= 0x20 && shown <= 0x7e)
-							            ? static_cast<char>(shown)
-							            : '?';
+							         ? static_cast<char>(shown)
+							         : '?';
 						std::string arg(1, c);
 						mi       = {true, CommandId::UnknownKCommand, arg, 0};
 						produced = true;

@@ -56,6 +56,8 @@ enum class CommandId {
 	PageDown,
 	WordPrev,
 	WordNext,
+	DeleteWordPrev, // delete previous word (ESC BACKSPACE)
+	DeleteWordNext, // delete next word (ESC d)
 	// Direct cursor placement
 	MoveCursorTo, // arg: "y:x" (zero-based row:col)
 	// Undo/Redo
@@ -63,6 +65,13 @@ enum class CommandId {
 	Redo,
 	// UI/status helpers
 	UArgStatus, // update status line during universal-argument collection
+	// Region formatting
+	IndentRegion, // indent region (C-k =)
+	UnindentRegion, // unindent region (C-k -)
+	ReflowParagraph, // reflow paragraph to column width (ESC q)
+	// Buffer operations
+	ReloadBuffer, // reload buffer from disk (C-k l)
+	MarkAllAndJumpEnd, // set mark at beginning, jump to end (C-k a)
 	// Meta
 	UnknownKCommand, // arg: single character that was not recognized after C-k
 };

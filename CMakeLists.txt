@@ -10,6 +10,7 @@ set(KTE_VERSION "0.0.1")
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
 set(BUILD_GUI OFF CACHE BOOL "Enable building the graphical version.")
 option(KTE_USE_PIECE_TABLE "Use PieceTable instead of GapBuffer implementation" OFF)
+set(KTE_FONT_SIZE "18.0" CACHE STRING "Default font size for GUI")
 
 if (CMAKE_HOST_UNIX)
     message(STATUS "Build system is POSIX.")
@@ -55,6 +56,9 @@ set(COMMON_SOURCES
         TerminalInputHandler.cc
         TerminalRenderer.cc
         TerminalFrontend.cc
+        TestInputHandler.cc
+        TestRenderer.cc
+        TestFrontend.cc
         UndoNode.cc
         UndoTree.cc
         UndoSystem.cc
@@ -74,6 +78,9 @@ set(COMMON_HEADERS
         TerminalRenderer.h
         Frontend.h
         TerminalFrontend.h
+        TestInputHandler.h
+        TestRenderer.h
+        TestFrontend.h
         UndoNode.h
         UndoTree.h
         UndoSystem.h
@@ -95,6 +102,19 @@ target_link_libraries(kte ${CURSES_LIBRARIES})
 install(TARGETS kte
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+# test_undo executable for testing undo/redo system
+add_executable(test_undo
+        test_undo.cc
+        ${COMMON_SOURCES}
+        ${COMMON_HEADERS}
+)
+
+if (KTE_USE_PIECE_TABLE)
+    target_compile_definitions(test_undo PRIVATE KTE_USE_PIECE_TABLE=1)
+endif ()
+
+target_link_libraries(test_undo ${CURSES_LIBRARIES})
 
 if (${BUILD_GUI})
     target_sources(kte PRIVATE
@@ -119,7 +139,7 @@ if (${BUILD_GUI})
             GUIInputHandler.h
             GUIFrontend.cc
             GUIFrontend.h)
-    target_compile_definitions(kge PRIVATE KTE_BUILD_GUI=1 KTE_DEFAULT_GUI=1)
+    target_compile_definitions(kge PRIVATE KTE_BUILD_GUI=1 KTE_DEFAULT_GUI=1 KTE_FONT_SIZE=${KTE_FONT_SIZE})
     target_link_libraries(kge ${CURSES_LIBRARIES} imgui)
 
     install(TARGETS kge

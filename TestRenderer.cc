@@ -1,0 +1,10 @@
+#include "TestRenderer.h"
+#include "Editor.h"
+
+
+void
+TestRenderer::Draw(Editor &ed)
+{
+	(void) ed;
+	++draw_count_;
+}

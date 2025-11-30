@@ -3,15 +3,15 @@
 
 
 UndoSystem::UndoSystem(Buffer &owner, UndoTree &tree)
-	: buf_(owner), tree_(tree) {}
+	: buf_(&owner), tree_(tree) {}
 
 
 void
 UndoSystem::Begin(UndoType type)
 {
 	// Reuse pending if batching conditions are met
-	const int row = static_cast<int>(buf_.Cury());
-	const int col = static_cast<int>(buf_.Curx());
+	const int row = static_cast<int>(buf_->Cury());
+	const int col = static_cast<int>(buf_->Curx());
 	if (tree_.pending && tree_.pending->type == type && tree_.pending->row == row) {
 		if (type == UndoType::Delete) {
 			// Support batching both forward deletes (DeleteChar) and backspace (prepend case)
@@ -187,30 +187,30 @@ UndoSystem::apply(const UndoNode *node, int direction)
 	case UndoType::Insert:
 	case UndoType::Paste:
 		if (direction > 0) {
-			buf_.insert_text(node->row, node->col, node->text);
+			buf_->insert_text(node->row, node->col, node->text);
 		} else {
-			buf_.delete_text(node->row, node->col, node->text.size());
+			buf_->delete_text(node->row, node->col, node->text.size());
 		}
 		break;
 	case UndoType::Delete:
 		if (direction > 0) {
-			buf_.delete_text(node->row, node->col, node->text.size());
+			buf_->delete_text(node->row, node->col, node->text.size());
 		} else {
-			buf_.insert_text(node->row, node->col, node->text);
+			buf_->insert_text(node->row, node->col, node->text);
 		}
 		break;
 	case UndoType::Newline:
 		if (direction > 0) {
-			buf_.split_line(node->row, node->col);
+			buf_->split_line(node->row, node->col);
 		} else {
-			buf_.join_lines(node->row);
+			buf_->join_lines(node->row);
 		}
 		break;
 	case UndoType::DeleteRow:
 		if (direction > 0) {
-			buf_.delete_row(node->row);
+			buf_->delete_row(node->row);
 		} else {
-			buf_.insert_row(node->row, node->text);
+			buf_->insert_row(node->row, node->text);
 		}
 		break;
 	}
@@ -284,5 +284,12 @@ UndoSystem::update_dirty_flag()
 {
 	// dirty if current != saved
 	bool dirty = (tree_.current != tree_.saved);
-	buf_.SetDirty(dirty);
+	buf_->SetDirty(dirty);
+}
+
+
+void
+UndoSystem::UpdateBufferReference(Buffer &new_buf)
+{
+	buf_ = &new_buf;
 }

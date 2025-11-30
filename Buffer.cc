@@ -69,6 +69,63 @@ Buffer::operator=(const Buffer &other)
 }
 
 
+// Move constructor: move all fields and update UndoSystem's buffer reference
+Buffer::Buffer(Buffer &&other) noexcept
+	: curx_(other.curx_),
+	  cury_(other.cury_),
+	  rx_(other.rx_),
+	  nrows_(other.nrows_),
+	  rowoffs_(other.rowoffs_),
+	  coloffs_(other.coloffs_),
+	  rows_(std::move(other.rows_)),
+	  filename_(std::move(other.filename_)),
+	  is_file_backed_(other.is_file_backed_),
+	  dirty_(other.dirty_),
+	  mark_set_(other.mark_set_),
+	  mark_curx_(other.mark_curx_),
+	  mark_cury_(other.mark_cury_),
+	  undo_tree_(std::move(other.undo_tree_)),
+	  undo_sys_(std::move(other.undo_sys_))
+{
+	// Update UndoSystem's buffer reference to point to this object
+	if (undo_sys_) {
+		undo_sys_->UpdateBufferReference(*this);
+	}
+}
+
+
+// Move assignment: move all fields and update UndoSystem's buffer reference
+Buffer &
+Buffer::operator=(Buffer &&other) noexcept
+{
+	if (this == &other)
+		return *this;
+
+	curx_           = other.curx_;
+	cury_           = other.cury_;
+	rx_             = other.rx_;
+	nrows_          = other.nrows_;
+	rowoffs_        = other.rowoffs_;
+	coloffs_        = other.coloffs_;
+	rows_           = std::move(other.rows_);
+	filename_       = std::move(other.filename_);
+	is_file_backed_ = other.is_file_backed_;
+	dirty_          = other.dirty_;
+	mark_set_       = other.mark_set_;
+	mark_curx_      = other.mark_curx_;
+	mark_cury_      = other.mark_cury_;
+	undo_tree_      = std::move(other.undo_tree_);
+	undo_sys_       = std::move(other.undo_sys_);
+
+	// Update UndoSystem's buffer reference to point to this object
+	if (undo_sys_) {
+		undo_sys_->UpdateBufferReference(*this);
+	}
+
+	return *this;
+}
+
+
 bool
 Buffer::OpenFromFile(const std::string &path, std::string &err)
 {

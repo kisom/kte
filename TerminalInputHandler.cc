@@ -199,19 +199,16 @@ map_key_to_command(const int ch,
 		out      = {true, CommandId::Newline, "", 0};
 		return true;
 	}
-	// Backspace in ncurses can be KEY_BACKSPACE or 127
-	if (ch == KEY_BACKSPACE || ch == 127 || ch == CTRL('H')) {
-		k_prefix = false;
-		out      = {true, CommandId::Backspace, "", 0};
-		return true;
-	}
-
 	// If previous key was ESC, interpret as meta and use ESC keymap
 	if (esc_meta) {
 		esc_meta      = false;
 		int ascii_key = ch;
-		if (ascii_key >= 'A' && ascii_key <= 'Z')
+		// Handle ESC + BACKSPACE (meta-backspace, Alt-Backspace)
+		if (ch == KEY_BACKSPACE || ch == 127 || ch == CTRL('H')) {
+			ascii_key = KEY_BACKSPACE; // normalized value for lookup
+		} else if (ascii_key >= 'A' && ascii_key <= 'Z') {
 			ascii_key = ascii_key - 'A' + 'a';
+		}
 		CommandId id;
 		if (KLookupEscCommand(ascii_key, id)) {
 			out = {true, id, "", 0};
@@ -219,6 +216,13 @@ map_key_to_command(const int ch,
 		}
 		// Unhandled meta key: no command
 		out.hasCommand = false;
+		return true;
+	}
+
+	// Backspace in ncurses can be KEY_BACKSPACE or 127
+	if (ch == KEY_BACKSPACE || ch == 127 || ch == CTRL('H')) {
+		k_prefix = false;
+		out      = {true, CommandId::Backspace, "", 0};
 		return true;
 	}
 

@@ -20,9 +20,9 @@ public:
 
 	Buffer &operator=(const Buffer &other);
 
-	Buffer(Buffer &&) noexcept = default;
+	Buffer(Buffer &&other) noexcept;
 
-	Buffer &operator=(Buffer &&) noexcept = default;
+	Buffer &operator=(Buffer &&other) noexcept;
 
 	explicit Buffer(const std::string &path);
 
