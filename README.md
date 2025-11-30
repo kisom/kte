@@ -180,32 +180,6 @@ Run:
 ./cmake-build-debug/kte [files]
 ```
 
-CLI usage
----------
-
-```
-kte [OPTIONS] [files]
-
-Options:
-  -g, --gui        Use GUI frontend (if built)
-  -t, --term       Use terminal (ncurses) frontend [default]
-  -h, --help       Show help and exit
-  -V, --version    Show version and exit
-```
-
-Examples:
-
-```
-# Terminal (default)
-kte foo.txt bar.txt
-
-# Explicit terminal
-kte -t foo.txt
-
-# GUI (requires building with -DBUILD_GUI=ON and GUI deps installed)
-kte --gui foo.txt
-```
-
 GUI build example
 -----------------
 

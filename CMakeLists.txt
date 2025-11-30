@@ -44,7 +44,7 @@ endif ()
 find_package(Curses REQUIRED)
 include_directories(${CURSES_INCLUDE_DIR})
 
-set(SOURCES
+set(COMMON_SOURCES
         GapBuffer.cpp
         PieceTable.cpp
         Buffer.cpp
@@ -55,7 +55,7 @@ set(SOURCES
         TerminalFrontend.cpp
 )
 
-set(HEADERS
+set(COMMON_HEADERS
         GapBuffer.h
         PieceTable.h
         Buffer.h
@@ -70,10 +70,11 @@ set(HEADERS
         TerminalFrontend.h
 )
 
+# kte (terminal-first) executable
 add_executable(kte
         main.cpp
-        ${SOURCES}
-        ${HEADERS}
+        ${COMMON_SOURCES}
+        ${COMMON_HEADERS}
 )
 
 if (KTE_USE_PIECE_TABLE)
@@ -83,6 +84,7 @@ endif ()
 target_link_libraries(kte ${CURSES_LIBRARIES})
 
 if (${BUILD_GUI})
+    # Add GUI support to kte so it can be started with -g
     target_sources(kte PRIVATE
             GUIRenderer.cpp
             GUIRenderer.h
@@ -92,4 +94,18 @@ if (${BUILD_GUI})
             GUIFrontend.h)
     target_compile_definitions(kte PRIVATE KTE_BUILD_GUI=1)
     target_link_libraries(kte imgui)
+
+    # kge (GUI-first) executable
+    add_executable(kge
+            main.cpp
+            ${COMMON_SOURCES}
+            ${COMMON_HEADERS}
+            GUIRenderer.cpp
+            GUIRenderer.h
+            GUIInputHandler.cpp
+            GUIInputHandler.h
+            GUIFrontend.cpp
+            GUIFrontend.h)
+    target_compile_definitions(kge PRIVATE KTE_BUILD_GUI=1 KTE_DEFAULT_GUI=1)
+    target_link_libraries(kge ${CURSES_LIBRARIES} imgui)
 endif ()

@@ -7,7 +7,25 @@
 
 void GUIRenderer::Draw(const Editor &ed)
 {
-    ImGui::Begin("kte");
+    // Make the editor window occupy the entire GUI container/viewport
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(vp->Pos);
+    ImGui::SetNextWindowSize(vp->Size);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar
+                           | ImGuiWindowFlags_NoResize
+                           | ImGuiWindowFlags_NoMove
+                           | ImGuiWindowFlags_NoCollapse
+                           | ImGuiWindowFlags_NoSavedSettings
+                           | ImGuiWindowFlags_NoBringToFrontOnFocus
+                           | ImGuiWindowFlags_NoNavFocus;
+
+    // Reduce padding so the buffer content uses the whole area
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6.f, 6.f));
+
+    ImGui::Begin("kte", nullptr, flags);
 
     const Buffer *buf = ed.CurrentBuffer();
     if (!buf) {
@@ -34,4 +52,5 @@ void GUIRenderer::Draw(const Editor &ed)
     }
 
     ImGui::End();
+    ImGui::PopStyleVar(3);
 }
