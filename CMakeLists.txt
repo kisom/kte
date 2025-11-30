@@ -10,7 +10,7 @@ set(KTE_VERSION "0.9.0")
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
 set(BUILD_GUI OFF CACHE BOOL "Enable building the graphical version.")
 set(BUILD_TESTS OFF CACHE BOOL "Enable building test programs.")
-option(KTE_USE_PIECE_TABLE "Use PieceTable instead of GapBuffer implementation" OFF)
+option(KTE_USE_PIECE_TABLE "Use PieceTable instead of GapBuffer implementation" ON)
 set(KTE_FONT_SIZE "18.0" CACHE STRING "Default font size for GUI")
 
 if (CMAKE_HOST_UNIX)
