@@ -17,7 +17,7 @@
       <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/KEEP_BLANK_LINES_IN_DECLARATIONS/@EntryValue" value="2" type="int" />
       <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/KEEP_BLANK_LINES_IN_CODE/@EntryValue" value="2" type="int" />
       <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/KEEP_USER_LINEBREAKS/@EntryValue" value="true" type="bool" />
-      <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/INDENT_CASE_FROM_SWITCH/@EntryValue" value="true" type="bool" />
+      <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/INDENT_CASE_FROM_SWITCH/@EntryValue" />
       <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/INDENT_COMMENT/@EntryValue" value="true" type="bool" />
       <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/INT_ALIGN_EQ/@EntryValue" value="true" type="bool" />
       <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/SIMPLE_BLOCK_STYLE/@EntryValue" value="LINE_BREAK" type="string" />
@@ -43,7 +43,7 @@
       <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/PLACE_WHILE_ON_NEW_LINE/@EntryValue" value="false" type="bool" />
       <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/PLACE_ELSE_ON_NEW_LINE/@EntryValue" value="false" type="bool" />
       <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/PLACE_CATCH_ON_NEW_LINE/@EntryValue" value="false" type="bool" />
-      <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/NAMESPACE_INDENTATION/@EntryValue" value="All" type="string" />
+      <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/NAMESPACE_INDENTATION/@EntryValue" value="None" type="string" />
       <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/ALIGN_MULTILINE_ARGUMENT/@EntryValue" value="true" type="bool" />
       <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/ALIGN_MULTILINE_EXTENDS_LIST/@EntryValue" value="true" type="bool" />
       <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/ALIGN_MULTILINE_PARAMETER/@EntryValue" value="true" type="bool" />
@@ -140,6 +140,9 @@
       <option name="/Default/CodeStyle/Naming/CppNamingOptions/Rules/=2B232F1067F0324F8FF4B9D63ACECDB2/@EntryIndexRemoved" />
       <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/REMOVE_BLANK_LINES_NEAR_BRACES_IN_CODE/@EntryValue" />
       <option name="/Default/CodeStyle/CppIncludeDirective/SortIncludeDirectives/@EntryValue" value="true" type="bool" />
+      <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/USE_CONTINUOUS_LINE_INDENT_IN_METHOD_PARS/@EntryValue" />
+      <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/USE_CONTINUOUS_LINE_INDENT_IN_EXPRESSION_BRACES/@EntryValue" />
+      <option name="/Default/CodeStyle/CodeFormatting/CppFormatting/INDENT_GOTO_LABELS/@EntryValue" value="false" type="bool" />
     </RiderCodeStyleSettings>
     <files>
       <extensions>

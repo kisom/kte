@@ -6,22 +6,23 @@
 
 #include <memory>
 
+
 class Editor;
 class InputHandler;
 class Renderer;
 
 class Frontend {
 public:
-    virtual ~Frontend() = default;
+	virtual ~Frontend() = default;
 
-    // Initialize the frontend (create window/terminal, etc.)
-    virtual bool Init(Editor &ed) = 0;
+	// Initialize the frontend (create window/terminal, etc.)
+	virtual bool Init(Editor &ed) = 0;
 
-    // Execute one iteration (poll input, dispatch, draw). Set running=false to exit.
-    virtual void Step(Editor &ed, bool &running) = 0;
+	// Execute one iteration (poll input, dispatch, draw). Set running=false to exit.
+	virtual void Step(Editor &ed, bool &running) = 0;
 
-    // Shutdown/cleanup
-    virtual void Shutdown() = 0;
+	// Shutdown/cleanup
+	virtual void Shutdown() = 0;
 };
 
 #endif // KTE_FRONTEND_H

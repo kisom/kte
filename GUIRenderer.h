@@ -8,10 +8,11 @@
 
 class GUIRenderer : public Renderer {
 public:
-    GUIRenderer() = default;
-    ~GUIRenderer() override = default;
+	GUIRenderer() = default;
 
-    void Draw(const Editor &ed) override;
+	~GUIRenderer() override = default;
+
+	void Draw(Editor &ed) override;
 };
 
 #endif // KTE_GUI_RENDERER_H

@@ -5,7 +5,6 @@
 #define KTE_KKEYMAP_H
 
 #include "Command.h"
-#include <cctype>
 
 // Lookup the command to execute after a C-k prefix.
 // Parameters:

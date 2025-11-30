@@ -6,12 +6,13 @@
 
 #include "Renderer.h"
 
-class TerminalRenderer : public Renderer {
+
+class TerminalRenderer final : public Renderer {
 public:
     TerminalRenderer();
     ~TerminalRenderer() override;
 
-    void Draw(const Editor &ed) override;
+    void Draw(Editor &ed) override;
 };
 
 #endif // KTE_TERMINAL_RENDERER_H

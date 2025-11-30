@@ -1,0 +1,3 @@
+#ifndef KGE_FONTS_B612_MONO_H
+#define KGE_FONTS_B612_MONO_H
+

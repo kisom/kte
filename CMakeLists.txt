@@ -2,12 +2,15 @@ cmake_minimum_required(VERSION 3.15)
 project(kte)
 
 set(CMAKE_CXX_STANDARD 17)
-set (KTE_VERSION    "0.0.1")
+set(KTE_VERSION "0.0.1")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
 set(BUILD_GUI OFF CACHE BOOL "Enable building the graphical version.")
 option(KTE_USE_PIECE_TABLE "Use PieceTable instead of GapBuffer implementation" OFF)
+
+# GUI font configuration: use embedded font from Font.h exclusively for now.
+# Font selection via external paths is disabled until revisited later.
 
 
 if (CMAKE_HOST_UNIX)
@@ -32,7 +35,8 @@ else ()
     endif ()
 endif ()
 add_compile_definitions(KGE_PLATFORM=${CMAKE_HOST_SYSTEM_NAME})
-add_compile_definitions(KGE_VERSION=${PROJECT_VERSION})
+# Propagate configured version to code as a string macro KTE_VERSION_STR
+add_compile_definitions(KTE_VERSION_STR="v${KTE_VERSION}")
 
 message(STATUS "Build system: ${CMAKE_HOST_SYSTEM_NAME}")
 
@@ -45,15 +49,15 @@ find_package(Curses REQUIRED)
 include_directories(${CURSES_INCLUDE_DIR})
 
 set(COMMON_SOURCES
-        GapBuffer.cpp
-        PieceTable.cpp
-        Buffer.cpp
-        Editor.cpp
-        Command.cpp
-        KKeymap.cpp
-        TerminalInputHandler.cpp
-        TerminalRenderer.cpp
-        TerminalFrontend.cpp
+        GapBuffer.cc
+        PieceTable.cc
+        Buffer.cc
+        Editor.cc
+        Command.cc
+        KKeymap.cc
+        TerminalInputHandler.cc
+        TerminalRenderer.cc
+        TerminalFrontend.cc
 )
 
 set(COMMON_HEADERS
@@ -74,7 +78,7 @@ set(COMMON_HEADERS
 
 # kte (terminal-first) executable
 add_executable(kte
-        main.cpp
+        main.cc
         ${COMMON_SOURCES}
         ${COMMON_HEADERS}
 )
@@ -85,29 +89,34 @@ endif ()
 
 target_link_libraries(kte ${CURSES_LIBRARIES})
 
+# No GUI font-related preprocessor defines are emitted; GUI uses embedded font.
+
 if (${BUILD_GUI})
     # Add GUI support to kte so it can be started with -g
     target_sources(kte PRIVATE
-            GUIRenderer.cpp
+            Font.h
+            GUIRenderer.cc
             GUIRenderer.h
-            GUIInputHandler.cpp
+            GUIInputHandler.cc
             GUIInputHandler.h
-            GUIFrontend.cpp
+            GUIFrontend.cc
             GUIFrontend.h)
     target_compile_definitions(kte PRIVATE KTE_BUILD_GUI=1)
     target_link_libraries(kte imgui)
 
     # kge (GUI-first) executable
     add_executable(kge
-            main.cpp
+            main.cc
             ${COMMON_SOURCES}
             ${COMMON_HEADERS}
-            GUIRenderer.cpp
+            GUIRenderer.cc
             GUIRenderer.h
-            GUIInputHandler.cpp
+            GUIInputHandler.cc
             GUIInputHandler.h
-            GUIFrontend.cpp
+            GUIFrontend.cc
             GUIFrontend.h)
     target_compile_definitions(kge PRIVATE KTE_BUILD_GUI=1 KTE_DEFAULT_GUI=1)
     target_link_libraries(kge ${CURSES_LIBRARIES} imgui)
+
+    # No GUI font-related preprocessor defines are emitted; GUI uses embedded font.
 endif ()

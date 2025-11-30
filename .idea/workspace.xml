@@ -8,6 +8,7 @@
     <option name="/Default/Housekeeping/FeatureSuggestion/FeatureSuggestionManager/DisabledSuggesters/=SwitchToGoToActionSuggester/@EntryIndexedValue" value="true" type="bool" />
     <option name="/Default/Housekeeping/GlobalSettingsUpgraded/IsUpgraded/@EntryValue" value="true" type="bool" />
     <option name="/Default/Housekeeping/OptionsDialog/SelectedPageId/@EntryValue" value="CppFormatterOtherPage" type="string" />
+    <option name="/Default/Housekeeping/RefactoringsMru/RenameRefactoring/DoSearchForTextInStrings/@EntryValue" value="true" type="bool" />
     <option name="/Default/RiderDebugger/RiderRestoreDecompile/RestoreDecompileSetting/@EntryValue" value="false" type="bool" />
   </component>
   <component name="CMakePresetLoader"><![CDATA[{
@@ -26,24 +27,47 @@
       <config projectName="kte" targetName="kge" />
     </generated>
   </component>
-  <component name="CMakeSettings">
+  <component name="CMakeSettings" AUTO_RELOAD="true">
     <configurations>
       <configuration PROFILE_NAME="Debug" ENABLED="true" CONFIG_NAME="Debug" GENERATION_OPTIONS="-G &quot;Unix Makefiles&quot; -DKTE_USE_PIECE_TABLE:BOOL=ON" />
     </configurations>
   </component>
   <component name="ChangeListManager">
     <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/KKeymap.cpp" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/KKeymap.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Font.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/GUIInputHandler.cc" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/TerminalRenderer.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/codeStyles/Project.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/codeStyles/Project.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/editor.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/editor.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Buffer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Buffer.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Buffer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Buffer.cc" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Command.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Command.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Command.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Command.cc" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Command.h" beforeDir="false" afterPath="$PROJECT_DIR$/Command.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUIInputHandler.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUIInputHandler.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUIRenderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUIRenderer.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TerminalInputHandler.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalInputHandler.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TerminalRenderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalRenderer.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Editor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Editor.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Editor.h" beforeDir="false" afterPath="$PROJECT_DIR$/Editor.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Frontend.h" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIFrontend.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUIFrontend.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIFrontend.h" beforeDir="false" afterPath="$PROJECT_DIR$/GUIFrontend.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIInputHandler.cpp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIInputHandler.h" beforeDir="false" afterPath="$PROJECT_DIR$/GUIInputHandler.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIRenderer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUIRenderer.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIRenderer.h" beforeDir="false" afterPath="$PROJECT_DIR$/GUIRenderer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GapBuffer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/GapBuffer.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GapBuffer.h" beforeDir="false" afterPath="$PROJECT_DIR$/GapBuffer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/InputHandler.h" beforeDir="false" afterPath="$PROJECT_DIR$/InputHandler.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KKeymap.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/KKeymap.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KKeymap.h" beforeDir="false" afterPath="$PROJECT_DIR$/KKeymap.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/PieceTable.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/PieceTable.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ROADMAP.md" beforeDir="false" afterPath="$PROJECT_DIR$/ROADMAP.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Renderer.h" beforeDir="false" afterPath="$PROJECT_DIR$/Renderer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TerminalFrontend.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalFrontend.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TerminalFrontend.h" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalFrontend.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TerminalInputHandler.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalInputHandler.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TerminalInputHandler.h" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalInputHandler.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TerminalRenderer.cpp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/TerminalRenderer.h" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalRenderer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/main.cc" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -54,11 +78,17 @@
     <option name="formatViaClangd" value="false" />
   </component>
   <component name="ExecutionTargetManager" SELECTED_TARGET="CMakeBuildProfile:Debug" />
+  <component name="FormatOnSaveOptions">
+    <option name="myRunOnSave" value="true" />
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="HighlightingSettingsPerFile">
     <setting file="mock:///AIAssistantSnippet.." root0="SKIP_HIGHLIGHTING" />
+  </component>
+  <component name="OptimizeOnSaveOptions">
+    <option name="myRunOnSave" value="true" />
   </component>
   <component name="ProjectApplicationVersion">
     <option name="ide" value="CLion" />
@@ -76,6 +106,7 @@
   </component>
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
+    "CMake Application.kge.executor": "Debug",
     "ModuleVcsDetector.initialDetectionPerformed": "true",
     "NIXITCH_NIXPKGS_CONFIG": "",
     "NIXITCH_NIX_CONF_DIR": "",
@@ -91,6 +122,7 @@
     "RunOnceActivity.west.config.association.type.startup.service": "true",
     "cf.first.check.clang-format": "false",
     "cidr.known.project.marker": "true",
+    "code.cleanup.on.save": "true",
     "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
     "git-widget-placeholder": "master",
     "junie.onboarding.icon.badge.shown": "true",
@@ -100,12 +132,13 @@
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
     "onboarding.tips.debug.path": "/Users/kyle/src/kte/main.cpp",
+    "rearrange.code.on.save": "true",
     "settings.editor.selected.configurable": "CMakeSettings",
     "to.speed.mode.migration.done": "true",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
-  <component name="RunManager" selected="CMake Application.kte">
+  <component name="RunManager" selected="CMake Application.kge">
     <configuration default="true" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
@@ -139,7 +172,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1764457173148</updated>
-      <workItem from="1764457174208" duration="10626000" />
+      <workItem from="1764457174208" duration="17712000" />
     </task>
     <servers />
   </component>

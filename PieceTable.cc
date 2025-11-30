@@ -1,6 +1,7 @@
-#include "PieceTable.h"
 #include <algorithm>
 #include <utility>
+
+#include "PieceTable.h"
 
 
 PieceTable::PieceTable() = default;

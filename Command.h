@@ -6,8 +6,8 @@
 
 #include <functional>
 #include <string>
-#include <unordered_map>
 #include <vector>
+
 
 class Editor;
 
@@ -22,6 +22,7 @@ enum class CommandId {
     Refresh,    // force redraw
     KPrefix,    // show "C-k _" prompt in status when entering k-command
     FindStart,  // begin incremental search (placeholder)
+    OpenFileStart, // begin open-file prompt
     // Editing
     InsertText,   // arg: text to insert at cursor (UTF-8, no newlines)
     Newline,      // insert a newline at cursor
@@ -34,6 +35,12 @@ enum class CommandId {
     MoveDown,
     MoveHome,
     MoveEnd,
+    PageUp,
+    PageDown,
+    WordPrev,
+    WordNext,
+    // Direct cursor placement
+    MoveCursorTo, // arg: "y:x" (zero-based row:col)
 };
 
 

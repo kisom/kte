@@ -26,11 +26,15 @@ public:
 
 
 	void AppendChar(char c);
+
 	void Append(const char *s, std::size_t len);
+
 	void Append(const GapBuffer &other);
 
 	void PrependChar(char c);
+
 	void Prepend(const char *s, std::size_t len);
+
 	void Prepend(const GapBuffer &other);
 
 	// Content management
@@ -42,15 +46,18 @@ public:
 		return buffer_;
 	}
 
+
 	[[nodiscard]] const char *Data() const
 	{
 		return buffer_;
 	}
 
+
 	[[nodiscard]] std::size_t Size() const
 	{
 		return size_;
 	}
+
 
 	[[nodiscard]] std::size_t Capacity() const
 	{

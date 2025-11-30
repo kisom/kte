@@ -11,21 +11,22 @@
 
 union SDL_Event; // fwd decl to avoid including SDL here (SDL defines SDL_Event as a union)
 
-class GUIInputHandler : public InputHandler {
+class GUIInputHandler final : public InputHandler {
 public:
-    GUIInputHandler() = default;
-    ~GUIInputHandler() override = default;
+	GUIInputHandler() = default;
 
-    // Translate an SDL event to editor command and enqueue if applicable.
-    // Returns true if it produced a mapped command or consumed input.
-    bool ProcessSDLEvent(const SDL_Event &e);
+	~GUIInputHandler() override = default;
 
-    bool Poll(MappedInput &out) override;
+	// Translate an SDL event to editor command and enqueue if applicable.
+	// Returns true if it produced a mapped command or consumed input.
+	bool ProcessSDLEvent(const SDL_Event &e);
+
+	bool Poll(MappedInput &out) override;
 
 private:
-    std::mutex mu_;
-    std::queue<MappedInput> q_;
-    bool k_prefix_ = false;
+	std::mutex mu_;
+	std::queue<MappedInput> q_;
+	bool k_prefix_ = false;
 };
 
 #endif // KTE_GUI_INPUT_HANDLER_H
