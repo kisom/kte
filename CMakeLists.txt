@@ -104,6 +104,9 @@ install(TARGETS kte
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+# Man pages
+install(FILES docs/kte.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
+
 if (BUILD_TESTS)
     # test_undo executable for testing undo/redo system
     add_executable(test_undo
@@ -169,4 +172,6 @@ if (${BUILD_GUI})
                 RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         )
     endif()
+    # Install kge man page only when GUI is built
+    install(FILES docs/kge.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 endif ()

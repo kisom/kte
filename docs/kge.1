@@ -1,0 +1,210 @@
+.\" kge(1) — Kyle's Graphical Editor (GUI-first)
+.\"
+.\" Project homepage: https://github.com/wntrmute/kte
+.TH KGE 1 "2025-11-30" "kte 0.1.0" "User Commands"
+.SH NAME
+kge \- Kyle's Graphical Editor (GUI-first)
+.SH SYNOPSIS
+.B kge
+[
+.I options
+]
+[
+.I files ...
+]
+.SH DESCRIPTION
+.B kge
+is the GUI-first build target of Kyle's Text Editor. It shares the same
+editor core and command model as
+.BR kte (1),
+but defaults to the graphical ImGui frontend when available. A terminal
+(ncurses) frontend is also available and can be requested explicitly.
+
+If one or more
+.I files
+are provided, they are opened on startup; otherwise, an empty buffer is
+created.
+.SH OPTIONS
+.TP
+.B -g, --gui
+Use the GUI frontend (default for
+.B kge
+when built).
+.TP
+.B -t, --term
+Use the terminal (ncurses) frontend instead of the GUI.
+.TP
+.B -h, --help
+Display a brief usage summary and exit.
+.TP
+.B -V, --version
+Print version information and exit.
+.SH KEYBINDINGS
+The GUI shares the same commands and keybindings as the terminal editor.
+They are summarized here for convenience. See the ke manual in the source
+tree for the canonical reference and notes:
+.I docs/ke.md
+.
+.SS K-commands (prefix Ctrl-K)
+.PP
+Enter K-command mode with Ctrl-K. Exit K-command mode with ESC or Ctrl-G.
+.TP
+.B C-k BACKSPACE
+Delete from the cursor to the beginning of the line.
+.TP
+.B C-k SPACE
+Toggle the mark.
+.TP
+.B C-k -
+If the mark is set, unindent the region.
+.TP
+.B C-k =
+If the mark is set, indent the region.
+.TP
+.B C-k a
+Set the mark at the beginning of the file, then jump to the end of the file.
+.TP
+.B C-k b
+Switch to a buffer.
+.TP
+.B C-k c
+Close the current buffer. If no other buffers are open, an empty buffer will be opened. To exit, use C-k q.
+.TP
+.B C-k d
+Delete from the cursor to the end of the line.
+.TP
+.B C-k C-d
+Delete the entire line.
+.TP
+.B C-k e
+Edit a new file.
+.TP
+.B C-k f
+Flush the kill ring.
+.TP
+.B C-k g
+Go to a specific line.
+.TP
+.B C-k j
+Jump to the mark.
+.TP
+.B C-k l
+Reload the current buffer from disk.
+.TP
+.B C-k m
+Run make(1), reporting success or failure.
+.TP
+.B C-k p
+Switch to the next buffer.
+.TP
+.B C-k q
+Exit the editor. If the file has unsaved changes, a warning will be printed; a second C-k q will exit.
+.TP
+.B C-k C-q
+Immediately exit the editor.
+.TP
+.B C-k s
+Save the file, prompting for a filename if needed.
+.TP
+.B C-k u
+Undo.
+.TP
+.B C-k r
+Redo changes.
+.TP
+.B C-k x
+Save the file and exit. Also C-k C-x.
+.TP
+.B C-k y
+Yank the kill ring.
+.TP
+.B C-k \e
+Dump core.
+
+.SS Other keybindings
+.TP
+.B C-g
+Cancel the current operation.
+.TP
+.B C-l
+Refresh the display.
+.TP
+.B C-r
+Regex search.
+.TP
+.B C-s
+Incremental find.
+.TP
+.B C-u
+Universal argument. C-u followed by numbers will repeat an operation n times.
+.TP
+.B C-w
+Kill the region if the mark is set.
+.TP
+.B C-y
+Yank the kill ring.
+.TP
+.B ESC BACKSPACE
+Delete the previous word.
+.TP
+.B ESC b
+Move to the previous word.
+.TP
+.B ESC d
+Delete the next word.
+.TP
+.B ESC f
+Move to the next word.
+.TP
+.B ESC q
+Reflow the paragraph to 72 columns or the value of the universal argument.
+.TP
+.B ESC w
+Save the region (if the mark is set) to the kill ring.
+.SH ENVIRONMENT
+.TP
+.B TERM
+Used if the terminal frontend is selected.
+.TP
+.B LANG, LC_ALL, LC_CTYPE
+Determine locale and character encoding.
+.SH FILES
+.TP
+.I ~/.kte/
+Future configuration directory (not yet stabilized).
+.TP
+.I kge.app
+On macOS, the GUI is built and installed as an app bundle. The command-line
+wrapper
+.B kge
+may still be available for launching with files.
+.SH EXIT STATUS
+Returns 0 on success, non-zero on failure.
+.SH EXAMPLES
+.TP
+Launch GUI (default) with multiple files:
+.RS
+.nf
+  kge main.cc Buffer.cc
+.fi
+.RE
+.TP
+Open using the terminal frontend from kge:
+.RS
+.nf
+  kge --term README.md
+.fi
+.RE
+.SH SEE ALSO
+.BR kte (1),
+.I docs/ke.md
+(project keybinding manual)
+.SH BUGS
+Report issues on the project tracker. Some behaviors are inherited from
+ke and may evolve over time; see the manual for notes.
+.SH AUTHORS
+Kyle (wntrmute) and contributors.
+.SH COPYRIGHT
+Copyright \(co 2025 Kyle. License as per project repository.
+.SH NOTES
+This page documents kte/kge version 0.1.0.
