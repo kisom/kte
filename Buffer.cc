@@ -41,25 +41,48 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		err = "Failed to open file: " + path;
 		return false;
 	}
+    
+    // Detect if file ends with a newline so we can preserve a final empty line
+    // in our in-memory representation (mg-style semantics).
+    bool ends_with_nl = false;
+    {
+        in.seekg(0, std::ios::end);
+        std::streamoff sz = in.tellg();
+        if (sz > 0) {
+            in.seekg(-1, std::ios::end);
+            char last = 0;
+            in.read(&last, 1);
+            ends_with_nl = (last == '\n');
+        } else {
+            in.clear();
+        }
+        // Rewind to start for line-by-line read
+        in.clear();
+        in.seekg(0, std::ios::beg);
+    }
 
- rows_.clear();
- std::string line;
- while (std::getline(in, line)) {
-     // std::getline strips the '\n', keep raw line
-     if (!line.empty() && !in.good()) {
-         // fallthrough
-     }
-     // Handle potential Windows CRLF: strip trailing '\r'
-     if (!line.empty() && line.back() == '\r') {
-         line.pop_back();
-     }
-     rows_.emplace_back(line);
- }
+    rows_.clear();
+    std::string line;
+    while (std::getline(in, line)) {
+        // std::getline strips the '\n', keep raw line content only
+        // Handle potential Windows CRLF: strip trailing '\r'
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        rows_.emplace_back(line);
+    }
 
-	// If file ends with a trailing newline, getline will have produced an empty
-	// last line already. If the file is empty and no lines were read, keep rows_ empty.
+    // If the file ended with a newline and we didn't already get an
+    // empty final row from getline (e.g., when the last textual line
+    // had content followed by '\n'), append an empty row to represent
+    // the cursor position past the last newline.
+    if (ends_with_nl) {
+        if (rows_.empty() || !rows_.back().empty()) {
+            rows_.emplace_back(std::string());
+        }
+    }
 
-	nrows_          = rows_.size();
+    nrows_          = rows_.size();
 	filename_       = path;
 	is_file_backed_ = true;
 	dirty_          = false;
