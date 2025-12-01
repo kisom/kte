@@ -17,8 +17,11 @@ kge \- Kyle's Graphical Editor (GUI-first)
 is the GUI-first build target of Kyle's Text Editor. It shares the same
 editor core and command model as
 .BR kte (1),
-but defaults to the graphical ImGui frontend when available. A terminal
-(ncurses) frontend is also available and can be requested explicitly.
+and defaults to the graphical ImGui frontend when available. A terminal
+(ncurses) frontend is also available and can be requested explicitly with
+.B --term
+or by invoking
+.BR kte (1).
 
 If one or more
 .I files
@@ -199,6 +202,8 @@ Open using the terminal frontend from kge:
 .BR kte (1),
 .I docs/ke.md
 (project keybinding manual)
+.br
+Project homepage: https://github.com/wntrmute/kte
 .SH BUGS
 Report issues on the project tracker. Some behaviors are inherited from
 ke and may evolve over time; see the manual for notes.

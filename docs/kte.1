@@ -16,8 +16,15 @@ kte \- Kyle's Text Editor (terminal-first)
 .B kte
 is a small, fast, and understandable text editor with a terminal-first
 experience. It preserves ke's WordStar/VDE-style command model with
-Emacs-influenced ergonomics. The core uses ncurses in the terminal and can
-optionally run with a GUI frontend if built.
+Emacs-influenced ergonomics. The core uses ncurses in the terminal.
+
+By default, .B kte
+runs in the terminal (ncurses) frontend. If the binary was built with GUI
+support, the same editor core can be shown with an ImGui-based GUI by passing
+.B --gui
+or by invoking the GUI-first target
+.BR kge (1)
+when available.
 
 If one or more
 .I files
@@ -194,6 +201,8 @@ Force GUI frontend (if available):
 .BR kge (1),
 .I docs/ke.md
 (project keybinding manual)
+.br
+Project homepage: https://github.com/wntrmute/kte
 .SH BUGS
 Incremental search currently restarts from the top on each invocation; see
 \(lqKnown behavior\(rq in the ke manual. Report issues on the project tracker.

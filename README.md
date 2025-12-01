@@ -2,8 +2,8 @@ kte — Kyle's Text Editor
 
 Vision
 -------
-kte will be a small, fast, and understandable text editor with a
-terminal�first UX and an optional ImGui GUI. It modernizes the
+kte is a small, fast, and understandable text editor with a
+terminal-first UX and an optional ImGui GUI. It modernizes the
 original ke editor while preserving its familiar WordStar/VDE‑style
 command model and Emacs‑influenced ergonomics. The focus is on
 simplicity of design, excellent latency, and pragmatic features you
@@ -79,6 +79,15 @@ Interfaces
   using ncurses.
 - GUI: an optional ImGui‑based frontend that embeds the same editor
   core.
+
+Man pages
+---------
+
+- Terminal editor: `docs/kte.1` (view locally with `man -l docs/kte.1`)
+- GUI frontend: `docs/kge.1` (view locally with `man -l docs/kge.1`)
+
+The `ke` keybinding reference remains the canonical source for
+commands while kte evolves: see `docs/ke.md`.
 
 Architecture (intended)
 -----------------------
@@ -178,6 +187,15 @@ Run:
 
 ```
 ./cmake-build-debug/kte [files]
+```
+
+If you configured the GUI, you can also run the GUI-first target (when
+built as `kge`) or request the GUI from `kte`:
+
+```
+./cmake-build-debug/kte --gui [files]
+# or if built/installed as a separate GUI target
+./cmake-build-debug/kge [files]
 ```
 
 GUI build example

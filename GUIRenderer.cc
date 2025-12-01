@@ -312,6 +312,18 @@ GUIRenderer::Draw(Editor &ed)
 			} catch (...) {}
 		}
 		left += "  ";
+		// Insert buffer position prefix "[x/N] " before filename
+		{
+			std::size_t total = ed.BufferCount();
+			if (total > 0) {
+				std::size_t idx1 = ed.CurrentBufferIndex() + 1; // 1-based for display
+				left += "[";
+				left += std::to_string(static_cast<unsigned long long>(idx1));
+				left += "/";
+				left += std::to_string(static_cast<unsigned long long>(total));
+				left += "] ";
+			}
+		}
 		left += fname;
 		if (buf->Dirty())
 			left += " *";
