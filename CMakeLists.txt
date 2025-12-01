@@ -180,8 +180,19 @@ if (${BUILD_GUI})
                 MACOSX_BUNDLE_ICON_FILE ${MACOSX_BUNDLE_ICON_FILE}
                 MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/kge-Info.plist")
 
+        add_dependencies(kge kte)
+        add_custom_command(TARGET kge POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy
+                $<TARGET_FILE:kte>
+                $<TARGET_FILE_DIR:kge>/kte
+                COMMENT "Copying kte binary into kge.app bundle")
+
         install(TARGETS kge
                 BUNDLE DESTINATION .
+        )
+
+        install(TARGETS kte
+                RUNTIME DESTINATION kge.app/Contents/MacOS
         )
     else ()
         install(TARGETS kge

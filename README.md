@@ -11,7 +11,9 @@ can learn and keep in your head.
 
 I am experimenting with using Jetbrains Junie to assist in
 development, largely as a way to learn the effective use of agentic
-coding.
+coding. I worked with the agent by feeding it notes that I've been
+taking about text editors for the last few years, as well as the
+sources from the original ke editor that is all handwritten C.
 
 Project Goals
 -------------
@@ -25,98 +27,6 @@ Project Goals
 - Provide a clean separation between core model, input, and rendering
   so a GUI can grow independently of the TUI.
 - Minimize dependencies; the GUI layer remains optional and isolated.
-
-User Experience (intended)
---------------------------
-
-- Terminal first: instant startup, responsive editing, no surprises
-  over SSH.
-- Optional GUI: an ImGui‑based window with tabs, menus, and
-  palette-sharing the same editor core and command model.
-- Discoverable command model: WordStar/VDE style with a `C-k` prefix,
-  Emacs‑like incremental search, and context help.
-- Sensible defaults with a simple config file for remaps and theme
-  selection.
-- Respect the file system: no magic project files; autosave and
-  crash‑recovery journals are opt‑in and visible.
-
-Core Features (roadmapped)
---------------------------
-
-- Buffers and windows
-    - Multiple file buffers; fast switching, closing, and reopening.
-    - Split views (horizontal/vertical) in TUI and tiled panels in
-      GUI.
-- Editing primitives
-    - Gap buffer (primary) with an alternative piece table for
-      large‑edit scenarios.
-    - Kill/yank ring, word/sentence/paragraph motions, and rectangle
-      ops.
-    - Undo/redo with grouped edits and time‑travel scrubbing.
-- Search and replace
-    - Incremental search (C-s) and regex search (C-r) with live
-      highlighting.
-    - Multi‑file grep with a quickfix list; replace with confirm.
-- Files and projects
-    - Robust encoding/line‑ending detection; safe writes (atomic where
-      possible).
-    - File tree sidebar (GUI) and quick‑open palette.
-    - Lightweight session restore.
-- Language niceties (opt‑in, no runtime servers required)
-    - Syntax highlighting via fast, table‑driven lexers.
-    - Basic indentation rules per language; trailing whitespace/EOF
-      newline helpers.
-- Extensibility (later)
-    - Command palette actions backed by the core command model.
-    - Small C++ plugin ABI and a scripting shim for config‑time
-      customization.
-
-Interfaces
-----------
-
-- CLI: the primary interface. `kte [files]` starts in the terminal,
-  adopting your `$TERM` capabilities. Terminal mode is implemented
-  using ncurses.
-- GUI: an optional ImGui‑based frontend that embeds the same editor
-  core.
-
-Man pages
----------
-
-- Terminal editor: `docs/kte.1` (view locally with `man -l docs/kte.1`)
-- GUI frontend: `docs/kge.1` (view locally with `man -l docs/kge.1`)
-
-The `ke` keybinding reference remains the canonical source for
-commands while kte evolves: see `docs/ke.md`.
-
-Architecture (intended)
------------------------
-
-- Core model
-    - Buffer: file I/O, cursor/mark, viewport state, and edit
-      operations.
-    - GapBuffer: fast in‑memory text structure for typical edits.
-    - PieceTable: alternative representation for heavy insert/delete
-      workflows.
-- Controller layer
-    - InputHandler interface with `TerminalInputHandler` and
-      `GUIInputHandler` implementations.
-    - Command: normalized operations (save, kill, yank, move, search,
-      etc.).
-- View layer
-    - Renderer interface with `TerminalRenderer` and `GUIRenderer`
-      implementations.
-- Editor: top‑level state managing buffers, messaging, and global
-  flags.
-
-Performance and Reliability Targets
------------------------------------
-
-- Sub‑millisecond keystroke to screen update on typical files in TUI.
-- Sustain fluid editing on multi‑megabyte files; graceful degradation
-  on very large files.
-- Atomic/safe writes; autosave and crash‑recovery journals are
-  explicit and transparent.
 
 Keybindings
 -----------
@@ -212,31 +122,5 @@ cmake --build cmake-build-debug
 Status
 ------
 
-- The project is under active evolution toward the above architecture
-  and UX. The terminal interface now uses ncurses for input and
-  rendering. GUI work will follow as a thin, optional layer. ke
-  compatibility remains a primary constraint while internals modernize.
-
-Roadmap (high level)
---------------------
-
-1. Solidify core buffer model (gap buffer), file I/O, and
-   ke‑compatible commands.
-2. Introduce structured undo/redo and search/replace with
-   highlighting.
-3. Stabilize terminal renderer and input handling across common
-   terminals. (initial ncurses implementation landed)
-4. Add piece table as an alternative backend with runtime selection
-   per buffer.
-5. Optional GUI frontend using ImGui; shared command palette.
-6. Language niceties (syntax highlighting, indentation rules) behind a
-   zero‑deps, fast path.
-7. Session restore, autosave/journaling, and safe write guarantees.
-8. Extensibility hooks with a small, stable API.
-   References
-
-----------
-
-- [ke](https://git.wntrmute.dev/kyle/ke) manual and keybinding
-  reference: `ke.md`
-- Inspirations: Antirez’ kilo, WordStar/VDE, Emacs, and `mg(1)`
+- This project is a hobby text editor meant to be my personal editor. I
+  do not warrant its suitability for anyone else.
