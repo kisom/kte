@@ -4,8 +4,6 @@
 #ifndef KTE_FRONTEND_H
 #define KTE_FRONTEND_H
 
-#include <memory>
-
 
 class Editor;
 class InputHandler;

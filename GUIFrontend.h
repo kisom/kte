@@ -8,6 +8,7 @@
 #include "GUIInputHandler.h"
 #include "GUIRenderer.h"
 
+
 struct SDL_Window;
 typedef void *SDL_GLContext;
 

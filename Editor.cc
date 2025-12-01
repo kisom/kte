@@ -1,8 +1,8 @@
-#include "Editor.h"
-
 #include <algorithm>
 #include <utility>
 #include <filesystem>
+
+#include "Editor.h"
 
 
 Editor::Editor() = default;

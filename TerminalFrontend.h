@@ -4,10 +4,11 @@
 #ifndef KTE_TERMINAL_FRONTEND_H
 #define KTE_TERMINAL_FRONTEND_H
 
+#include <termios.h>
+
 #include "Frontend.h"
 #include "TerminalInputHandler.h"
 #include "TerminalRenderer.h"
-#include <termios.h>
 
 
 class TerminalFrontend final : public Frontend {

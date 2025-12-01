@@ -1,8 +1,6 @@
 #ifndef KTE_UNDONODE_H
 #define KTE_UNDONODE_H
 
-#include <cstddef>
-#include <cstdint>
 #include <string>
 
 

@@ -12,6 +12,7 @@
 #include "AppendBuffer.h"
 #include "UndoSystem.h"
 
+
 class Buffer {
 public:
 	Buffer();

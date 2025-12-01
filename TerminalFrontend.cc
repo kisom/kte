@@ -1,10 +1,10 @@
-#include <unistd.h>
-#include <termios.h>
 #include <ncurses.h>
+#include <termios.h>
+#include <unistd.h>
 
-#include "Editor.h"
-#include "Command.h"
 #include "TerminalFrontend.h"
+#include "Command.h"
+#include "Editor.h"
 
 
 bool

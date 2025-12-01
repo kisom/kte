@@ -2,7 +2,7 @@
 #define KTE_UNDOTREE_H
 
 #include "UndoNode.h"
-#include <memory>
+
 
 struct UndoTree {
 	UndoNode *root    = nullptr; // first edit ever

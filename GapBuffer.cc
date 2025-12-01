@@ -1,8 +1,9 @@
-#include "GapBuffer.h"
-
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+
+#include "GapBuffer.h"
+
 
 GapBuffer::GapBuffer() = default;
 

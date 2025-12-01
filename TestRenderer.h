@@ -4,11 +4,12 @@
 #ifndef KTE_TEST_RENDERER_H
 #define KTE_TEST_RENDERER_H
 
-#include "Renderer.h"
 #include <cstddef>
 
+#include "Renderer.h"
 
-class TestRenderer : public Renderer {
+
+class TestRenderer final : public Renderer {
 public:
 	TestRenderer() = default;
 
@@ -17,7 +18,7 @@ public:
 	void Draw(Editor &ed) override;
 
 
-	std::size_t GetDrawCount() const
+	[[nodiscard]] std::size_t GetDrawCount() const
 	{
 		return draw_count_;
 	}

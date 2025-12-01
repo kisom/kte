@@ -6,14 +6,13 @@
 #include "Editor.h"
 #include "Buffer.h"
 #include "UndoSystem.h"
-// Note: Command layer must remain UI-agnostic. Do not include frontend/IO headers here.
 
 
 // Keep buffer viewport offsets so that the cursor stays within the visible
 // window based on the editor's current dimensions. The bottom row is reserved
 // for the status line.
 static std::size_t
-compute_render_x(const std::string &line, std::size_t curx, std::size_t tabw)
+compute_render_x(const std::string &line, const std::size_t curx, const std::size_t tabw)
 {
 	std::size_t rx = 0;
 	for (std::size_t i = 0; i < curx && i < line.size(); ++i) {
@@ -474,7 +473,7 @@ cmd_change_working_directory_start(CommandContext &ctx)
 {
 	std::string initial;
 	try {
-		initial = std::filesystem::current_path().string();
+		initial = std::filesystem::current_path().string() + "/";
 	} catch (...) {
 		initial.clear();
 	}
@@ -673,6 +672,30 @@ cmd_open_file_start(CommandContext &ctx)
 	// Start a generic prompt to read a path
 	ctx.editor.StartPrompt(Editor::PromptKind::OpenFile, "Open", "");
 	ctx.editor.SetStatus("Open: ");
+	return true;
+}
+
+
+// GUI: toggle visual file picker (no-op in terminal; renderer will consume flag)
+static bool
+cmd_visual_file_picker_toggle(CommandContext &ctx)
+{
+	// Toggle visibility
+	bool show = !ctx.editor.FilePickerVisible();
+	ctx.editor.SetFilePickerVisible(show);
+	if (show) {
+		// Initialize directory to current working directory if empty
+		if (ctx.editor.FilePickerDir().empty()) {
+			try {
+				ctx.editor.SetFilePickerDir(std::filesystem::current_path().string());
+			} catch (...) {
+				ctx.editor.SetFilePickerDir(".");
+			}
+		}
+		ctx.editor.SetStatus("Open File (visual)");
+	} else {
+		ctx.editor.SetStatus("Closed file picker");
+	}
 	return true;
 }
 
@@ -2629,6 +2652,11 @@ InstallDefaultCommands()
 	CommandRegistry::Register({
 		CommandId::MarkAllAndJumpEnd, "mark-all-jump-end", "Set mark at beginning and jump to end",
 		cmd_mark_all_and_jump_end
+	});
+	// GUI
+	CommandRegistry::Register({
+		CommandId::VisualFilePickerToggle, "file-picker-toggle", "Toggle visual file picker",
+		cmd_visual_file_picker_toggle
 	});
 	// Working directory
 	CommandRegistry::Register({

@@ -6,7 +6,7 @@
 
 #include "Renderer.h"
 
-class GUIRenderer : public Renderer {
+class GUIRenderer final : public Renderer {
 public:
 	GUIRenderer() = default;
 

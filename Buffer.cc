@@ -1,11 +1,11 @@
-#include "Buffer.h"
-#include "UndoSystem.h"
-#include "UndoTree.h"
-
 #include <fstream>
 #include <sstream>
 #include <filesystem>
 #include <cstdlib>
+
+#include "Buffer.h"
+#include "UndoSystem.h"
+#include "UndoTree.h"
 
 
 Buffer::Buffer()

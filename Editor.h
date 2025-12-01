@@ -441,6 +441,31 @@ public:
 		return buffers_;
 	}
 
+
+	// --- GUI: Visual File Picker state ---
+	void SetFilePickerVisible(bool on)
+	{
+		file_picker_visible_ = on;
+	}
+
+
+	[[nodiscard]] bool FilePickerVisible() const
+	{
+		return file_picker_visible_;
+	}
+
+
+	void SetFilePickerDir(const std::string &path)
+	{
+		file_picker_dir_ = path;
+	}
+
+
+	[[nodiscard]] const std::string &FilePickerDir() const
+	{
+		return file_picker_dir_;
+	}
+
 private:
 	std::size_t rows_ = 0, cols_ = 0;
 	int mode_         = 0;
@@ -478,6 +503,10 @@ private:
 	std::string prompt_label_;
 	std::string prompt_text_;
 	std::string pending_overwrite_path_;
+
+	// GUI-only state (safe no-op in terminal builds)
+	bool file_picker_visible_ = false;
+	std::string file_picker_dir_;
 };
 
 #endif // KTE_EDITOR_H

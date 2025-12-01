@@ -1,19 +1,26 @@
-#include "GUIRenderer.h"
-
-#include "Editor.h"
-#include "Buffer.h"
-#include "Command.h"
+#include <cmath>
+#include <cstdio>
+#include <filesystem>
+#include <limits>
+#include <string>
 
 #include <imgui.h>
-#include <cstdio>
-#include <string>
-#include <filesystem>
-#include <cmath>
-#include <limits>
+
+#include "GUIRenderer.h"
+#include "Buffer.h"
+#include "Command.h"
+#include "Editor.h"
+
 
 // Version string expected to be provided by build system as KTE_VERSION_STR
 #ifndef KTE_VERSION_STR
 #  define KTE_VERSION_STR "dev"
+#endif
+
+// ImGui compatibility: some bundled ImGui versions (or builds without docking)
+// don't define ImGuiWindowFlags_NoDocking. Treat it as 0 in that case.
+#ifndef ImGuiWindowFlags_NoDocking
+#  define ImGuiWindowFlags_NoDocking 0
 #endif
 
 
@@ -22,8 +29,16 @@ GUIRenderer::Draw(Editor &ed)
 {
 	// Make the editor window occupy the entire GUI container/viewport
 	ImGuiViewport *vp = ImGui::GetMainViewport();
-	ImGui::SetNextWindowPos(vp->Pos);
-	ImGui::SetNextWindowSize(vp->Size);
+	// On HiDPI/Retina, snap to integer pixels to prevent any draw vs hit-test
+	// mismatches that can appear on the very first maximized frame.
+	ImVec2 main_pos = vp->Pos;
+	ImVec2 main_sz  = vp->Size;
+	main_pos.x      = std::floor(main_pos.x + 0.5f);
+	main_pos.y      = std::floor(main_pos.y + 0.5f);
+	main_sz.x       = std::floor(main_sz.x + 0.5f);
+	main_sz.y       = std::floor(main_sz.y + 0.5f);
+	ImGui::SetNextWindowPos(main_pos);
+	ImGui::SetNextWindowSize(main_sz);
 
 	ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar
 	                         | ImGuiWindowFlags_NoResize
@@ -379,4 +394,153 @@ GUIRenderer::Draw(Editor &ed)
 
 	ImGui::End();
 	ImGui::PopStyleVar(3);
+
+	// --- Visual File Picker overlay (GUI only) ---
+	if (ed.FilePickerVisible()) {
+		// Centered popup-style window that always fits within the current viewport
+		ImGuiViewport *vp2 = ImGui::GetMainViewport();
+
+		// Desired size, min size, and margins
+		const ImVec2 want(800.0f, 500.0f);
+		const ImVec2 min_sz(240.0f, 160.0f);
+		const float margin = 20.0f; // space from viewport edges
+
+		// Compute the maximum allowed size (viewport minus margins) and make sure it's not negative
+		ImVec2 max_sz(std::max(32.0f, vp2->Size.x - 2.0f * margin),
+		              std::max(32.0f, vp2->Size.y - 2.0f * margin));
+
+		// Clamp desired size to [min_sz, max_sz]
+		ImVec2 size(std::min(want.x, max_sz.x), std::min(want.y, max_sz.y));
+		size.x = std::max(size.x, std::min(min_sz.x, max_sz.x));
+		size.y = std::max(size.y, std::min(min_sz.y, max_sz.y));
+
+		// Center within the viewport using the final size
+		ImVec2 pos(vp2->Pos.x + std::max(margin, (vp2->Size.x - size.x) * 0.5f),
+		           vp2->Pos.y + std::max(margin, (vp2->Size.y - size.y) * 0.5f));
+
+		// On HiDPI displays (macOS Retina), ensure integer pixel alignment to avoid
+		// potential hit-test vs draw mismatches from sub-pixel positions.
+		pos.x  = std::floor(pos.x + 0.5f);
+		pos.y  = std::floor(pos.y + 0.5f);
+		size.x = std::floor(size.x + 0.5f);
+		size.y = std::floor(size.y + 0.5f);
+
+		ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
+		ImGui::SetNextWindowSize(size, ImGuiCond_Always);
+		ImGuiWindowFlags wflags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
+		                          ImGuiWindowFlags_NoDocking;
+		bool open = true;
+		if (ImGui::Begin("File Picker", &open, wflags)) {
+			// Current directory
+			std::string curdir = ed.FilePickerDir();
+			if (curdir.empty()) {
+				try {
+					curdir = std::filesystem::current_path().string();
+				} catch (...) {
+					curdir = ".";
+				}
+				ed.SetFilePickerDir(curdir);
+			}
+			ImGui::TextUnformatted(curdir.c_str());
+			ImGui::SameLine();
+			if (ImGui::Button("Up")) {
+				try {
+					std::filesystem::path p(curdir);
+					if (p.has_parent_path()) {
+						ed.SetFilePickerDir(p.parent_path().string());
+					}
+				} catch (...) {}
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Close")) {
+				ed.SetFilePickerVisible(false);
+			}
+
+			ImGui::Separator();
+
+			// Header
+			ImGui::TextUnformatted("Name");
+			ImGui::Separator();
+
+			// Scrollable list
+			ImGui::BeginChild("picker-list", ImVec2(0, 0), true);
+
+			// Build entries: directories first then files, alphabetical
+			struct Entry {
+				std::string name;
+				std::filesystem::path path;
+				bool is_dir;
+			};
+			std::vector<Entry> entries;
+			entries.reserve(256);
+			// Optional parent entry
+			try {
+				std::filesystem::path base(curdir);
+				std::error_code ec;
+				for (auto it = std::filesystem::directory_iterator(base, ec);
+				     !ec && it != std::filesystem::directory_iterator(); it.increment(ec)) {
+					const auto &p = it->path();
+					std::string nm;
+					try {
+						nm = p.filename().string();
+					} catch (...) {
+						continue;
+					}
+					if (nm == "." || nm == "..")
+						continue;
+					bool is_dir = false;
+					std::error_code ec2;
+					is_dir = it->is_directory(ec2);
+					entries.push_back({nm, p, is_dir});
+				}
+			} catch (...) {
+				// ignore listing errors; show empty
+			}
+			std::sort(entries.begin(), entries.end(), [](const Entry &a, const Entry &b) {
+				if (a.is_dir != b.is_dir)
+					return a.is_dir && !b.is_dir;
+				return a.name < b.name;
+			});
+
+			// Draw rows
+			int idx = 0;
+			for (const auto &e: entries) {
+				ImGui::PushID(idx++); // ensure unique/stable IDs even if names repeat
+				std::string label;
+				label.reserve(e.name.size() + 4);
+				if (e.is_dir)
+					label += "[";
+				label += e.name;
+				if (e.is_dir)
+					label += "]";
+
+				// Render selectable row
+				ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick);
+
+				// Activate based strictly on hover + mouse, to avoid any off-by-one due to click routing
+				if (ImGui::IsItemHovered()) {
+					if (e.is_dir && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+						// Enter directory on double-click
+						ed.SetFilePickerDir(e.path.string());
+					} else if (!e.is_dir && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+						// Open file on single click
+						std::string err;
+						if (!ed.OpenFile(e.path.string(), err)) {
+							ed.SetStatus(std::string("open: ") + err);
+						} else {
+							ed.SetStatus(std::string("Opened: ") + e.name);
+						}
+						ed.SetFilePickerVisible(false);
+					}
+				}
+				ImGui::PopID();
+			}
+
+			ImGui::EndChild();
+		}
+		ImGui::End();
+		if (!open) {
+			ed.SetFilePickerVisible(false);
+		}
+	}
 }

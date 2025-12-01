@@ -2,7 +2,9 @@
 #define KTE_UNDOSYSTEM_H
 
 #include <string_view>
+
 #include "UndoTree.h"
+
 
 class Buffer;
 
@@ -39,7 +41,6 @@ private:
 
 	void update_dirty_flag();
 
-private:
 	Buffer *buf_;
 	UndoTree &tree_;
 	// Internal hint for Delete batching: whether next Append() should prepend

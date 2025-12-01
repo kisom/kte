@@ -1,18 +1,18 @@
-#include "TerminalRenderer.h"
-
-#include <ncurses.h>
-#include <cstdio>
-#include <string>
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
+#include <ncurses.h>
+#include <string>
 
-#include "Editor.h"
+#include "TerminalRenderer.h"
 #include "Buffer.h"
+#include "Editor.h"
 
 // Version string expected to be provided by build system as KTE_VERSION_STR
 #ifndef KTE_VERSION_STR
 #  define KTE_VERSION_STR "dev"
 #endif
+
 
 TerminalRenderer::TerminalRenderer() = default;
 

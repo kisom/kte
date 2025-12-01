@@ -1,8 +1,8 @@
-#include "KKeymap.h"
-
 #include <iostream>
 #include <ncurses.h>
 #include <ostream>
+
+#include "KKeymap.h"
 
 
 auto
@@ -82,6 +82,9 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 		return true;
 	case 'u':
 		out = CommandId::Undo;
+		return true;
+	case 'v':
+		out = CommandId::VisualFilePickerToggle;
 		return true;
 	case 'w':
 		out = CommandId::ShowWorkingDirectory;

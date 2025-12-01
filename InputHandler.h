@@ -8,6 +8,7 @@
 
 #include "Command.h"
 
+
 // Result of translating raw input into an editor command.
 struct MappedInput {
 	bool hasCommand = false;

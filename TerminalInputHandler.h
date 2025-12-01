@@ -4,8 +4,6 @@
 #ifndef KTE_TERMINAL_INPUT_HANDLER_H
 #define KTE_TERMINAL_INPUT_HANDLER_H
 
-#include <cstdint>
-
 #include "InputHandler.h"
 
 

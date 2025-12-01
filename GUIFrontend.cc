@@ -1,18 +1,25 @@
-#include <SDL.h>
-#include <SDL_opengl.h>
-
-#include <imgui.h>
-#include <backends/imgui_impl_sdl2.h>
-#include <backends/imgui_impl_opengl3.h>
 #include <cstdio>
 #include <string>
 #include <cstring>
 #include <cstdlib>
+#include <algorithm>
+
+#include <SDL.h>
+#include <SDL_opengl.h>
+#include <imgui.h>
+#include <backends/imgui_impl_sdl2.h>
+#include <backends/imgui_impl_opengl3.h>
 
 #include "Editor.h"
 #include "Command.h"
 #include "GUIFrontend.h"
 #include "Font.h" // embedded default font (DefaultFontRegular)
+#include "GUIConfig.h"
+
+
+#ifndef KTE_FONT_SIZE
+#define KTE_FONT_SIZE 16.0f
+#endif
 
 static const char *kGlslVersion = "#version 150"; // GL 3.2 core (macOS compatible)
 
@@ -24,6 +31,9 @@ GUIFrontend::Init(Editor &ed)
 		return false;
 	}
 
+	// Load GUI configuration (fullscreen, columns/rows, font size)
+	const auto [fullscreen, columns, rows, font_size] = GUIConfig::Load();
+
 	// GL attributes for core profile
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
@@ -33,13 +43,55 @@ GUIFrontend::Init(Editor &ed)
 	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 	SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
+	// Compute desired window size from config
+	Uint32 win_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+
+	if (fullscreen) {
+		// "Fullscreen": fill the usable bounds of the primary display.
+		// On macOS, do NOT use true fullscreen so the menu/status bar remains visible.
+		SDL_Rect usable{};
+		if (SDL_GetDisplayUsableBounds(0, &usable) == 0) {
+			width_  = usable.w;
+			height_ = usable.h;
+		}
+#if !defined(__APPLE__)
+		// Non-macOS: desktop fullscreen uses the current display resolution.
+		win_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+#endif
+	} else {
+		// Windowed: width = columns * font_size, height = (rows * 2) * font_size
+		int w = static_cast<int>(columns * font_size);
+		int h = static_cast<int>((rows * 2) * font_size);
+
+		// As a safety, clamp to display usable bounds if retrievable
+		SDL_Rect usable{};
+		if (SDL_GetDisplayUsableBounds(0, &usable) == 0) {
+			w = std::min(w, usable.w);
+			h = std::min(h, usable.h);
+		}
+		width_  = std::max(320, w);
+		height_ = std::max(200, h);
+	}
+
 	window_ = SDL_CreateWindow(
-		"kte",
+		"kge - kyle's text editor " KTE_VERSION_STR,
 		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
 		width_, height_,
-		SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+		win_flags);
 	if (!window_)
 		return false;
+
+#if defined(__APPLE__)
+	// macOS: when "fullscreen" is requested, position the window at the
+	// top-left of the usable display area to mimic fullscreen while keeping
+	// the system menu bar visible.
+	if (fullscreen) {
+		SDL_Rect usable{};
+		if (SDL_GetDisplayUsableBounds(0, &usable) == 0) {
+			SDL_SetWindowPosition(window_, usable.x, usable.y);
+		}
+	}
+#endif
 
 	gl_ctx_ = SDL_GL_CreateContext(window_);
 	if (!gl_ctx_)
@@ -64,11 +116,23 @@ GUIFrontend::Init(Editor &ed)
 	width_  = w;
 	height_ = h;
 
-	// Initialize GUI font from embedded default
-#ifndef KTE_FONT_SIZE
-#define KTE_FONT_SIZE 16.0f
+#if defined(__APPLE__)
+	// Workaround: On macOS Retina when starting maximized, we sometimes get a
+	// subtle input vs draw alignment mismatch until the first manual resize.
+	// Nudge the window size by 1px and back to trigger a proper internal
+	// recomputation, without visible impact.
+	if (w > 1 && h > 1) {
+		SDL_SetWindowSize(window_, w - 1, h - 1);
+		SDL_SetWindowSize(window_, w, h);
+		// Update cached size in case backend reports immediately
+		SDL_GetWindowSize(window_, &w, &h);
+		width_  = w;
+		height_ = h;
+	}
 #endif
-	LoadGuiFont_(nullptr, (float) KTE_FONT_SIZE);
+
+	// Initialize GUI font from embedded default (use configured size or compiled default)
+	LoadGuiFont_(nullptr, (float) font_size);
 
 	return true;
 }

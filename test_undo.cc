@@ -1,10 +1,11 @@
-#include <iostream>
 #include <cassert>
 #include <fstream>
+#include <iostream>
+
+#include "Buffer.h"
+#include "Command.h"
 #include "Editor.h"
 #include "TestFrontend.h"
-#include "Command.h"
-#include "Buffer.h"
 
 
 int

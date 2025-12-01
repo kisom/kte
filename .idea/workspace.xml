@@ -33,12 +33,58 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Refactor code for consistency and enhanced functionality.&#10;&#10;- Normalize path handling for buffer operations, supporting tilde expansion and absolute paths.&#10;- Introduce `DisplayNameFor` to uniquely resolve buffer display names, minimizing filename clashes.&#10;- Add new commands: `ShowWorkingDirectory` and `ChangeWorkingDirectory`.&#10;- Refine keybindings and enhance existing commands for improved command flow.&#10;- Adjust GUI and terminal renderers to display total line counts alongside filenames.&#10;- Update coding style to align with project guidelines.">
+    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Add horizontal scrolling support and refactor mouse click handling in GUI.&#10;&#10;- Introduce horizontal scrolling with column offset synchronization in GUI.&#10;- Refactor mouse click handling for improved accuracy and viewport alignment.&#10;- Enhance tab expansion and cursor rendering logic for better user experience.&#10;- Replace redundant variable declarations in `Buffer` for cleaner code.">
+      <change afterPath="$PROJECT_DIR$/GUIConfig.cc" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/GUIConfig.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kge.icns" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kge.iconset/icon_128x128.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kge.iconset/icon_128x128@2x.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kge.iconset/icon_16x16.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kge.iconset/icon_16x16@2x.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kge.iconset/icon_256x256.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kge.iconset/icon_256x256@2x.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kge.iconset/icon_32x32.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kge.iconset/icon_32x32@2x.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kge.iconset/icon_512x512.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kge.iconset/icon_512x512@2x.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kge.png" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Buffer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Buffer.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Buffer.h" beforeDir="false" afterPath="$PROJECT_DIR$/Buffer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Command.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Command.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Command.h" beforeDir="false" afterPath="$PROJECT_DIR$/Command.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Editor.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Editor.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Editor.h" beforeDir="false" afterPath="$PROJECT_DIR$/Editor.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Frontend.h" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIFrontend.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIFrontend.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIFrontend.h" beforeDir="false" afterPath="$PROJECT_DIR$/GUIFrontend.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIInputHandler.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIInputHandler.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIInputHandler.h" beforeDir="false" afterPath="$PROJECT_DIR$/GUIInputHandler.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/GUIRenderer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIRenderer.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUIRenderer.h" beforeDir="false" afterPath="$PROJECT_DIR$/GUIRenderer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GapBuffer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GapBuffer.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GapBuffer.h" beforeDir="false" afterPath="$PROJECT_DIR$/GapBuffer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/InputHandler.h" beforeDir="false" afterPath="$PROJECT_DIR$/InputHandler.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/KKeymap.cc" beforeDir="false" afterPath="$PROJECT_DIR$/KKeymap.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KKeymap.h" beforeDir="false" afterPath="$PROJECT_DIR$/KKeymap.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/PieceTable.h" beforeDir="false" afterPath="$PROJECT_DIR$/PieceTable.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TerminalFrontend.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalFrontend.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TerminalFrontend.h" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalFrontend.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TerminalInputHandler.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalInputHandler.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TerminalInputHandler.h" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalInputHandler.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TerminalRenderer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalRenderer.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TestFrontend.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TestFrontend.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TestInputHandler.h" beforeDir="false" afterPath="$PROJECT_DIR$/TestInputHandler.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TestRenderer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TestRenderer.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TestRenderer.h" beforeDir="false" afterPath="$PROJECT_DIR$/TestRenderer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/UndoNode.h" beforeDir="false" afterPath="$PROJECT_DIR$/UndoNode.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/UndoSystem.cc" beforeDir="false" afterPath="$PROJECT_DIR$/UndoSystem.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/UndoSystem.h" beforeDir="false" afterPath="$PROJECT_DIR$/UndoSystem.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/UndoTree.h" beforeDir="false" afterPath="$PROJECT_DIR$/UndoTree.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cmake/Info.plist.in" beforeDir="false" afterPath="$PROJECT_DIR$/cmake/Info.plist.in" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.cc" beforeDir="false" afterPath="$PROJECT_DIR$/main.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_undo.cc" beforeDir="false" afterPath="$PROJECT_DIR$/test_undo.cc" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -59,15 +105,6 @@
   <component name="HighlightingSettingsPerFile">
     <setting file="mock:///AIAssistantSnippet.." root0="SKIP_HIGHLIGHTING" />
     <setting file="mock:///AIAssistantSnippet.." root0="SKIP_HIGHLIGHTING" />
-    <setting file="mock:///AIAssistantSnippet.." root0="SKIP_HIGHLIGHTING" />
-    <setting file="mock:///dummy.cpp" root0="SKIP_HIGHLIGHTING" />
-    <setting file="mock:///dummy.cpp" root0="SKIP_HIGHLIGHTING" />
-    <setting file="mock:///dummy.cpp" root0="SKIP_HIGHLIGHTING" />
-    <setting file="mock:///dummy.cpp" root0="SKIP_HIGHLIGHTING" />
-    <setting file="mock:///dummy.cpp" root0="SKIP_HIGHLIGHTING" />
-    <setting file="mock:///dummy.cpp" root0="SKIP_HIGHLIGHTING" />
-    <setting file="mock:///dummy.cpp" root0="SKIP_HIGHLIGHTING" />
-    <setting file="mock:///dummy.cpp" root0="SKIP_HIGHLIGHTING" />
   </component>
   <component name="OptimizeOnSaveOptions">
     <option name="myRunOnSave" value="true" />
@@ -134,6 +171,11 @@
     </key>
   </component>
   <component name="RunManager" selected="CMake Application.kge">
+    <configuration default="true" type="CLionExternalRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
+      <method v="2">
+        <option name="CLION.EXTERNAL.BUILD" enabled="true" />
+      </method>
+    </configuration>
     <configuration name="imgui" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="kte" TARGET_NAME="imgui" CONFIG_NAME="Debug">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
@@ -170,7 +212,7 @@
       <workItem from="1764539556448" duration="156000" />
       <workItem from="1764539725338" duration="1075000" />
       <workItem from="1764542392763" duration="3512000" />
-      <workItem from="1764548345516" duration="3453000" />
+      <workItem from="1764548345516" duration="7941000" />
     </task>
     <task id="LOCAL-00001" summary="Add undo/redo infrastructure and buffer management additions.">
       <option name="closed" value="true" />
@@ -252,7 +294,15 @@
       <option name="project" value="LOCAL" />
       <updated>1764550164829</updated>
     </task>
-    <option name="localTasksCounter" value="11" />
+    <task id="LOCAL-00011" summary="Add horizontal scrolling support and refactor mouse click handling in GUI.&#10;&#10;- Introduce horizontal scrolling with column offset synchronization in GUI.&#10;- Refactor mouse click handling for improved accuracy and viewport alignment.&#10;- Enhance tab expansion and cursor rendering logic for better user experience.&#10;- Replace redundant variable declarations in `Buffer` for cleaner code.">
+      <option name="closed" value="true" />
+      <created>1764551986561</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1764551986561</updated>
+    </task>
+    <option name="localTasksCounter" value="12" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -276,7 +326,8 @@
     <MESSAGE value="Add man pages for `kge` and `kte` with installation targets in CMake.&#10;&#10;- Introduce `docs/kge.1` and `docs/kte.1` man pages covering usage, options, keybindings, and examples.&#10;- Update `CMakeLists.txt` to install man pages under `${CMAKE_INSTALL_MANDIR}/man1`.&#10;- Ensure `kge` man page installation is conditional on GUI being built." />
     <MESSAGE value="Add GUI initialization updates and improve navigation commands.&#10;&#10;- Implement terminal detachment for GUI mode to enable terminal closure post-launch.&#10;- Add `+N` support for opening files at specific line numbers and refine cursor positioning.&#10;- Introduce `JumpToLine` command for direct navigation by line number.&#10;- Enhance mouse wheel handling for line-wise scrolling." />
     <MESSAGE value="Refactor code for consistency and enhanced functionality.&#10;&#10;- Normalize path handling for buffer operations, supporting tilde expansion and absolute paths.&#10;- Introduce `DisplayNameFor` to uniquely resolve buffer display names, minimizing filename clashes.&#10;- Add new commands: `ShowWorkingDirectory` and `ChangeWorkingDirectory`.&#10;- Refine keybindings and enhance existing commands for improved command flow.&#10;- Adjust GUI and terminal renderers to display total line counts alongside filenames.&#10;- Update coding style to align with project guidelines." />
-    <option name="LAST_COMMIT_MESSAGE" value="Refactor code for consistency and enhanced functionality.&#10;&#10;- Normalize path handling for buffer operations, supporting tilde expansion and absolute paths.&#10;- Introduce `DisplayNameFor` to uniquely resolve buffer display names, minimizing filename clashes.&#10;- Add new commands: `ShowWorkingDirectory` and `ChangeWorkingDirectory`.&#10;- Refine keybindings and enhance existing commands for improved command flow.&#10;- Adjust GUI and terminal renderers to display total line counts alongside filenames.&#10;- Update coding style to align with project guidelines." />
+    <MESSAGE value="Add horizontal scrolling support and refactor mouse click handling in GUI.&#10;&#10;- Introduce horizontal scrolling with column offset synchronization in GUI.&#10;- Refactor mouse click handling for improved accuracy and viewport alignment.&#10;- Enhance tab expansion and cursor rendering logic for better user experience.&#10;- Replace redundant variable declarations in `Buffer` for cleaner code." />
+    <option name="LAST_COMMIT_MESSAGE" value="Add horizontal scrolling support and refactor mouse click handling in GUI.&#10;&#10;- Introduce horizontal scrolling with column offset synchronization in GUI.&#10;- Refactor mouse click handling for improved accuracy and viewport alignment.&#10;- Enhance tab expansion and cursor rendering logic for better user experience.&#10;- Replace redundant variable declarations in `Buffer` for cleaner code." />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

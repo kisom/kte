@@ -24,6 +24,8 @@ enum class CommandId {
 	KPrefix, // show "C-k _" prompt in status when entering k-command
 	FindStart, // begin incremental search (placeholder)
 	OpenFileStart, // begin open-file prompt
+	// GUI: visual file picker
+	VisualFilePickerToggle,
 	// Buffers
 	BufferSwitchStart, // begin buffer switch prompt
 	BufferClose,

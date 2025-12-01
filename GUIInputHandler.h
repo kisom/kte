@@ -4,10 +4,11 @@
 #ifndef KTE_GUI_INPUT_HANDLER_H
 #define KTE_GUI_INPUT_HANDLER_H
 
-#include <queue>
 #include <mutex>
+#include <queue>
 
 #include "InputHandler.h"
+
 
 union SDL_Event; // fwd decl to avoid including SDL here (SDL defines SDL_Event as a union)
 

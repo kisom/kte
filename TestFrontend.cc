@@ -1,7 +1,6 @@
 #include "TestFrontend.h"
-#include "Editor.h"
 #include "Command.h"
-#include <iostream>
+#include "Editor.h"
 
 
 bool

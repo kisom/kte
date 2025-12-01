@@ -1,15 +1,15 @@
+#include <cctype>
+#include <cstdio>
+#include <getopt.h>
 #include <iostream>
 #include <memory>
-#include <string>
-#include <cctype>
-#include <unistd.h>
-#include <getopt.h>
 #include <signal.h>
-#include <cstdio>
+#include <string>
+#include <unistd.h>
 #include <sys/stat.h>
 
-#include "Editor.h"
 #include "Command.h"
+#include "Editor.h"
 #include "Frontend.h"
 #include "TerminalFrontend.h"
 
@@ -21,6 +21,7 @@
 #ifndef KTE_VERSION_STR
 #  define KTE_VERSION_STR "devel"
 #endif
+
 
 static void
 PrintUsage(const char *prog)

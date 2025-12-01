@@ -6,6 +6,7 @@
 
 #include <cstddef>
 
+
 class GapBuffer {
 public:
 	GapBuffer();

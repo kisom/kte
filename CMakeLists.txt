@@ -128,6 +128,8 @@ endif ()
 if (${BUILD_GUI})
     target_sources(kte PRIVATE
             Font.h
+            GUIConfig.cc
+            GUIConfig.h
             GUIRenderer.cc
             GUIRenderer.h
             GUIInputHandler.cc
@@ -142,6 +144,8 @@ if (${BUILD_GUI})
             main.cc
             ${COMMON_SOURCES}
             ${COMMON_HEADERS}
+            GUIConfig.cc
+            GUIConfig.h
             GUIRenderer.cc
             GUIRenderer.h
             GUIInputHandler.cc
@@ -153,6 +157,15 @@ if (${BUILD_GUI})
 
     # On macOS, build kge as a proper .app bundle
     if (APPLE)
+        # Define the icon file
+        set(MACOSX_BUNDLE_ICON_FILE kge.icns)
+        set(kge_ICON "${CMAKE_CURRENT_SOURCE_DIR}/${MACOSX_BUNDLE_ICON_FILE}")
+
+        # Add icon to the target sources and mark it as a resource
+        target_sources(kge PRIVATE ${kge_ICON})
+        set_source_files_properties(${kge_ICON} PROPERTIES
+                MACOSX_PACKAGE_LOCATION Resources)
+
         # Configure Info.plist with version and identifiers
         set(KGE_BUNDLE_ID "dev.wntrmute.kge")
         configure_file(
@@ -164,6 +177,7 @@ if (${BUILD_GUI})
                 MACOSX_BUNDLE TRUE
                 MACOSX_BUNDLE_GUI_IDENTIFIER ${KGE_BUNDLE_ID}
                 MACOSX_BUNDLE_BUNDLE_NAME "kge"
+                MACOSX_BUNDLE_ICON_FILE ${MACOSX_BUNDLE_ICON_FILE}
                 MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/kge-Info.plist")
 
         install(TARGETS kge

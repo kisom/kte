@@ -1,6 +1,7 @@
-#include <SDL.h>
 #include <cstdio>
 #include <ncurses.h>
+
+#include <SDL.h>
 
 #include "GUIInputHandler.h"
 #include "KKeymap.h"

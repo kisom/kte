@@ -16,7 +16,7 @@ UndoSystem::Begin(UndoType type)
 		if (type == UndoType::Delete) {
 			// Support batching both forward deletes (DeleteChar) and backspace (prepend case)
 			// Forward delete: cursor stays at anchor col; expected == col
-			std::size_t anchor = static_cast<std::size_t>(tree_.pending->col);
+			const auto anchor = static_cast<std::size_t>(tree_.pending->col);
 			if (anchor + tree_.pending->text.size() == static_cast<std::size_t>(col)) {
 				pending_prepend_ = false;
 				return; // keep batching forward delete

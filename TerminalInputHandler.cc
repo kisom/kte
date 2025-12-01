@@ -1,8 +1,8 @@
-#include <ncurses.h>
 #include <cstdio>
+#include <ncurses.h>
 
-#include "KKeymap.h"
 #include "TerminalInputHandler.h"
+#include "KKeymap.h"
 
 namespace {
 constexpr int

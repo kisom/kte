@@ -4,11 +4,12 @@
 #ifndef KTE_TEST_INPUT_HANDLER_H
 #define KTE_TEST_INPUT_HANDLER_H
 
-#include "InputHandler.h"
 #include <queue>
 
+#include "InputHandler.h"
 
-class TestInputHandler : public InputHandler {
+
+class TestInputHandler final : public InputHandler {
 public:
 	TestInputHandler() = default;
 
@@ -21,7 +22,7 @@ public:
 	void QueueText(const std::string &text);
 
 
-	bool IsEmpty() const
+	[[nodiscard]] bool IsEmpty() const
 	{
 		return queue_.empty();
 	}
