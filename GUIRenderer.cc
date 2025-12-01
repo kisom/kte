@@ -151,14 +151,14 @@ GUIRenderer::Draw(Editor &ed)
 				}
 			}
 		}
-		// Handle mouse click before rendering to avoid dependent on drawn items
-		if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-			ImVec2 mp = ImGui::GetIO().MousePos;
-			// Compute viewport-relative row so (0) is top row of the visible area
-			float vy_f = (mp.y - list_origin.y - scroll_y) / row_h;
-			long vy    = static_cast<long>(vy_f);
-			if (vy < 0)
-				vy = 0;
+  // Handle mouse click before rendering to avoid dependent on drawn items
+  if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+      ImVec2 mp = ImGui::GetIO().MousePos;
+      // Compute viewport-relative row so (0) is top row of the visible area
+      float vy_f = (mp.y - list_origin.y - scroll_y) / row_h;
+      long vy    = static_cast<long>(vy_f);
+      if (vy < 0)
+          vy = 0;
 
 			// Clamp vy within visible content height to avoid huge jumps
 			ImVec2 cr_min = ImGui::GetWindowContentRegionMin();
@@ -170,70 +170,75 @@ GUIRenderer::Draw(Editor &ed)
 			if (vy >= vis_rows)
 				vy = vis_rows - 1;
 
-			// Translate viewport row to buffer row using Buffer::Rowoffs
-			std::size_t by = buf->Rowoffs() + static_cast<std::size_t>(vy);
-			if (by >= lines.size()) {
-				if (!lines.empty())
-					by = lines.size() - 1;
-				else
-					by = 0;
-			}
+            // Translate viewport row to buffer row using Buffer::Rowoffs
+            std::size_t by = buf->Rowoffs() + static_cast<std::size_t>(vy);
+            if (by >= lines.size()) {
+                if (!lines.empty())
+                    by = lines.size() - 1;
+                else
+                    by = 0;
+            }
 
-			// Compute desired pixel X inside the viewport content (subtract horizontal scroll)
-			float px = (mp.x - list_origin.x - scroll_x);
-			if (px < 0.0f)
-				px = 0.0f;
+            // Compute desired pixel X inside the viewport content (subtract horizontal scroll)
+            float px = (mp.x - list_origin.x - scroll_x);
+            if (px < 0.0f)
+                px = 0.0f;
 
-			// Convert pixel X to a render-column target including horizontal col offset
-			// Use our own tab expansion of width 8 to match command layer logic.
-			const std::string &line_clicked = lines[by];
-			const std::size_t tabw          = 8;
-			// We iterate source columns computing absolute rendered column (rx_abs) from 0,
-			// then translate to viewport-space by subtracting Coloffs.
-			std::size_t coloffs = buf->Coloffs();
-			std::size_t rx_abs  = 0; // absolute rendered column
-			std::size_t i       = 0; // source column iterator
+            // Empty buffer guard: if there are no lines yet, just move to 0:0
+            if (lines.empty()) {
+                Execute(ed, CommandId::MoveCursorTo, std::string("0:0"));
+            } else {
+                // Convert pixel X to a render-column target including horizontal col offset
+                // Use our own tab expansion of width 8 to match command layer logic.
+                const std::string &line_clicked = lines[by];
+                const std::size_t tabw          = 8;
+                // We iterate source columns computing absolute rendered column (rx_abs) from 0,
+                // then translate to viewport-space by subtracting Coloffs.
+                std::size_t coloffs = buf->Coloffs();
+                std::size_t rx_abs  = 0; // absolute rendered column
+                std::size_t i       = 0; // source column iterator
 
-			// Fast-forward i until rx_abs >= coloffs to align with leftmost visible column
-			if (!line_clicked.empty() && coloffs > 0) {
-				while (i < line_clicked.size() && rx_abs < coloffs) {
-					if (line_clicked[i] == '\t') {
-						rx_abs += (tabw - (rx_abs % tabw));
-					} else {
-						rx_abs += 1;
-					}
-					++i;
-				}
-			}
+                // Fast-forward i until rx_abs >= coloffs to align with leftmost visible column
+                if (!line_clicked.empty() && coloffs > 0) {
+                    while (i < line_clicked.size() && rx_abs < coloffs) {
+                        if (line_clicked[i] == '\t') {
+                            rx_abs += (tabw - (rx_abs % tabw));
+                        } else {
+                            rx_abs += 1;
+                        }
+                        ++i;
+                    }
+                }
 
-			// Now search for closest source column to clicked px within/after viewport
-			std::size_t best_col = i; // default to first visible column
-			float best_dist      = std::numeric_limits<float>::infinity();
-			while (true) {
-				// For i in [current..size], evaluate candidate including the implicit end position
-				std::size_t rx_view = (rx_abs >= coloffs) ? (rx_abs - coloffs) : 0;
-				float rx_px         = static_cast<float>(rx_view) * space_w;
-				float dist          = std::fabs(px - rx_px);
-				if (dist <= best_dist) {
-					best_dist = dist;
-					best_col  = i;
-				}
-				if (i == line_clicked.size())
-					break;
-				// advance to next source column
-				if (line_clicked[i] == '\t') {
-					rx_abs += (tabw - (rx_abs % tabw));
-				} else {
-					rx_abs += 1;
-				}
-				++i;
-			}
+                // Now search for closest source column to clicked px within/after viewport
+                std::size_t best_col = i; // default to first visible column
+                float best_dist      = std::numeric_limits<float>::infinity();
+                while (true) {
+                    // For i in [current..size], evaluate candidate including the implicit end position
+                    std::size_t rx_view = (rx_abs >= coloffs) ? (rx_abs - coloffs) : 0;
+                    float rx_px         = static_cast<float>(rx_view) * space_w;
+                    float dist          = std::fabs(px - rx_px);
+                    if (dist <= best_dist) {
+                        best_dist = dist;
+                        best_col  = i;
+                    }
+                    if (i == line_clicked.size())
+                        break;
+                    // advance to next source column
+                    if (line_clicked[i] == '\t') {
+                        rx_abs += (tabw - (rx_abs % tabw));
+                    } else {
+                        rx_abs += 1;
+                    }
+                    ++i;
+                }
 
-			// Dispatch absolute buffer coordinates (row:col)
-			char tmp[64];
-			std::snprintf(tmp, sizeof(tmp), "%zu:%zu", by, best_col);
-			Execute(ed, CommandId::MoveCursorTo, std::string(tmp));
-		}
+                // Dispatch absolute buffer coordinates (row:col)
+                char tmp[64];
+                std::snprintf(tmp, sizeof(tmp), "%zu:%zu", by, best_col);
+                Execute(ed, CommandId::MoveCursorTo, std::string(tmp));
+            }
+        }
 		// Cache current horizontal offset in rendered columns
 		const std::size_t coloffs_now = buf->Coloffs();
 		for (std::size_t i = rowoffs; i < lines.size(); ++i) {
