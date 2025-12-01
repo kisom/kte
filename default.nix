@@ -45,6 +45,9 @@ stdenv.mkDerivation {
     installManPage ../docs/kte.1
     installManPage ../docs/kge.1
 
+    mkdir -p $out/share/icons
+    cp ../kge.png $out/share/icons/
+
     runHook postInstall
   '';
 }
