@@ -24,6 +24,7 @@ enum class CommandId {
 	KPrefix, // show "C-k _" prompt in status when entering k-command
 	FindStart, // begin incremental search (placeholder)
 	RegexFindStart, // begin regex search (C-r)
+	RegexpReplace, // begin regex search & replace (C-t)
 	SearchReplace, // begin search & replace (two-step prompt)
 	OpenFileStart, // begin open-file prompt
 	VisualFilePickerToggle,
@@ -72,6 +73,8 @@ enum class CommandId {
 	IndentRegion, // indent region (C-k =)
 	UnindentRegion, // unindent region (C-k -)
 	ReflowParagraph, // reflow paragraph to column width (ESC q)
+	// Read-only buffers
+	ToggleReadOnly, // toggle current buffer read-only (C-k ')
 	// Buffer operations
 	ReloadBuffer, // reload buffer from disk (C-k l)
 	MarkAllAndJumpEnd, // set mark at beginning, jump to end (C-k a)
@@ -79,6 +82,8 @@ enum class CommandId {
 	JumpToLine, // prompt for line and jump (C-k g)
 	ShowWorkingDirectory, // Display the current working directory in the editor message.
 	ChangeWorkingDirectory, // Change the editor's current directory.
+	// Help
+	ShowHelp, // open +HELP+ buffer with manual text (C-k h)
 	// Meta
 	UnknownKCommand, // arg: single character that was not recognized after C-k
 };

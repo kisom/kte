@@ -8,7 +8,7 @@ set(KTE_VERSION "1.0.4")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
-set(BUILD_GUI OFF CACHE BOOL "Enable building the graphical version.")
+set(BUILD_GUI ON CACHE BOOL "Enable building the graphical version.")
 set(BUILD_TESTS OFF CACHE BOOL "Enable building test programs.")
 option(KTE_USE_PIECE_TABLE "Use PieceTable instead of GapBuffer implementation" ON)
 set(KTE_FONT_SIZE "18.0" CACHE STRING "Default font size for GUI")
@@ -55,6 +55,7 @@ set(COMMON_SOURCES
         Buffer.cc
         Editor.cc
         Command.cc
+        HelpText.cc
         KKeymap.cc
         TerminalInputHandler.cc
         TerminalRenderer.cc
@@ -74,6 +75,7 @@ set(COMMON_HEADERS
         Editor.h
         AppendBuffer.h
         Command.h
+        HelpText.h
         KKeymap.h
         InputHandler.h
         TerminalInputHandler.h

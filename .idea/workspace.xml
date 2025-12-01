@@ -33,9 +33,13 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Fix void crash in kge.">
+    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="add regex and search/replace functionality to editor">
+      <change afterPath="$PROJECT_DIR$/HelpText.cc" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/HelpText.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Buffer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Buffer.cc" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Buffer.h" beforeDir="false" afterPath="$PROJECT_DIR$/Buffer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Command.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Command.cc" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Command.h" beforeDir="false" afterPath="$PROJECT_DIR$/Command.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Editor.h" beforeDir="false" afterPath="$PROJECT_DIR$/Editor.h" afterDir="false" />
@@ -43,7 +47,6 @@
       <change beforePath="$PROJECT_DIR$/KKeymap.cc" beforeDir="false" afterPath="$PROJECT_DIR$/KKeymap.cc" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ROADMAP.md" beforeDir="false" afterPath="$PROJECT_DIR$/ROADMAP.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/TerminalRenderer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalRenderer.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/default.nix" beforeDir="false" afterPath="$PROJECT_DIR$/default.nix" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -68,6 +71,7 @@
     <option name="UPDATE_TYPE" value="REBASE" />
   </component>
   <component name="HighlightingSettingsPerFile">
+    <setting file="mock:///AIAssistantSnippet.." root0="SKIP_HIGHLIGHTING" />
     <setting file="mock:///AIAssistantSnippet.." root0="SKIP_HIGHLIGHTING" />
     <setting file="mock:///AIAssistantSnippet.." root0="SKIP_HIGHLIGHTING" />
   </component>
@@ -180,7 +184,7 @@
       <workItem from="1764539556448" duration="156000" />
       <workItem from="1764539725338" duration="1075000" />
       <workItem from="1764542392763" duration="3512000" />
-      <workItem from="1764548345516" duration="16453000" />
+      <workItem from="1764548345516" duration="28341000" />
     </task>
     <task id="LOCAL-00001" summary="Add undo/redo infrastructure and buffer management additions.">
       <option name="closed" value="true" />
@@ -302,7 +306,15 @@
       <option name="project" value="LOCAL" />
       <updated>1764568264996</updated>
     </task>
-    <option name="localTasksCounter" value="16" />
+    <task id="LOCAL-00016" summary="add regex and search/replace functionality to editor">
+      <option name="closed" value="true" />
+      <created>1764574397967</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1764574397967</updated>
+    </task>
+    <option name="localTasksCounter" value="17" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -331,7 +343,8 @@
     <MESSAGE value="Add buffer position display and documentation improvements.&#10;&#10;- Display buffer position prefix &quot;[x/N]&quot; in GUI and terminal renderers.&#10;- Improve `kte` and `kge` man pages with frontend usage details and project homepage.&#10;- Update README with GUI invocation instructions.&#10;- Bump version to 1.0.0." />
     <MESSAGE value="Actually add the screenshot." />
     <MESSAGE value="Fix void crash in kge." />
-    <option name="LAST_COMMIT_MESSAGE" value="Fix void crash in kge." />
+    <MESSAGE value="add regex and search/replace functionality to editor" />
+    <option name="LAST_COMMIT_MESSAGE" value="add regex and search/replace functionality to editor" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

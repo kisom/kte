@@ -16,7 +16,7 @@
 
 class Buffer {
 public:
-	Buffer();
+    Buffer();
 
 	Buffer(const Buffer &other);
 
@@ -262,6 +262,14 @@ public:
 		return filename_;
 	}
 
+	// Set a virtual (non file-backed) display name for this buffer, e.g. "+HELP+"
+	// This does not mark the buffer as file-backed.
+	void SetVirtualName(const std::string &name)
+	{
+		filename_ = name;
+		is_file_backed_ = false;
+	}
+
 
 	[[nodiscard]] bool IsFileBacked() const
 	{
@@ -269,10 +277,26 @@ public:
 	}
 
 
-	[[nodiscard]] bool Dirty() const
-	{
-		return dirty_;
-	}
+ [[nodiscard]] bool Dirty() const
+ {
+     return dirty_;
+ }
+
+ // Read-only flag
+ [[nodiscard]] bool IsReadOnly() const
+ {
+     return read_only_;
+ }
+
+ void SetReadOnly(bool ro)
+ {
+     read_only_ = ro;
+ }
+
+ void ToggleReadOnly()
+ {
+     read_only_ = !read_only_;
+ }
 
 
 	void SetCursor(const std::size_t x, const std::size_t y)
@@ -356,17 +380,18 @@ public:
 	[[nodiscard]] const UndoSystem *Undo() const;
 
 private:
-	// State mirroring original C struct (without undo_tree)
-	std::size_t curx_    = 0, cury_ = 0; // cursor position in characters
-	std::size_t rx_      = 0; // render x (tabs expanded)
-	std::size_t nrows_   = 0; // number of rows
+    // State mirroring original C struct (without undo_tree)
+    std::size_t curx_    = 0, cury_ = 0; // cursor position in characters
+    std::size_t rx_      = 0; // render x (tabs expanded)
+    std::size_t nrows_   = 0; // number of rows
 	std::size_t rowoffs_ = 0, coloffs_ = 0; // viewport offsets
 	std::vector<Line> rows_; // buffer rows (without trailing newlines)
 	std::string filename_;
-	bool is_file_backed_   = false;
-	bool dirty_            = false;
-	bool mark_set_         = false;
-	std::size_t mark_curx_ = 0, mark_cury_ = 0;
+ bool is_file_backed_   = false;
+ bool dirty_            = false;
+ bool read_only_        = false;
+ bool mark_set_         = false;
+ std::size_t mark_curx_ = 0, mark_cury_ = 0;
 
 	// Per-buffer undo state
 	std::unique_ptr<struct UndoTree> undo_tree_;

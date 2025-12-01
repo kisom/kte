@@ -36,6 +36,7 @@ Buffer::Buffer(const Buffer &other)
 	filename_       = other.filename_;
 	is_file_backed_ = other.is_file_backed_;
 	dirty_          = other.dirty_;
+	read_only_      = other.read_only_;
 	mark_set_       = other.mark_set_;
 	mark_curx_      = other.mark_curx_;
 	mark_cury_      = other.mark_cury_;
@@ -60,6 +61,7 @@ Buffer::operator=(const Buffer &other)
 	filename_       = other.filename_;
 	is_file_backed_ = other.is_file_backed_;
 	dirty_          = other.dirty_;
+	read_only_      = other.read_only_;
 	mark_set_       = other.mark_set_;
 	mark_curx_      = other.mark_curx_;
 	mark_cury_      = other.mark_cury_;
@@ -82,6 +84,7 @@ Buffer::Buffer(Buffer &&other) noexcept
 	  filename_(std::move(other.filename_)),
 	  is_file_backed_(other.is_file_backed_),
 	  dirty_(other.dirty_),
+	  read_only_(other.read_only_),
 	  mark_set_(other.mark_set_),
 	  mark_curx_(other.mark_curx_),
 	  mark_cury_(other.mark_cury_),
@@ -112,6 +115,7 @@ Buffer::operator=(Buffer &&other) noexcept
 	filename_       = std::move(other.filename_);
 	is_file_backed_ = other.is_file_backed_;
 	dirty_          = other.dirty_;
+	read_only_      = other.read_only_;
 	mark_set_       = other.mark_set_;
 	mark_curx_      = other.mark_curx_;
 	mark_cury_      = other.mark_cury_;
@@ -364,9 +368,9 @@ Buffer::insert_text(int row, int col, std::string_view text)
 		rows_[y].insert(x, seg);
 		x += seg.size();
 		// Split line at x
-		std::string tail = rows_[y].substr(x);
-		rows_[y].erase(x);
-		rows_.insert(rows_.begin() + static_cast<std::ptrdiff_t>(y + 1), tail);
+  std::string tail = rows_[y].substr(x);
+  rows_[y].erase(x);
+  rows_.insert(rows_.begin() + static_cast<std::ptrdiff_t>(y + 1), Line(tail));
 		y += 1;
 		x = 0;
 		remain.erase(0, pos + 1);
@@ -426,8 +430,8 @@ Buffer::split_line(int row, const int col)
 	const auto y    = static_cast<std::size_t>(row);
 	const auto x    = std::min<std::size_t>(static_cast<std::size_t>(col), rows_[y].size());
 	const auto tail = rows_[y].substr(x);
-	rows_[y].erase(x);
-	rows_.insert(rows_.begin() + static_cast<std::ptrdiff_t>(y + 1), tail);
+ rows_[y].erase(x);
+ rows_.insert(rows_.begin() + static_cast<std::ptrdiff_t>(y + 1), Line(tail));
 }
 
 
@@ -455,7 +459,7 @@ Buffer::insert_row(int row, const std::string_view text)
 		row = 0;
 	if (static_cast<std::size_t>(row) > rows_.size())
 		row = static_cast<int>(rows_.size());
-	rows_.insert(rows_.begin() + row, std::string(text));
+ rows_.insert(rows_.begin() + row, Line(std::string(text)));
 }
 
 

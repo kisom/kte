@@ -50,9 +50,9 @@ TerminalRenderer::Draw(Editor &ed)
             bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
             std::vector<std::pair<std::size_t, std::size_t>> ranges; // [start, end)
             if (search_mode && li < lines.size()) {
-                const std::string &sline = lines[li];
-                // If regex search prompt is active, use regex to compute highlight ranges
-                if (ed.PromptActive() && ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch) {
+                std::string sline = static_cast<std::string>(lines[li]);
+                // If regex search prompt is active (RegexSearch or RegexReplaceFind), use regex to compute highlight ranges
+                if (ed.PromptActive() && (ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch || ed.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind)) {
                     try {
                         std::regex rx(ed.SearchQuery());
                         for (auto it = std::sregex_iterator(sline.begin(), sline.end(), rx);
@@ -93,7 +93,7 @@ TerminalRenderer::Draw(Editor &ed)
             bool cur_on = false;
             int written = 0;
             if (li < lines.size()) {
-                const std::string &line = lines[li];
+                std::string line = static_cast<std::string>(lines[li]);
                 src_i                   = 0;
                 render_col              = 0;
                 while (written < cols) {
@@ -202,9 +202,7 @@ TerminalRenderer::Draw(Editor &ed)
  // If a prompt is active, replace the status bar with the full prompt text
  if (ed.PromptActive()) {
      // Build prompt text: "Label: text" and shorten HOME path for file-related prompts
-     std::string msg = ed.PromptLabel();
-     if (!msg.empty())
-         msg += ": ";
+     std::string label = ed.PromptLabel();
      std::string ptext = ed.PromptText();
      auto kind         = ed.CurrentPromptKind();
      if (kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs ||
@@ -222,7 +220,30 @@ TerminalRenderer::Draw(Editor &ed)
              }
          }
      }
-     msg += ptext;
+     // Prefer keeping the tail of the filename visible when it exceeds the window
+     std::string msg;
+     if (!label.empty()) {
+         msg = label + ": ";
+     }
+     // When dealing with file-related prompts, left-trim the filename text so the tail stays visible
+     if ((kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs || kind == Editor::PromptKind::Chdir) && cols > 0) {
+         int avail = cols - static_cast<int>(msg.size());
+         if (avail <= 0) {
+             // No room for label; fall back to showing the rightmost portion of the whole string
+             std::string whole = msg + ptext;
+             if ((int)whole.size() > cols)
+                 whole = whole.substr(whole.size() - cols);
+             msg = whole;
+         } else {
+             if ((int)ptext.size() > avail) {
+                 ptext = ptext.substr(ptext.size() - avail);
+             }
+             msg += ptext;
+         }
+     } else {
+         // Non-file prompts: simple concatenation and clip by terminal
+         msg += ptext;
+     }
 
      // Draw left-aligned, clipped to width
      if (!msg.empty())
@@ -274,6 +295,9 @@ TerminalRenderer::Draw(Editor &ed)
 		left += fname;
 		if (b && b->Dirty())
 			left += " *";
+		// Append read-only indicator
+		if (b && b->IsReadOnly())
+			left += " [RO]";
 		// Append total line count as "<n>L"
 		if (b) {
 			unsigned long lcount = static_cast<unsigned long>(b->Rows().size());

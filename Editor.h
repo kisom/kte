@@ -306,6 +306,8 @@ public:
      None = 0,
      Search,
      RegexSearch,
+     RegexReplaceFind,  // step 1 of Regex Search & Replace: find pattern
+     RegexReplaceWith,  // step 2 of Regex Search & Replace: replacement text
      OpenFile,
      SaveAs,
      Confirm,

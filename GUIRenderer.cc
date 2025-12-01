@@ -191,7 +191,7 @@ GUIRenderer::Draw(Editor &ed)
             } else {
                 // Convert pixel X to a render-column target including horizontal col offset
                 // Use our own tab expansion of width 8 to match command layer logic.
-                const std::string &line_clicked = lines[by];
+                std::string line_clicked = static_cast<std::string>(lines[by]);
                 const std::size_t tabw          = 8;
                 // We iterate source columns computing absolute rendered column (rx_abs) from 0,
                 // then translate to viewport-space by subtracting Coloffs.
@@ -245,7 +245,7 @@ GUIRenderer::Draw(Editor &ed)
   for (std::size_t i = rowoffs; i < lines.size(); ++i) {
             // Capture the screen position before drawing the line
             ImVec2 line_pos         = ImGui::GetCursorScreenPos();
-            const std::string &line = lines[i];
+            std::string line = static_cast<std::string>(lines[i]);
 
             // Expand tabs to spaces with width=8 and apply horizontal scroll offset
             const std::size_t tabw = 8;
@@ -256,8 +256,8 @@ GUIRenderer::Draw(Editor &ed)
             bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
             std::vector<std::pair<std::size_t, std::size_t>> hl_src_ranges;
             if (search_mode) {
-                // If we're in RegexSearch mode, compute ranges using regex; otherwise plain substring
-                if (ed.PromptActive() && ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch) {
+                // If we're in RegexSearch or RegexReplaceFind mode, compute ranges using regex; otherwise plain substring
+                if (ed.PromptActive() && (ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch || ed.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind)) {
                     try {
                         std::regex rx(ed.SearchQuery());
                         for (auto it = std::sregex_iterator(line.begin(), line.end(), rx);
@@ -366,8 +366,7 @@ GUIRenderer::Draw(Editor &ed)
   ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, bg_col);
   // If a prompt is active, replace the entire status bar with the prompt text
   if (ed.PromptActive()) {
-      std::string msg = ed.PromptLabel();
-      if (!msg.empty()) msg += ": ";
+      std::string label = ed.PromptLabel();
       std::string ptext = ed.PromptText();
       auto kind         = ed.CurrentPromptKind();
       if (kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs ||
@@ -384,14 +383,62 @@ GUIRenderer::Draw(Editor &ed)
               }
           }
       }
-      msg += ptext;
 
       float pad = 6.f;
-      ImVec2 msg_sz = ImGui::CalcTextSize(msg.c_str());
       float left_x = p0.x + pad;
+      float right_x = p1.x - pad;
+      float max_px = std::max(0.0f, right_x - left_x);
+
+      std::string prefix;
+      if (!label.empty()) prefix = label + ": ";
+
+      // Compose showing right-end of filename portion when too long for space
+      std::string final_msg;
+      ImVec2 prefix_sz = ImGui::CalcTextSize(prefix.c_str());
+      float avail_px = std::max(0.0f, max_px - prefix_sz.x);
+      if ((kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs || kind == Editor::PromptKind::Chdir) && avail_px > 0.0f) {
+          // Trim from left until it fits by pixel width
+          std::string tail = ptext;
+          ImVec2 tail_sz = ImGui::CalcTextSize(tail.c_str());
+          if (tail_sz.x > avail_px) {
+              // Remove leading chars until it fits
+              // Use a simple loop; text lengths are small here
+              size_t start = 0;
+              // To avoid O(n^2) worst-case, remove chunks
+              while (start < tail.size()) {
+                  // Estimate how many chars to skip based on ratio
+                  float ratio = tail_sz.x / avail_px;
+                  size_t skip = ratio > 1.5f ? std::min(tail.size() - start, (size_t)std::max<size_t>(1, (size_t)(tail.size() / 4))) : 1;
+                  start += skip;
+                  std::string candidate = tail.substr(start);
+                  ImVec2 cand_sz = ImGui::CalcTextSize(candidate.c_str());
+                  if (cand_sz.x <= avail_px) {
+                      tail = candidate;
+                      tail_sz = cand_sz;
+                      break;
+                  }
+              }
+              if (ImGui::CalcTextSize(tail.c_str()).x > avail_px && !tail.empty()) {
+                  // As a last resort, ensure fit by chopping exactly
+                  // binary reduce
+                  size_t lo = 0, hi = tail.size();
+                  while (lo < hi) {
+                      size_t mid = (lo + hi) / 2;
+                      std::string cand = tail.substr(mid);
+                      if (ImGui::CalcTextSize(cand.c_str()).x <= avail_px) hi = mid; else lo = mid + 1;
+                  }
+                  tail = tail.substr(lo);
+              }
+          }
+          final_msg = prefix + tail;
+      } else {
+          final_msg = prefix + ptext;
+      }
+
+      ImVec2 msg_sz = ImGui::CalcTextSize(final_msg.c_str());
       ImGui::PushClipRect(ImVec2(p0.x, p0.y), ImVec2(p1.x, p1.y), true);
       ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - msg_sz.y) * 0.5f));
-      ImGui::TextUnformatted(msg.c_str());
+      ImGui::TextUnformatted(final_msg.c_str());
       ImGui::PopClipRect();
       // Advance cursor to after the bar to keep layout consistent
       ImGui::Dummy(ImVec2(x1 - x0, bar_h));
