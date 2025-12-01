@@ -1,10 +1,11 @@
 #ifndef KTE_UNDONODE_H
 #define KTE_UNDONODE_H
 
+#include <cstdint>
 #include <string>
 
 
-enum class UndoType : uint8_t {
+enum class UndoType : std::uint8_t {
 	Insert,
 	Delete,
 	Paste,

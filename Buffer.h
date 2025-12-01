@@ -5,6 +5,7 @@
 #define KTE_BUFFER_H
 
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
 #include <string_view>
