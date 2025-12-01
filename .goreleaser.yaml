@@ -1,0 +1,69 @@
+# GoReleaser configuration for kte/kge (C++ project)
+# We use GoReleaser only for releasing: changelog, checksums, and uploading
+# prebuilt artifacts that are produced by the CI workflow.
+
+version: 2
+
+project_name: kte
+
+before:
+  hooks:
+    # No build here; artifacts are produced by the CI jobs and placed into dist/
+    - echo "GoReleaser: using prebuilt artifacts from dist/"
+
+builds:
+  # No Go builds; this is a C++ project.
+  - id: noop
+    skip: true
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+release:
+  # Rely on GITHUB_TOKEN from the workflow.
+  draft: false
+  prerelease: auto
+  mode: replace
+  footer: |
+    Built with CMake. See README for platform dependencies.
+  extra_files:
+    # Linux binaries (amd64, arm64)
+    - glob: dist/linux-amd64/kte
+    - glob: dist/linux-amd64/kge
+    - glob: dist/linux-arm64/kte
+    - glob: dist/linux-arm64/kge
+    # macOS Apple Silicon app bundle (zipped)
+    - glob: dist/macos-arm64/kge.app.zip
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs: '
+      - '^chore: '
+      - '^ci: '
+
+announce:
+  skip: true
+
+signs:
+  # No signing by default.
+  - artifacts: none
+
+archives:
+  # We are uploading raw binaries / zip created by CI, so no archives here.
+  - id: none
+    formats: [binary]
+    builds: [noop]
+
+blobs: []
+
+brews: []
+
+snapcrafts: []
+
+nfpm: []
+
+publishers: []

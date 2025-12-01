@@ -9,6 +9,9 @@ on:
 permissions:
   contents: write
 
+env:
+  BUILD_TYPE: Release
+
 jobs:
   homebrew:
     name: Bump Homebrew formula
@@ -35,3 +38,114 @@ jobs:
             Created by https://github.com/mislav/bump-homebrew-formula-action
         env:
           COMMITTER_TOKEN: ${{ secrets.GH_CPAT }}
+  linux-build:
+    name: Build Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config \
+            libncurses5-dev libncursesw5-dev \
+            libsdl2-dev libfreetype6-dev mesa-common-dev
+
+      - name: Configure (CMake, GUI ON)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_GUI=ON
+
+      - name: Build
+        run: |
+          cmake --build build --config ${BUILD_TYPE} -j
+
+      - name: Prepare dist
+        run: |
+          mkdir -p dist/linux-${{ matrix.arch }}
+          cp build/kte dist/linux-${{ matrix.arch }}/
+          cp build/kge dist/linux-${{ matrix.arch }}/
+          strip dist/linux-${{ matrix.arch }}/kte || true
+          strip dist/linux-${{ matrix.arch }}/kge || true
+
+      - name: Upload artifact (linux-${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/linux-${{ matrix.arch }}/*
+
+  macos-build:
+    name: Build macOS arm64 (.app)
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps (brew)
+        run: |
+          brew update
+          brew install cmake ncurses sdl2 freetype
+
+      - name: Configure (CMake, GUI ON, arm64)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_GUI=ON -DCMAKE_OSX_ARCHITECTURES=arm64
+
+      - name: Build
+        run: |
+          cmake --build build --config ${BUILD_TYPE} -j
+
+      - name: Zip kge.app
+        run: |
+          mkdir -p dist/macos-arm64
+          cd build
+          ditto -c -k --sequesterRsrc --keepParent kge.app ../dist/macos-arm64/kge.app.zip
+
+      - name: Upload artifact (macos-arm64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: dist/macos-arm64/kge.app.zip
+
+  release:
+    name: Create GitHub Release
+    needs: [ linux-build, macos-build ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Reshape artifact layout
+        run: |
+          ls -R dist
+          # Actions download-artifact places each named artifact in a subfolder
+          # Move into the expected dist structure for GoReleaser
+          mkdir -p dist/linux-amd64 dist/linux-arm64 dist/macos-arm64
+          if [ -d dist/linux-amd64/linux-amd64 ]; then mv dist/linux-amd64/linux-amd64/* dist/linux-amd64/; fi
+          if [ -d dist/linux-arm64/linux-arm64 ]; then mv dist/linux-arm64/linux-arm64/* dist/linux-arm64/; fi
+          if [ -d dist/macos-arm64/macos-arm64 ]; then mv dist/macos-arm64/macos-arm64/* dist/macos-arm64/; fi
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean --config .goreleaser.yaml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_CPAT }}

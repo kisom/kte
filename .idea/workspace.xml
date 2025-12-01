@@ -33,8 +33,9 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Add buffer position display and documentation improvements.&#10;&#10;- Display buffer position prefix &quot;[x/N]&quot; in GUI and terminal renderers.&#10;- Improve `kte` and `kge` man pages with frontend usage details and project homepage.&#10;- Update README with GUI invocation instructions.&#10;- Bump version to 1.0.0.">
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Actually add the screenshot.">
+      <change beforePath="$PROJECT_DIR$/.github/workflows/release.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/release.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -168,7 +169,7 @@
       <workItem from="1764539556448" duration="156000" />
       <workItem from="1764539725338" duration="1075000" />
       <workItem from="1764542392763" duration="3512000" />
-      <workItem from="1764548345516" duration="9362000" />
+      <workItem from="1764548345516" duration="9962000" />
     </task>
     <task id="LOCAL-00001" summary="Add undo/redo infrastructure and buffer management additions.">
       <option name="closed" value="true" />
@@ -274,7 +275,15 @@
       <option name="project" value="LOCAL" />
       <updated>1764556854788</updated>
     </task>
-    <option name="localTasksCounter" value="14" />
+    <task id="LOCAL-00014" summary="Actually add the screenshot.">
+      <option name="closed" value="true" />
+      <created>1764557759844</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1764557759844</updated>
+    </task>
+    <option name="localTasksCounter" value="15" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -301,7 +310,8 @@
     <MESSAGE value="Add horizontal scrolling support and refactor mouse click handling in GUI.&#10;&#10;- Introduce horizontal scrolling with column offset synchronization in GUI.&#10;- Refactor mouse click handling for improved accuracy and viewport alignment.&#10;- Enhance tab expansion and cursor rendering logic for better user experience.&#10;- Replace redundant variable declarations in `Buffer` for cleaner code." />
     <MESSAGE value="Introduce file picker and GUI configuration with enhancements.&#10;&#10;- Add visual file picker for GUI with toggle support.&#10;- Introduce `GUIConfig` class for loading GUI settings from configuration file.&#10;- Refactor window initialization to support dynamic sizing based on configuration.&#10;- Add macOS-specific handling for fullscreen behavior.&#10;- Improve header inclusion order and minor code cleanup." />
     <MESSAGE value="Add buffer position display and documentation improvements.&#10;&#10;- Display buffer position prefix &quot;[x/N]&quot; in GUI and terminal renderers.&#10;- Improve `kte` and `kge` man pages with frontend usage details and project homepage.&#10;- Update README with GUI invocation instructions.&#10;- Bump version to 1.0.0." />
-    <option name="LAST_COMMIT_MESSAGE" value="Add buffer position display and documentation improvements.&#10;&#10;- Display buffer position prefix &quot;[x/N]&quot; in GUI and terminal renderers.&#10;- Improve `kte` and `kge` man pages with frontend usage details and project homepage.&#10;- Update README with GUI invocation instructions.&#10;- Bump version to 1.0.0." />
+    <MESSAGE value="Actually add the screenshot." />
+    <option name="LAST_COMMIT_MESSAGE" value="Actually add the screenshot." />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
