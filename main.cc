@@ -189,6 +189,15 @@ main(int argc, const char *argv[])
 		fe = std::make_unique<TerminalFrontend>();
 	}
 
+#if defined(KTE_BUILD_GUI) && defined(__APPLE__)
+	if (use_gui) {
+		/* likely using the .app, so need to cd */
+		if (chdir(getenv("HOME")) != 0) {
+			std::cerr << "kge.app: failed to chdir to HOME" << std::endl;
+		}
+	}
+#endif
+
 	if (!fe->Init(editor)) {
 		std::cerr << "kte: failed to initialize frontend" << std::endl;
 		return 1;

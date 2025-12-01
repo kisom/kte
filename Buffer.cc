@@ -347,8 +347,8 @@ Buffer::insert_text(int row, int col, std::string_view text)
 	if (static_cast<std::size_t>(row) >= rows_.size())
 		rows_.emplace_back("");
 
-	std::size_t y = static_cast<std::size_t>(row);
-	std::size_t x = static_cast<std::size_t>(col);
+	auto y = static_cast<std::size_t>(row);
+	auto x = static_cast<std::size_t>(col);
 	if (x > rows_[y].size())
 		x = rows_[y].size();
 
@@ -384,13 +384,13 @@ Buffer::delete_text(int row, int col, std::size_t len)
 		row = 0;
 	if (static_cast<std::size_t>(row) >= rows_.size())
 		return;
-	std::size_t y = static_cast<std::size_t>(row);
-	std::size_t x = std::min<std::size_t>(static_cast<std::size_t>(col), rows_[y].size());
+	const auto y = static_cast<std::size_t>(row);
+	const auto x = std::min<std::size_t>(static_cast<std::size_t>(col), rows_[y].size());
 
 	std::size_t remaining = len;
 	while (remaining > 0 && y < rows_.size()) {
-		auto &line          = rows_[y];
-		std::size_t in_line = std::min<std::size_t>(remaining, line.size() - std::min(x, line.size()));
+		auto &line                = rows_[y];
+		const std::size_t in_line = std::min<std::size_t>(remaining, line.size() - std::min(x, line.size()));
 		if (x < line.size() && in_line > 0) {
 			line.erase(x, in_line);
 			remaining -= in_line;
@@ -414,15 +414,18 @@ Buffer::delete_text(int row, int col, std::size_t len)
 
 
 void
-Buffer::split_line(int row, int col)
+Buffer::split_line(int row, const int col)
 {
-	if (row < 0)
+	if (row < 0) {
 		row = 0;
-	if (static_cast<std::size_t>(row) >= rows_.size())
+	}
+
+	if (static_cast<std::size_t>(row) >= rows_.size()) {
 		rows_.resize(static_cast<std::size_t>(row) + 1);
-	std::size_t y    = static_cast<std::size_t>(row);
-	std::size_t x    = std::min<std::size_t>(static_cast<std::size_t>(col), rows_[y].size());
-	std::string tail = rows_[y].substr(x);
+	}
+	const auto y    = static_cast<std::size_t>(row);
+	const auto x    = std::min<std::size_t>(static_cast<std::size_t>(col), rows_[y].size());
+	const auto tail = rows_[y].substr(x);
 	rows_[y].erase(x);
 	rows_.insert(rows_.begin() + static_cast<std::ptrdiff_t>(y + 1), tail);
 }
@@ -431,24 +434,28 @@ Buffer::split_line(int row, int col)
 void
 Buffer::join_lines(int row)
 {
-	if (row < 0)
+	if (row < 0) {
 		row = 0;
-	std::size_t y = static_cast<std::size_t>(row);
-	if (y + 1 >= rows_.size())
+	}
+
+	const auto y = static_cast<std::size_t>(row);
+	if (y + 1 >= rows_.size()) {
 		return;
+	}
+
 	rows_[y] += rows_[y + 1];
 	rows_.erase(rows_.begin() + static_cast<std::ptrdiff_t>(y + 1));
 }
 
 
 void
-Buffer::insert_row(int row, std::string_view text)
+Buffer::insert_row(int row, const std::string_view text)
 {
 	if (row < 0)
 		row = 0;
 	if (static_cast<std::size_t>(row) > rows_.size())
 		row = static_cast<int>(rows_.size());
-	rows_.insert(rows_.begin() + static_cast<std::ptrdiff_t>(row), std::string(text));
+	rows_.insert(rows_.begin() + row, std::string(text));
 }
 
 
@@ -459,7 +466,7 @@ Buffer::delete_row(int row)
 		row = 0;
 	if (static_cast<std::size_t>(row) >= rows_.size())
 		return;
-	rows_.erase(rows_.begin() + static_cast<std::ptrdiff_t>(row));
+	rows_.erase(rows_.begin() + row);
 }
 
 

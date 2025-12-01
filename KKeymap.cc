@@ -1,5 +1,8 @@
 #include "KKeymap.h"
+
+#include <iostream>
 #include <ncurses.h>
+#include <ostream>
 
 
 auto
@@ -21,9 +24,7 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 			out = CommandId::SaveAndQuit;
 			return true;
 		default:
-			// Important: do not return here — fall through to non-ctrl table
-			// so that C-k u/U still work even if Ctrl is (incorrectly) held
-			break;
+			return false;
 		}
 	}
 
@@ -49,6 +50,9 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 	case 'e':
 		out = CommandId::OpenFileStart;
 		return true;
+	case 'E':
+		std::cerr << "E is not a valid command" << std::endl;
+		return false;
 	case 'f':
 		out = CommandId::FlushKillRing;
 		return true;

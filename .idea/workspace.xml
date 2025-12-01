@@ -33,18 +33,12 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Add GUI initialization updates and improve navigation commands.&#10;&#10;- Implement terminal detachment for GUI mode to enable terminal closure post-launch.&#10;- Add `+N` support for opening files at specific line numbers and refine cursor positioning.&#10;- Introduce `JumpToLine` command for direct navigation by line number.&#10;- Enhance mouse wheel handling for line-wise scrolling.">
-      <change beforePath="$PROJECT_DIR$/.idea/codeStyles/Project.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/codeStyles/Project.xml" afterDir="false" />
+    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Refactor code for consistency and enhanced functionality.&#10;&#10;- Normalize path handling for buffer operations, supporting tilde expansion and absolute paths.&#10;- Introduce `DisplayNameFor` to uniquely resolve buffer display names, minimizing filename clashes.&#10;- Add new commands: `ShowWorkingDirectory` and `ChangeWorkingDirectory`.&#10;- Refine keybindings and enhance existing commands for improved command flow.&#10;- Adjust GUI and terminal renderers to display total line counts alongside filenames.&#10;- Update coding style to align with project guidelines.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.junie/guidelines.md" beforeDir="false" afterPath="$PROJECT_DIR$/.junie/guidelines.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Buffer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Buffer.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Command.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Command.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Command.h" beforeDir="false" afterPath="$PROJECT_DIR$/Command.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Editor.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Editor.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Editor.h" beforeDir="false" afterPath="$PROJECT_DIR$/Editor.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/GUIRenderer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIRenderer.cc" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/KKeymap.cc" beforeDir="false" afterPath="$PROJECT_DIR$/KKeymap.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TerminalRenderer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalRenderer.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.cc" beforeDir="false" afterPath="$PROJECT_DIR$/main.cc" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -145,7 +139,7 @@
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
-    <configuration name="kge" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="kte" TARGET_NAME="kge" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="kte" RUN_TARGET_NAME="kge">
+    <configuration name="kge" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" WORKING_DIR="file://$PROJECT_DIR$" PASS_PARENT_ENVS_2="true" PROJECT_NAME="kte" TARGET_NAME="kge" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="kte" RUN_TARGET_NAME="kge">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
@@ -176,7 +170,7 @@
       <workItem from="1764539556448" duration="156000" />
       <workItem from="1764539725338" duration="1075000" />
       <workItem from="1764542392763" duration="3512000" />
-      <workItem from="1764548345516" duration="1529000" />
+      <workItem from="1764548345516" duration="3453000" />
     </task>
     <task id="LOCAL-00001" summary="Add undo/redo infrastructure and buffer management additions.">
       <option name="closed" value="true" />
@@ -250,7 +244,15 @@
       <option name="project" value="LOCAL" />
       <updated>1764505723411</updated>
     </task>
-    <option name="localTasksCounter" value="10" />
+    <task id="LOCAL-00010" summary="Refactor code for consistency and enhanced functionality.&#10;&#10;- Normalize path handling for buffer operations, supporting tilde expansion and absolute paths.&#10;- Introduce `DisplayNameFor` to uniquely resolve buffer display names, minimizing filename clashes.&#10;- Add new commands: `ShowWorkingDirectory` and `ChangeWorkingDirectory`.&#10;- Refine keybindings and enhance existing commands for improved command flow.&#10;- Adjust GUI and terminal renderers to display total line counts alongside filenames.&#10;- Update coding style to align with project guidelines.">
+      <option name="closed" value="true" />
+      <created>1764550164829</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1764550164829</updated>
+    </task>
+    <option name="localTasksCounter" value="11" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -273,7 +275,8 @@
     <MESSAGE value="Remove `packaging.cmake`, deprecate `test_undo` setup, and add new testing infrastructure.&#10;&#10;- Delete `packaging.cmake` to streamline build system.&#10;- Deprecate `test_undo` in CMake setup; condition builds on `BUILD_TESTS`.&#10;- Introduce `TestFrontend`, `TestRenderer`, and `TestInputHandler` for structured testing.&#10;- Update `GUIInputHandler` and `Command` for enhanced buffer save handling and overwrite confirmation.&#10;- Enhance kill ring operations and new prompt workflows in `Editor`." />
     <MESSAGE value="Add man pages for `kge` and `kte` with installation targets in CMake.&#10;&#10;- Introduce `docs/kge.1` and `docs/kte.1` man pages covering usage, options, keybindings, and examples.&#10;- Update `CMakeLists.txt` to install man pages under `${CMAKE_INSTALL_MANDIR}/man1`.&#10;- Ensure `kge` man page installation is conditional on GUI being built." />
     <MESSAGE value="Add GUI initialization updates and improve navigation commands.&#10;&#10;- Implement terminal detachment for GUI mode to enable terminal closure post-launch.&#10;- Add `+N` support for opening files at specific line numbers and refine cursor positioning.&#10;- Introduce `JumpToLine` command for direct navigation by line number.&#10;- Enhance mouse wheel handling for line-wise scrolling." />
-    <option name="LAST_COMMIT_MESSAGE" value="Add GUI initialization updates and improve navigation commands.&#10;&#10;- Implement terminal detachment for GUI mode to enable terminal closure post-launch.&#10;- Add `+N` support for opening files at specific line numbers and refine cursor positioning.&#10;- Introduce `JumpToLine` command for direct navigation by line number.&#10;- Enhance mouse wheel handling for line-wise scrolling." />
+    <MESSAGE value="Refactor code for consistency and enhanced functionality.&#10;&#10;- Normalize path handling for buffer operations, supporting tilde expansion and absolute paths.&#10;- Introduce `DisplayNameFor` to uniquely resolve buffer display names, minimizing filename clashes.&#10;- Add new commands: `ShowWorkingDirectory` and `ChangeWorkingDirectory`.&#10;- Refine keybindings and enhance existing commands for improved command flow.&#10;- Adjust GUI and terminal renderers to display total line counts alongside filenames.&#10;- Update coding style to align with project guidelines." />
+    <option name="LAST_COMMIT_MESSAGE" value="Refactor code for consistency and enhanced functionality.&#10;&#10;- Normalize path handling for buffer operations, supporting tilde expansion and absolute paths.&#10;- Introduce `DisplayNameFor` to uniquely resolve buffer display names, minimizing filename clashes.&#10;- Add new commands: `ShowWorkingDirectory` and `ChangeWorkingDirectory`.&#10;- Refine keybindings and enhance existing commands for improved command flow.&#10;- Adjust GUI and terminal renderers to display total line counts alongside filenames.&#10;- Update coding style to align with project guidelines." />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
