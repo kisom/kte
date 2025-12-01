@@ -8,7 +8,7 @@
   xorg,
   installShellFiles,
 
-  graphical ? true,
+  graphical ? false,
   ...
 }:
 let

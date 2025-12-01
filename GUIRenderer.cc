@@ -7,6 +7,7 @@
 #include <string>
 
 #include <imgui.h>
+#include <regex>
 
 #include "GUIRenderer.h"
 #include "Buffer.h"
@@ -241,31 +242,92 @@ GUIRenderer::Draw(Editor &ed)
         }
 		// Cache current horizontal offset in rendered columns
 		const std::size_t coloffs_now = buf->Coloffs();
-		for (std::size_t i = rowoffs; i < lines.size(); ++i) {
-			// Capture the screen position before drawing the line
-			ImVec2 line_pos         = ImGui::GetCursorScreenPos();
-			const std::string &line = lines[i];
+  for (std::size_t i = rowoffs; i < lines.size(); ++i) {
+            // Capture the screen position before drawing the line
+            ImVec2 line_pos         = ImGui::GetCursorScreenPos();
+            const std::string &line = lines[i];
 
-			// Expand tabs to spaces with width=8 and apply horizontal scroll offset
-			const std::size_t tabw = 8;
-			std::string expanded;
-			expanded.reserve(line.size() + 16);
-			std::size_t rx_abs_draw = 0; // rendered column for drawing
-			// Emit entire line (ImGui child scrolling will handle clipping)
-			for (std::size_t src = 0; src < line.size(); ++src) {
-				char c = line[src];
-				if (c == '\t') {
-					std::size_t adv = (tabw - (rx_abs_draw % tabw));
-					// Emit spaces for the tab
-					expanded.append(adv, ' ');
-					rx_abs_draw += adv;
-				} else {
-					expanded.push_back(c);
-					rx_abs_draw += 1;
-				}
-			}
+            // Expand tabs to spaces with width=8 and apply horizontal scroll offset
+            const std::size_t tabw = 8;
+            std::string expanded;
+            expanded.reserve(line.size() + 16);
+            std::size_t rx_abs_draw = 0; // rendered column for drawing
+            // Compute search highlight ranges for this line in source indices
+            bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
+            std::vector<std::pair<std::size_t, std::size_t>> hl_src_ranges;
+            if (search_mode) {
+                // If we're in RegexSearch mode, compute ranges using regex; otherwise plain substring
+                if (ed.PromptActive() && ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch) {
+                    try {
+                        std::regex rx(ed.SearchQuery());
+                        for (auto it = std::sregex_iterator(line.begin(), line.end(), rx);
+                             it != std::sregex_iterator(); ++it) {
+                            const auto &m = *it;
+                            std::size_t sx = static_cast<std::size_t>(m.position());
+                            std::size_t ex = sx + static_cast<std::size_t>(m.length());
+                            hl_src_ranges.emplace_back(sx, ex);
+                        }
+                    } catch (const std::regex_error &) {
+                        // ignore invalid patterns here; status line already shows the error
+                    }
+                } else {
+                    const std::string &q = ed.SearchQuery();
+                    std::size_t pos = 0;
+                    while (!q.empty() && (pos = line.find(q, pos)) != std::string::npos) {
+                        hl_src_ranges.emplace_back(pos, pos + q.size());
+                        pos += q.size();
+                    }
+                }
+            }
+            auto src_to_rx = [&](std::size_t upto_src_exclusive) -> std::size_t {
+                std::size_t rx = 0;
+                std::size_t s  = 0;
+                while (s < upto_src_exclusive && s < line.size()) {
+                    if (line[s] == '\t')
+                        rx += (tabw - (rx % tabw));
+                    else
+                        rx += 1;
+                    ++s;
+                }
+                return rx;
+            };
+            // Draw background highlights (under text)
+            if (search_mode && !hl_src_ranges.empty()) {
+                // Current match emphasis
+                bool has_current = ed.SearchMatchLen() > 0 && ed.SearchMatchY() == i;
+                std::size_t cur_x = has_current ? ed.SearchMatchX() : 0;
+                std::size_t cur_end = has_current ? (ed.SearchMatchX() + ed.SearchMatchLen()) : 0;
+                for (const auto &rg : hl_src_ranges) {
+                    std::size_t sx = rg.first, ex = rg.second;
+                    std::size_t rx_start = src_to_rx(sx);
+                    std::size_t rx_end   = src_to_rx(ex);
+                    // Apply horizontal scroll offset
+                    if (rx_end <= coloffs_now) continue; // fully left of view
+                    std::size_t vx0 = (rx_start > coloffs_now) ? (rx_start - coloffs_now) : 0;
+                    std::size_t vx1 = rx_end - coloffs_now;
+                    ImVec2 p0 = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w, line_pos.y);
+                    ImVec2 p1 = ImVec2(line_pos.x + static_cast<float>(vx1) * space_w, line_pos.y + line_h);
+                    // Choose color: current match stronger
+                    bool is_current = has_current && sx == cur_x && ex == cur_end;
+                    ImU32 col = is_current ? IM_COL32(255, 220, 120, 140) : IM_COL32(200, 200, 0, 90);
+                    ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
+                }
+            }
+            // Emit entire line (ImGui child scrolling will handle clipping)
+            for (std::size_t src = 0; src < line.size(); ++src) {
+                char c = line[src];
+                if (c == '\t') {
+                    std::size_t adv = (tabw - (rx_abs_draw % tabw));
+                    // Emit spaces for the tab
+                    expanded.append(adv, ' ');
+                    rx_abs_draw += adv;
+                } else {
+                    expanded.push_back(c);
+                    rx_abs_draw += 1;
+                }
+            }
 
-			ImGui::TextUnformatted(expanded.c_str());
+            ImGui::TextUnformatted(expanded.c_str());
 
 			// Draw a visible cursor indicator on the current line
 			if (i == cy) {

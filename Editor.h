@@ -301,8 +301,20 @@ public:
 	}
 
 
-	// --- Generic Prompt subsystem (for search, open-file, save-as, etc.) ---
-	enum class PromptKind { None = 0, Search, OpenFile, SaveAs, Confirm, BufferSwitch, GotoLine, Chdir };
+ // --- Generic Prompt subsystem (for search, open-file, save-as, etc.) ---
+ enum class PromptKind {
+     None = 0,
+     Search,
+     RegexSearch,
+     OpenFile,
+     SaveAs,
+     Confirm,
+     BufferSwitch,
+     GotoLine,
+     Chdir,
+     ReplaceFind,  // step 1 of Search & Replace: find what
+     ReplaceWith   // step 2 of Search & Replace: replace with
+ };
 
 
 	void StartPrompt(PromptKind kind, const std::string &label, const std::string &initial)
@@ -504,9 +516,20 @@ private:
 	std::string prompt_text_;
 	std::string pending_overwrite_path_;
 
-	// GUI-only state (safe no-op in terminal builds)
-	bool file_picker_visible_ = false;
-	std::string file_picker_dir_;
+    // GUI-only state (safe no-op in terminal builds)
+    bool file_picker_visible_ = false;
+    std::string file_picker_dir_;
+
+    // Temporary state for Search & Replace flow
+public:
+    void SetReplaceFindTmp(const std::string &s) { replace_find_tmp_ = s; }
+    void SetReplaceWithTmp(const std::string &s) { replace_with_tmp_ = s; }
+    [[nodiscard]] const std::string &ReplaceFindTmp() const { return replace_find_tmp_; }
+    [[nodiscard]] const std::string &ReplaceWithTmp() const { return replace_with_tmp_; }
+
+private:
+    std::string replace_find_tmp_;
+    std::string replace_with_tmp_;
 };
 
 #endif // KTE_EDITOR_H

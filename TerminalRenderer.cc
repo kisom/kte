@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <cstdlib>
 #include <ncurses.h>
+#include <regex>
 #include <string>
 
 #include "TerminalRenderer.h"
@@ -40,100 +41,140 @@ TerminalRenderer::Draw(Editor &ed)
 		std::size_t coloffs = buf->Coloffs();
 
 		const int tabw = 8;
-		for (int r = 0; r < content_rows; ++r) {
-			move(r, 0);
-			std::size_t li = rowoffs + static_cast<std::size_t>(r);
-			std::size_t render_col = 0;
-			std::size_t src_i = 0;
-			bool do_hl = ed.SearchActive() && li == ed.SearchMatchY() && ed.SearchMatchLen() > 0;
-			std::size_t mx = do_hl ? ed.SearchMatchX() : 0;
-			std::size_t mlen = do_hl ? ed.SearchMatchLen() : 0;
-			bool hl_on = false;
-			int written = 0;
-			if (li < lines.size()) {
-				const std::string &line = lines[li];
-				src_i                   = 0;
-				render_col              = 0;
-				while (written < cols) {
-					char ch       = ' ';
-					bool from_src = false;
-					if (src_i < line.size()) {
-						unsigned char c = static_cast<unsigned char>(line[src_i]);
-						if (c == '\t') {
-							std::size_t next_tab = tabw - (render_col % tabw);
-							if (render_col + next_tab <= coloffs) {
-								render_col += next_tab;
-								++src_i;
-								continue;
-							}
-							// Emit spaces for tab
-							if (render_col < coloffs) {
-								// skip to coloffs
-								std::size_t to_skip = std::min<std::size_t>(
-									next_tab, coloffs - render_col);
-								render_col += to_skip;
-								next_tab -= to_skip;
-							}
-							// Now render visible spaces
-							while (next_tab > 0 && written < cols) {
-								bool in_hl = do_hl && src_i >= mx && src_i < mx + mlen;
-								// highlight by source index
-								if (in_hl && !hl_on) {
-									attron(A_STANDOUT);
-									hl_on = true;
-								}
-								if (!in_hl && hl_on) {
-									attroff(A_STANDOUT);
-									hl_on = false;
-								}
-								addch(' ');
-								++written;
-								++render_col;
-								--next_tab;
-							}
-							++src_i;
-							continue;
-						} else {
-							// normal char
-							if (render_col < coloffs) {
-								++render_col;
-								++src_i;
-								continue;
-							}
-							ch       = static_cast<char>(c);
-							from_src = true;
-						}
-					} else {
-						// beyond EOL, fill spaces
-						ch       = ' ';
-						from_src = false;
-					}
-					if (do_hl) {
-						bool in_hl = from_src && src_i >= mx && src_i < mx + mlen;
-						if (in_hl && !hl_on) {
-							attron(A_STANDOUT);
-							hl_on = true;
-						}
-						if (!in_hl && hl_on) {
-							attroff(A_STANDOUT);
-							hl_on = false;
-						}
-					}
-					addch(static_cast<unsigned char>(ch));
-					++written;
-					++render_col;
-					if (from_src)
-						++src_i;
-					if (src_i >= line.size() && written >= cols)
-						break;
-				}
-			}
-			if (hl_on) {
-				attroff(A_STANDOUT);
-				hl_on = false;
-			}
-			clrtoeol();
-		}
+  for (int r = 0; r < content_rows; ++r) {
+            move(r, 0);
+            std::size_t li = rowoffs + static_cast<std::size_t>(r);
+            std::size_t render_col = 0;
+            std::size_t src_i = 0;
+            // Compute matches for this line if search highlighting is active
+            bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
+            std::vector<std::pair<std::size_t, std::size_t>> ranges; // [start, end)
+            if (search_mode && li < lines.size()) {
+                const std::string &sline = lines[li];
+                // If regex search prompt is active, use regex to compute highlight ranges
+                if (ed.PromptActive() && ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch) {
+                    try {
+                        std::regex rx(ed.SearchQuery());
+                        for (auto it = std::sregex_iterator(sline.begin(), sline.end(), rx);
+                             it != std::sregex_iterator(); ++it) {
+                            const auto &m = *it;
+                            std::size_t sx = static_cast<std::size_t>(m.position());
+                            std::size_t ex = sx + static_cast<std::size_t>(m.length());
+                            ranges.emplace_back(sx, ex);
+                        }
+                    } catch (const std::regex_error &) {
+                        // ignore invalid patterns here; status shows error
+                    }
+                } else {
+                    const std::string &q = ed.SearchQuery();
+                    std::size_t pos      = 0;
+                    while (!q.empty() && (pos = sline.find(q, pos)) != std::string::npos) {
+                        ranges.emplace_back(pos, pos + q.size());
+                        pos += q.size();
+                    }
+                }
+            }
+            auto is_src_in_hl = [&](std::size_t si) -> bool {
+                if (ranges.empty()) return false;
+                // ranges are non-overlapping and ordered by construction
+                // linear scan is fine for now
+                for (const auto &rg : ranges) {
+                    if (si < rg.first) break;
+                    if (si >= rg.first && si < rg.second) return true;
+                }
+                return false;
+            };
+            // Track current-match to optionally emphasize
+            const bool has_current = ed.SearchActive() && ed.SearchMatchLen() > 0;
+            const std::size_t cur_mx = has_current ? ed.SearchMatchX() : 0;
+            const std::size_t cur_my = has_current ? ed.SearchMatchY() : 0;
+            const std::size_t cur_mend = has_current ? (ed.SearchMatchX() + ed.SearchMatchLen()) : 0;
+            bool hl_on = false;
+            bool cur_on = false;
+            int written = 0;
+            if (li < lines.size()) {
+                const std::string &line = lines[li];
+                src_i                   = 0;
+                render_col              = 0;
+                while (written < cols) {
+                    char ch       = ' ';
+                    bool from_src = false;
+                    if (src_i < line.size()) {
+                        unsigned char c = static_cast<unsigned char>(line[src_i]);
+                        if (c == '\t') {
+                            std::size_t next_tab = tabw - (render_col % tabw);
+                            if (render_col + next_tab <= coloffs) {
+                                render_col += next_tab;
+                                ++src_i;
+                                continue;
+                            }
+                            // Emit spaces for tab
+                            if (render_col < coloffs) {
+                                // skip to coloffs
+                                std::size_t to_skip = std::min<std::size_t>(
+                                    next_tab, coloffs - render_col);
+                                render_col += to_skip;
+                                next_tab -= to_skip;
+                            }
+                            // Now render visible spaces
+                            while (next_tab > 0 && written < cols) {
+                                bool in_hl = search_mode && is_src_in_hl(src_i);
+                                bool in_cur = has_current && li == cur_my && src_i >= cur_mx && src_i < cur_mend;
+                                // Toggle highlight attributes
+                                int attr = 0;
+                                if (in_hl) attr |= A_STANDOUT;
+                                if (in_cur) attr |= A_BOLD;
+                                if ((attr & A_STANDOUT) && !hl_on) { attron(A_STANDOUT); hl_on = true; }
+                                if (!(attr & A_STANDOUT) && hl_on) { attroff(A_STANDOUT); hl_on = false; }
+                                if ((attr & A_BOLD) && !cur_on) { attron(A_BOLD); cur_on = true; }
+                                if (!(attr & A_BOLD) && cur_on) { attroff(A_BOLD); cur_on = false; }
+                                addch(' ');
+                                ++written;
+                                ++render_col;
+                                --next_tab;
+                            }
+                            ++src_i;
+                            continue;
+                        } else {
+                            // normal char
+                            if (render_col < coloffs) {
+                                ++render_col;
+                                ++src_i;
+                                continue;
+                            }
+                            ch       = static_cast<char>(c);
+                            from_src = true;
+                        }
+                    } else {
+                        // beyond EOL, fill spaces
+                        ch       = ' ';
+                        from_src = false;
+                    }
+                    bool in_hl = search_mode && from_src && is_src_in_hl(src_i);
+                    bool in_cur = has_current && li == cur_my && from_src && src_i >= cur_mx && src_i < cur_mend;
+                    if (in_hl && !hl_on) { attron(A_STANDOUT); hl_on = true; }
+                    if (!in_hl && hl_on) { attroff(A_STANDOUT); hl_on = false; }
+                    if (in_cur && !cur_on) { attron(A_BOLD); cur_on = true; }
+                    if (!in_cur && cur_on) { attroff(A_BOLD); cur_on = false; }
+                    addch(static_cast<unsigned char>(ch));
+                    ++written;
+                    ++render_col;
+                    if (from_src)
+                        ++src_i;
+                    if (src_i >= line.size() && written >= cols)
+                        break;
+                }
+            }
+            if (hl_on) {
+                attroff(A_STANDOUT);
+                hl_on = false;
+            }
+            if (cur_on) {
+                attroff(A_BOLD);
+                cur_on = false;
+            }
+            clrtoeol();
+        }
 
 		// Place terminal cursor at logical position accounting for tabs and coloffs
 		std::size_t cy = buf->Cury();

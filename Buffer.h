@@ -77,13 +77,13 @@ public:
 		Line() = default;
 
 
-		Line(const char *s)
+		explicit Line(const char *s)
 		{
 			assign_from(s ? std::string(s) : std::string());
 		}
 
 
-		Line(const std::string &s)
+		explicit Line(const std::string &s)
 		{
 			assign_from(s);
 		}
@@ -139,29 +139,38 @@ public:
 
 
 		// conversions
-		operator std::string() const
+		explicit operator std::string() const
 		{
-			return std::string(buf_.Data() ? buf_.Data() : "", buf_.Size());
+			return {buf_.Data() ? buf_.Data() : "", buf_.Size()};
 		}
 
 
 		// string-like API used by command/renderer layers (implemented via materialization for now)
-		std::string substr(std::size_t pos) const
+		[[nodiscard]] std::string substr(std::size_t pos) const
 		{
 			const std::size_t n = buf_.Size();
 			if (pos >= n)
-				return std::string();
-			return std::string(buf_.Data() + pos, n - pos);
+				return {};
+			return {buf_.Data() + pos, n - pos};
 		}
 
 
-		std::string substr(std::size_t pos, std::size_t len) const
+		[[nodiscard]] std::string substr(std::size_t pos, std::size_t len) const
 		{
 			const std::size_t n = buf_.Size();
 			if (pos >= n)
-				return std::string();
+				return {};
 			const std::size_t take = (pos + len > n) ? (n - pos) : len;
-			return std::string(buf_.Data() + pos, take);
+			return {buf_.Data() + pos, take};
+		}
+
+
+		// minimal find() to support search within a line
+		[[nodiscard]] std::size_t find(const std::string &needle, const std::size_t pos = 0) const
+		{
+			// Materialize to std::string for now; Line is backed by AppendBuffer
+			const auto s = static_cast<std::string>(*this);
+			return s.find(needle, pos);
 		}
 
 
@@ -266,20 +275,20 @@ public:
 	}
 
 
-	void SetCursor(std::size_t x, std::size_t y)
+	void SetCursor(const std::size_t x, const std::size_t y)
 	{
 		curx_ = x;
 		cury_ = y;
 	}
 
 
-	void SetRenderX(std::size_t rx)
+	void SetRenderX(const std::size_t rx)
 	{
 		rx_ = rx;
 	}
 
 
-	void SetOffsets(std::size_t row, std::size_t col)
+	void SetOffsets(const std::size_t row, const std::size_t col)
 	{
 		rowoffs_ = row;
 		coloffs_ = col;
@@ -299,7 +308,7 @@ public:
 	}
 
 
-	void SetMark(std::size_t x, std::size_t y)
+	void SetMark(const std::size_t x, const std::size_t y)
 	{
 		mark_set_  = true;
 		mark_curx_ = x;
@@ -344,7 +353,7 @@ public:
 	// Undo system accessors (created per-buffer)
 	UndoSystem *Undo();
 
-	const UndoSystem *Undo() const;
+	[[nodiscard]] const UndoSystem *Undo() const;
 
 private:
 	// State mirroring original C struct (without undo_tree)

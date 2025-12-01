@@ -33,10 +33,17 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Actually add the screenshot.">
+    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Fix void crash in kge.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Buffer.h" beforeDir="false" afterPath="$PROJECT_DIR$/Buffer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Command.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Command.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Command.h" beforeDir="false" afterPath="$PROJECT_DIR$/Command.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Editor.h" beforeDir="false" afterPath="$PROJECT_DIR$/Editor.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/GUIRenderer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIRenderer.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KKeymap.cc" beforeDir="false" afterPath="$PROJECT_DIR$/KKeymap.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ROADMAP.md" beforeDir="false" afterPath="$PROJECT_DIR$/ROADMAP.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TerminalRenderer.cc" beforeDir="false" afterPath="$PROJECT_DIR$/TerminalRenderer.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/default.nix" beforeDir="false" afterPath="$PROJECT_DIR$/default.nix" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -66,6 +73,9 @@
   </component>
   <component name="OptimizeOnSaveOptions">
     <option name="myRunOnSave" value="true" />
+  </component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="AISelfReview" />
   </component>
   <component name="ProjectApplicationVersion">
     <option name="ide" value="CLion" />
@@ -139,7 +149,7 @@
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
-    <configuration name="kge" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" WORKING_DIR="file://$PROJECT_DIR$" PASS_PARENT_ENVS_2="true" PROJECT_NAME="kte" TARGET_NAME="kge" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="kte" RUN_TARGET_NAME="kge">
+    <configuration name="kge" type="CMakeRunConfiguration" factoryName="Application" PROGRAM_PARAMS="$PROJECT_DIR$/cmake-build-debug/test.txt" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" WORKING_DIR="file://$PROJECT_DIR$" PASS_PARENT_ENVS_2="true" PROJECT_NAME="kte" TARGET_NAME="kge" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="kte" RUN_TARGET_NAME="kge">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
@@ -170,7 +180,7 @@
       <workItem from="1764539556448" duration="156000" />
       <workItem from="1764539725338" duration="1075000" />
       <workItem from="1764542392763" duration="3512000" />
-      <workItem from="1764548345516" duration="12773000" />
+      <workItem from="1764548345516" duration="16453000" />
     </task>
     <task id="LOCAL-00001" summary="Add undo/redo infrastructure and buffer management additions.">
       <option name="closed" value="true" />
@@ -284,7 +294,15 @@
       <option name="project" value="LOCAL" />
       <updated>1764557759844</updated>
     </task>
-    <option name="localTasksCounter" value="15" />
+    <task id="LOCAL-00015" summary="Fix void crash in kge.">
+      <option name="closed" value="true" />
+      <created>1764568264996</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1764568264996</updated>
+    </task>
+    <option name="localTasksCounter" value="16" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -312,7 +330,8 @@
     <MESSAGE value="Introduce file picker and GUI configuration with enhancements.&#10;&#10;- Add visual file picker for GUI with toggle support.&#10;- Introduce `GUIConfig` class for loading GUI settings from configuration file.&#10;- Refactor window initialization to support dynamic sizing based on configuration.&#10;- Add macOS-specific handling for fullscreen behavior.&#10;- Improve header inclusion order and minor code cleanup." />
     <MESSAGE value="Add buffer position display and documentation improvements.&#10;&#10;- Display buffer position prefix &quot;[x/N]&quot; in GUI and terminal renderers.&#10;- Improve `kte` and `kge` man pages with frontend usage details and project homepage.&#10;- Update README with GUI invocation instructions.&#10;- Bump version to 1.0.0." />
     <MESSAGE value="Actually add the screenshot." />
-    <option name="LAST_COMMIT_MESSAGE" value="Actually add the screenshot." />
+    <MESSAGE value="Fix void crash in kge." />
+    <option name="LAST_COMMIT_MESSAGE" value="Fix void crash in kge." />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

@@ -145,6 +145,12 @@ KLookupCtrlCommand(const int ascii_key, CommandId &out) -> bool
 	case 's':
 		out = CommandId::FindStart;
 		return true;
+	case 'r':
+		out = CommandId::RegexFindStart; // C-r regex search
+		return true;
+	case 'h':
+		out = CommandId::SearchReplace; // C-h: search & replace
+		return true;
 	case 'l':
 		out = CommandId::Refresh;
 		return true;

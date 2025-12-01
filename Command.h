@@ -23,8 +23,9 @@ enum class CommandId {
 	Refresh, // force redraw
 	KPrefix, // show "C-k _" prompt in status when entering k-command
 	FindStart, // begin incremental search (placeholder)
+	RegexFindStart, // begin regex search (C-r)
+	SearchReplace, // begin search & replace (two-step prompt)
 	OpenFileStart, // begin open-file prompt
-	// GUI: visual file picker
 	VisualFilePickerToggle,
 	// Buffers
 	BufferSwitchStart, // begin buffer switch prompt

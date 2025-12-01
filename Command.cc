@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <cstdlib>
+#include <regex>
 
 #include "Command.h"
 #include "Editor.h"
@@ -376,6 +377,67 @@ search_compute_matches(const Buffer &buf, const std::string &q)
 }
 
 
+// Regex-based matches (per-line), capturing match length for highlighting
+struct RegexMatch {
+    std::size_t y;
+    std::size_t x;
+    std::size_t len;
+};
+
+static std::vector<RegexMatch>
+search_compute_matches_regex(const Buffer &buf, const std::string &pattern, std::string &err_out)
+{
+    std::vector<RegexMatch> out;
+    err_out.clear();
+    if (pattern.empty())
+        return out;
+    try {
+        const std::regex rx(pattern);
+        const auto &rows = buf.Rows();
+        for (std::size_t y = 0; y < rows.size(); ++y) {
+            const std::string &line = rows[y];
+            for (auto it = std::sregex_iterator(line.begin(), line.end(), rx);
+                 it != std::sregex_iterator(); ++it) {
+                const auto &m = *it;
+                out.push_back(RegexMatch{y, static_cast<std::size_t>(m.position()), static_cast<std::size_t>(m.length())});
+            }
+        }
+    } catch (const std::regex_error &e) {
+        err_out = e.what();
+        // Return empty results on error
+    }
+    return out;
+}
+
+static void
+search_apply_match_regex(Editor &ed, Buffer &buf, const std::vector<RegexMatch> &matches)
+{
+    const std::string &q = ed.SearchQuery();
+    if (matches.empty()) {
+        ed.SetSearchMatch(0, 0, 0);
+        // Restore cursor to origin if present
+        if (ed.SearchOriginSet()) {
+            buf.SetCursor(ed.SearchOrigX(), ed.SearchOrigY());
+            buf.SetOffsets(ed.SearchOrigRowoffs(), ed.SearchOrigColoffs());
+        }
+        ed.SetSearchIndex(-1);
+        ed.SetStatus("Regex: " + q);
+        return;
+    }
+    int idx = ed.SearchIndex();
+    if (idx < 0 || idx >= static_cast<int>(matches.size()))
+        idx = 0;
+    const auto &m = matches[static_cast<std::size_t>(idx)];
+    ed.SetSearchMatch(m.y, m.x, m.len);
+    buf.SetCursor(m.x, m.y);
+    ensure_cursor_visible(ed, buf);
+    char tmp[64];
+    snprintf(tmp, sizeof(tmp), "%d/%zu", idx + 1, matches.size());
+    ed.SetStatus(std::string("Regex: ") + q + "  " + tmp);
+    ed.SetSearchIndex(idx);
+}
+
+
 static void
 search_apply_match(Editor &ed, Buffer &buf, const std::vector<std::pair<std::size_t, std::size_t> > &matches)
 {
@@ -663,6 +725,52 @@ cmd_find_start(CommandContext &ctx)
 	ctx.editor.StartPrompt(Editor::PromptKind::Search, "Find", "");
 	ctx.editor.SetStatus("Find: ");
 	return true;
+}
+
+static bool
+cmd_regex_find_start(CommandContext &ctx)
+{
+    Buffer *buf = ctx.editor.CurrentBuffer();
+    if (!buf) {
+        ctx.editor.SetStatus("No buffer to search");
+        return false;
+    }
+
+    // Save origin for cancel
+    ctx.editor.SetSearchOrigin(buf->Curx(), buf->Cury(), buf->Rowoffs(), buf->Coloffs());
+
+    // Enter regex search mode using the generic prompt system
+    ctx.editor.SetSearchActive(true);
+    ctx.editor.SetSearchQuery("");
+    ctx.editor.SetSearchMatch(0, 0, 0);
+    ctx.editor.SetSearchIndex(-1);
+    ctx.editor.StartPrompt(Editor::PromptKind::RegexSearch, "Regex", "");
+    ctx.editor.SetStatus("Regex: ");
+    return true;
+}
+
+
+static bool
+cmd_search_replace_start(CommandContext &ctx)
+{
+    Buffer *buf = ctx.editor.CurrentBuffer();
+    if (!buf) {
+        ctx.editor.SetStatus("No buffer to search");
+        return false;
+    }
+    // Save original cursor/viewport to restore on cancel
+    ctx.editor.SetSearchOrigin(buf->Curx(), buf->Cury(), buf->Rowoffs(), buf->Coloffs());
+    // Enter search-highlighting mode for the find step
+    ctx.editor.SetSearchActive(true);
+    ctx.editor.SetSearchQuery("");
+    ctx.editor.SetSearchMatch(0, 0, 0);
+    ctx.editor.SetSearchIndex(-1);
+    // Two-step prompt: first collect find string, then replacement
+    ctx.editor.SetReplaceFindTmp("");
+    ctx.editor.SetReplaceWithTmp("");
+    ctx.editor.StartPrompt(Editor::PromptKind::ReplaceFind, "Replace: find", "");
+    ctx.editor.SetStatus("Replace: find: ");
+    return true;
 }
 
 
@@ -955,13 +1063,26 @@ cmd_insert_text(CommandContext &ctx)
 
 		ctx.editor.AppendPromptText(ctx.arg);
 		// If it's a search prompt, mirror text to search state
-		if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search) {
+		if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search ||
+		    ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
+		    ctx.editor.CurrentPromptKind() == Editor::PromptKind::ReplaceFind) {
 			ctx.editor.SetSearchQuery(ctx.editor.PromptText());
-			auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
-			// Keep index stable unless out of range
-			if (ctx.editor.SearchIndex() >= static_cast<int>(matches.size()))
-				ctx.editor.SetSearchIndex(matches.empty() ? -1 : 0);
-			search_apply_match(ctx.editor, *buf, matches);
+			if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch) {
+				std::string err;
+				auto rmatches = search_compute_matches_regex(*buf, ctx.editor.SearchQuery(), err);
+				if (!err.empty()) {
+					ctx.editor.SetStatus(std::string("Regex: ") + ctx.editor.PromptText() + "  [error: " + err + "]");
+				}
+				if (ctx.editor.SearchIndex() >= static_cast<int>(rmatches.size()))
+					ctx.editor.SetSearchIndex(rmatches.empty() ? -1 : 0);
+				search_apply_match_regex(ctx.editor, *buf, rmatches);
+			} else {
+				auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
+				// Keep index stable unless out of range
+				if (ctx.editor.SearchIndex() >= static_cast<int>(matches.size()))
+					ctx.editor.SetSearchIndex(matches.empty() ? -1 : 0);
+				search_apply_match(ctx.editor, *buf, matches);
+			}
 		} else {
 			// For other prompts, just echo label:text in status
 			ctx.editor.SetStatus(ctx.editor.PromptLabel() + ": " + ctx.editor.PromptText());
@@ -1045,21 +1166,108 @@ cmd_insert_text(CommandContext &ctx)
 static bool
 cmd_newline(CommandContext &ctx)
 {
-	// If a prompt is active, accept it and perform the associated action
-	if (ctx.editor.PromptActive()) {
-		Editor::PromptKind kind = ctx.editor.CurrentPromptKind();
-		std::string value       = ctx.editor.PromptText();
-		ctx.editor.AcceptPrompt();
-		if (kind == Editor::PromptKind::Search) {
-			// Finish search: keep cursor where it is, clear search UI prompt
-			ctx.editor.SetSearchActive(false);
-			ctx.editor.SetSearchMatch(0, 0, 0);
-			ctx.editor.ClearSearchOrigin();
-			ctx.editor.SetStatus("Find done");
-			Buffer *b = ctx.editor.CurrentBuffer();
-			if (b)
-				ensure_cursor_visible(ctx.editor, *b);
-		} else if (kind == Editor::PromptKind::OpenFile) {
+    // If a prompt is active, accept it and perform the associated action
+    if (ctx.editor.PromptActive()) {
+        Editor::PromptKind kind = ctx.editor.CurrentPromptKind();
+        std::string value       = ctx.editor.PromptText();
+        ctx.editor.AcceptPrompt();
+        if (kind == Editor::PromptKind::Search || kind == Editor::PromptKind::RegexSearch) {
+            // Finish search: keep cursor where it is, clear search UI prompt
+            ctx.editor.SetSearchActive(false);
+            ctx.editor.SetSearchMatch(0, 0, 0);
+            ctx.editor.ClearSearchOrigin();
+            ctx.editor.SetStatus(kind == Editor::PromptKind::RegexSearch ? "Regex find done" : "Find done");
+            Buffer *b = ctx.editor.CurrentBuffer();
+            if (b)
+                ensure_cursor_visible(ctx.editor, *b);
+        } else if (kind == Editor::PromptKind::ReplaceFind) {
+            // Proceed to replacement text prompt
+            ctx.editor.SetReplaceFindTmp(value);
+            // Keep search highlights active using the collected find string
+            ctx.editor.SetSearchActive(true);
+            ctx.editor.SetSearchQuery(value);
+            if (Buffer *b = ctx.editor.CurrentBuffer()) {
+                auto matches = search_compute_matches(*b, ctx.editor.SearchQuery());
+                search_apply_match(ctx.editor, *b, matches);
+            }
+            ctx.editor.StartPrompt(Editor::PromptKind::ReplaceWith, "Replace: with", "");
+            ctx.editor.SetStatus("Replace: with: ");
+            return true;
+        } else if (kind == Editor::PromptKind::ReplaceWith) {
+            // Execute replace-all
+            Buffer *buf = ctx.editor.CurrentBuffer();
+            if (!buf)
+                return false;
+            const std::string find = ctx.editor.ReplaceFindTmp();
+            const std::string with = value;
+            ctx.editor.SetReplaceWithTmp(with);
+            if (find.empty()) {
+                ctx.editor.SetStatus("Replace canceled (empty find)");
+                // Clear search UI state
+                ctx.editor.SetSearchActive(false);
+                ctx.editor.SetSearchQuery("");
+                ctx.editor.SetSearchMatch(0, 0, 0);
+                ctx.editor.ClearSearchOrigin();
+                ctx.editor.SetSearchIndex(-1);
+                return true;
+            }
+            // Save original cursor to restore after operations
+            std::size_t orig_x = buf->Curx();
+            std::size_t orig_y = buf->Cury();
+            auto &rows         = buf->Rows();
+            std::size_t total  = 0;
+            UndoSystem *u      = buf->Undo();
+            if (u) u->commit(); // end any pending batch
+            for (std::size_t y = 0; y < rows.size(); ++y) {
+                std::size_t pos = 0;
+                while (!find.empty()) {
+                    pos = rows[y].find(find, pos);
+                    if (pos == std::string::npos)
+                        break;
+                    // Perform delete of matched segment
+                    rows[y].erase(pos, find.size());
+                    if (u) {
+                        buf->SetCursor(pos, y);
+                        u->Begin(UndoType::Delete);
+                        u->Append(std::string_view(find));
+                    }
+                    // Insert replacement
+                    if (!with.empty()) {
+                        rows[y].insert(pos, with);
+                        if (u) {
+                            buf->SetCursor(pos, y);
+                            u->Begin(UndoType::Insert);
+                            u->Append(std::string_view(with));
+                        }
+                        pos += with.size();
+                    }
+                    ++total;
+                    if (with.empty()) {
+                        // Avoid infinite loop when replacing with empty
+                        // pos remains the same; move forward by 1 to continue search
+                        if (pos < rows[y].size())
+                            ++pos;
+                        else
+                            break;
+                    }
+                }
+            }
+            buf->SetDirty(true);
+            // Restore original cursor
+            if (orig_y < rows.size())
+                buf->SetCursor(orig_x, orig_y);
+            ensure_cursor_visible(ctx.editor, *buf);
+            char msg[128];
+            std::snprintf(msg, sizeof(msg), "Replaced %zu occurrence%s", total, (total == 1 ? "" : "s"));
+            ctx.editor.SetStatus(msg);
+            // Clear search-highlighting state after replace completes
+            ctx.editor.SetSearchActive(false);
+            ctx.editor.SetSearchQuery("");
+            ctx.editor.SetSearchMatch(0, 0, 0);
+            ctx.editor.ClearSearchOrigin();
+            ctx.editor.SetSearchIndex(-1);
+            return true;
+        } else if (kind == Editor::PromptKind::OpenFile) {
 			std::string err;
 			// Expand "~" to the user's home directory
 			auto expand_user_path = [](const std::string &in) -> std::string {
@@ -1304,12 +1512,23 @@ cmd_backspace(CommandContext &ctx)
 	// If a prompt is active, backspace edits the prompt text
 	if (ctx.editor.PromptActive()) {
 		ctx.editor.BackspacePromptText();
-		if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search) {
+		if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search ||
+		    ctx.editor.CurrentPromptKind() == Editor::PromptKind::ReplaceFind ||
+		    ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch) {
 			Buffer *buf2 = ctx.editor.CurrentBuffer();
 			if (buf2) {
 				ctx.editor.SetSearchQuery(ctx.editor.PromptText());
-				auto matches = search_compute_matches(*buf2, ctx.editor.SearchQuery());
-				search_apply_match(ctx.editor, *buf2, matches);
+				if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch) {
+					std::string err;
+					auto rm = search_compute_matches_regex(*buf2, ctx.editor.SearchQuery(), err);
+					if (!err.empty()) {
+						ctx.editor.SetStatus(std::string("Regex: ") + ctx.editor.PromptText() + "  [error: " + err + "]");
+					}
+					search_apply_match_regex(ctx.editor, *buf2, rm);
+				} else {
+					auto matches = search_compute_matches(*buf2, ctx.editor.SearchQuery());
+					search_apply_match(ctx.editor, *buf2, matches);
+				}
 			}
 		} else {
 			ctx.editor.SetStatus(ctx.editor.PromptLabel() + ": " + ctx.editor.PromptText());
@@ -1723,20 +1942,41 @@ cmd_move_left(CommandContext &ctx)
 	if (auto *u = buf->Undo())
 		u->commit();
 	// If a prompt is active and it's search, go to previous match
-	if (ctx.editor.PromptActive() && ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search) {
-		auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
-		if (!matches.empty()) {
-			int idx = ctx.editor.SearchIndex();
-			if (idx < 0)
-				idx = 0;
-			idx = (idx - 1 + static_cast<int>(matches.size())) % static_cast<int>(matches.size());
-			ctx.editor.SetSearchIndex(idx);
-			search_apply_match(ctx.editor, *buf, matches);
-		} else {
-			search_apply_match(ctx.editor, *buf, matches);
-		}
-		return true;
-	}
+ if (ctx.editor.PromptActive() &&
+        (ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search ||
+         ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
+         ctx.editor.CurrentPromptKind() == Editor::PromptKind::ReplaceFind)) {
+        if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch) {
+            std::string err;
+            auto rmatches = search_compute_matches_regex(*buf, ctx.editor.SearchQuery(), err);
+            if (!err.empty()) {
+                ctx.editor.SetStatus(std::string("Regex: ") + ctx.editor.PromptText() + "  [error: " + err + "]");
+            }
+            if (!rmatches.empty()) {
+                int idx = ctx.editor.SearchIndex();
+                if (idx < 0)
+                    idx = 0;
+                idx = (idx - 1 + static_cast<int>(rmatches.size())) % static_cast<int>(rmatches.size());
+                ctx.editor.SetSearchIndex(idx);
+                search_apply_match_regex(ctx.editor, *buf, rmatches);
+            } else {
+                search_apply_match_regex(ctx.editor, *buf, rmatches);
+            }
+        } else {
+            auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
+            if (!matches.empty()) {
+            int idx = ctx.editor.SearchIndex();
+            if (idx < 0)
+                idx = 0;
+            idx = (idx - 1 + static_cast<int>(matches.size())) % static_cast<int>(matches.size());
+            ctx.editor.SetSearchIndex(idx);
+            search_apply_match(ctx.editor, *buf, matches);
+            } else {
+                search_apply_match(ctx.editor, *buf, matches);
+            }
+        }
+        return true;
+    }
 	if (ctx.editor.SearchActive()) {
 		auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
 		if (!matches.empty()) {
@@ -1778,20 +2018,41 @@ cmd_move_right(CommandContext &ctx)
 		return false;
 	if (auto *u = buf->Undo())
 		u->commit();
-	if (ctx.editor.PromptActive() && ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search) {
-		auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
-		if (!matches.empty()) {
-			int idx = ctx.editor.SearchIndex();
-			if (idx < 0)
-				idx = 0;
-			idx = (idx + 1) % static_cast<int>(matches.size());
-			ctx.editor.SetSearchIndex(idx);
-			search_apply_match(ctx.editor, *buf, matches);
-		} else {
-			search_apply_match(ctx.editor, *buf, matches);
-		}
-		return true;
-	}
+ if (ctx.editor.PromptActive() &&
+        (ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search ||
+         ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
+         ctx.editor.CurrentPromptKind() == Editor::PromptKind::ReplaceFind)) {
+        if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch) {
+            std::string err;
+            auto rmatches = search_compute_matches_regex(*buf, ctx.editor.SearchQuery(), err);
+            if (!err.empty()) {
+                ctx.editor.SetStatus(std::string("Regex: ") + ctx.editor.PromptText() + "  [error: " + err + "]");
+            }
+            if (!rmatches.empty()) {
+                int idx = ctx.editor.SearchIndex();
+                if (idx < 0)
+                    idx = 0;
+                idx = (idx + 1) % static_cast<int>(rmatches.size());
+                ctx.editor.SetSearchIndex(idx);
+                search_apply_match_regex(ctx.editor, *buf, rmatches);
+            } else {
+                search_apply_match_regex(ctx.editor, *buf, rmatches);
+            }
+        } else {
+            auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
+            if (!matches.empty()) {
+            int idx = ctx.editor.SearchIndex();
+            if (idx < 0)
+                idx = 0;
+            idx = (idx + 1) % static_cast<int>(matches.size());
+            ctx.editor.SetSearchIndex(idx);
+            search_apply_match(ctx.editor, *buf, matches);
+            } else {
+                search_apply_match(ctx.editor, *buf, matches);
+            }
+        }
+        return true;
+    }
 	if (ctx.editor.SearchActive()) {
 		auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
 		if (!matches.empty()) {
@@ -2575,7 +2836,9 @@ InstallDefaultCommands()
 		CommandId::UnknownKCommand, "unknown-k", "Unknown k-command (status)",
 		cmd_unknown_kcommand
 	});
-	CommandRegistry::Register({CommandId::FindStart, "find-start", "Begin incremental search", cmd_find_start});
+ CommandRegistry::Register({CommandId::FindStart, "find-start", "Begin incremental search", cmd_find_start});
+ CommandRegistry::Register({CommandId::RegexFindStart, "regex-find-start", "Begin regex search", cmd_regex_find_start});
+	CommandRegistry::Register({CommandId::SearchReplace, "search-replace", "Begin search & replace", cmd_search_replace_start});
 	CommandRegistry::Register({
 		CommandId::OpenFileStart, "open-file-start", "Begin open-file prompt", cmd_open_file_start
 	});
