@@ -4,7 +4,7 @@ project(kte)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 17)
-set(KTE_VERSION "1.0.4")
+set(KTE_VERSION "1.0.5")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
@@ -12,6 +12,7 @@ set(BUILD_GUI ON CACHE BOOL "Enable building the graphical version.")
 set(BUILD_TESTS OFF CACHE BOOL "Enable building test programs.")
 option(KTE_USE_PIECE_TABLE "Use PieceTable instead of GapBuffer implementation" ON)
 set(KTE_FONT_SIZE "18.0" CACHE STRING "Default font size for GUI")
+option(KTE_UNDO_DEBUG "Enable undo instrumentation logs" OFF)
 
 if (CMAKE_HOST_UNIX)
     message(STATUS "Build system is POSIX.")
@@ -101,6 +102,9 @@ add_executable(kte
 if (KTE_USE_PIECE_TABLE)
     target_compile_definitions(kte PRIVATE KTE_USE_PIECE_TABLE=1)
 endif ()
+if (KTE_UNDO_DEBUG)
+    target_compile_definitions(kte PRIVATE KTE_UNDO_DEBUG=1)
+endif ()
 
 target_link_libraries(kte ${CURSES_LIBRARIES})
 
@@ -121,6 +125,10 @@ if (BUILD_TESTS)
 
     if (KTE_USE_PIECE_TABLE)
         target_compile_definitions(test_undo PRIVATE KTE_USE_PIECE_TABLE=1)
+    endif ()
+
+    if (KTE_UNDO_DEBUG)
+        target_compile_definitions(test_undo PRIVATE KTE_UNDO_DEBUG=1)
     endif ()
 
 
@@ -155,6 +163,9 @@ if (${BUILD_GUI})
             GUIFrontend.cc
             GUIFrontend.h)
     target_compile_definitions(kge PRIVATE KTE_BUILD_GUI=1 KTE_DEFAULT_GUI=1 KTE_FONT_SIZE=${KTE_FONT_SIZE})
+    if (KTE_UNDO_DEBUG)
+        target_compile_definitions(kge PRIVATE KTE_UNDO_DEBUG=1)
+    endif ()
     target_link_libraries(kge ${CURSES_LIBRARIES} imgui)
 
     # On macOS, build kge as a proper .app bundle
