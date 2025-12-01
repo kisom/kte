@@ -33,17 +33,8 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Add regex search, search/replace, and buffer read-only mode functionality with help text">
-      <change afterPath="$PROJECT_DIR$/docs/undo-roadmap.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Command.cc" beforeDir="false" afterPath="$PROJECT_DIR$/Command.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUIConfig.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIConfig.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUIFrontend.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIFrontend.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUIInputHandler.cc" beforeDir="false" afterPath="$PROJECT_DIR$/GUIInputHandler.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/UndoSystem.cc" beforeDir="false" afterPath="$PROJECT_DIR$/UndoSystem.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/UndoSystem.h" beforeDir="false" afterPath="$PROJECT_DIR$/UndoSystem.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/undo-state.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/undo-state.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_undo.cc" beforeDir="false" afterPath="$PROJECT_DIR$/test_undo.cc" afterDir="false" />
+    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Add Nord theme for real">
+      <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -182,7 +173,7 @@
       <workItem from="1764539556448" duration="156000" />
       <workItem from="1764539725338" duration="1075000" />
       <workItem from="1764542392763" duration="3512000" />
-      <workItem from="1764548345516" duration="39148000" />
+      <workItem from="1764548345516" duration="39312000" />
     </task>
     <task id="LOCAL-00001" summary="Add undo/redo infrastructure and buffer management additions.">
       <option name="closed" value="true" />
@@ -320,7 +311,23 @@
       <option name="project" value="LOCAL" />
       <updated>1764586480092</updated>
     </task>
-    <option name="localTasksCounter" value="18" />
+    <task id="LOCAL-00018" summary="Nord theme and undo system refinements&#10;&#10;- Improve text input/event batching&#10;- Enhance debugging with optional instrumentation&#10;- Begin implementation of non-linear undo tree structure.">
+      <option name="closed" value="true" />
+      <created>1764619193516</created>
+      <option name="number" value="00018" />
+      <option name="presentableId" value="LOCAL-00018" />
+      <option name="project" value="LOCAL" />
+      <updated>1764619193517</updated>
+    </task>
+    <task id="LOCAL-00019" summary="Add Nord theme for real">
+      <option name="closed" value="true" />
+      <created>1764619210817</created>
+      <option name="number" value="00019" />
+      <option name="presentableId" value="LOCAL-00019" />
+      <option name="project" value="LOCAL" />
+      <updated>1764619210817</updated>
+    </task>
+    <option name="localTasksCounter" value="20" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -351,7 +358,9 @@
     <MESSAGE value="Fix void crash in kge." />
     <MESSAGE value="add regex and search/replace functionality to editor" />
     <MESSAGE value="Add regex search, search/replace, and buffer read-only mode functionality with help text" />
-    <option name="LAST_COMMIT_MESSAGE" value="Add regex search, search/replace, and buffer read-only mode functionality with help text" />
+    <MESSAGE value="Nord theme and undo system refinements&#10;&#10;- Improve text input/event batching&#10;- Enhance debugging with optional instrumentation&#10;- Begin implementation of non-linear undo tree structure." />
+    <MESSAGE value="Add Nord theme for real" />
+    <option name="LAST_COMMIT_MESSAGE" value="Add Nord theme for real" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
