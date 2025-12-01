@@ -137,9 +137,6 @@ KLookupCtrlCommand(const int ascii_key, CommandId &out) -> bool
 	case 'g':
 		out = CommandId::Refresh;
 		return true;
-	case 'x':
-		out = CommandId::SaveAndQuit; // direct C-x mapping (GUI had this)
-		return true;
 	default:
 		break;
 	}

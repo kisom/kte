@@ -3,9 +3,6 @@
   stdenv,
   cmake,
   ncurses,
-  SDL2,
-  libGL,
-  xorg,
   installShellFiles,
   ...
 }:
@@ -24,14 +21,11 @@ stdenv.mkDerivation {
   nativeBuildInputs = [
     cmake
     ncurses
-    SDL2
-    libGL
-    xorg.libX11
     installShellFiles
   ];
 
   cmakeFlags = [
-    "-DBUILD_GUI=ON"
+    "-DBUILD_GUI=OFF"
     "-DCMAKE_BUILD_TYPE=Debug"
   ];
 
@@ -40,11 +34,8 @@ stdenv.mkDerivation {
 
     mkdir -p $out/bin
     cp kte $out/bin/
-    cp kge $out/bin/
 
     installManPage ../docs/kte.1
-    installManPage ../docs/kge.1
-
 
     runHook postInstall
   '';

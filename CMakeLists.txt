@@ -4,7 +4,7 @@ project(kte)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 17)
-set(KTE_VERSION "0.9.0")
+set(KTE_VERSION "0.9.1")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
@@ -44,6 +44,8 @@ if (${BUILD_GUI})
 endif ()
 
 # NCurses for terminal mode
+set(CURSES_NEED_NCURSES)
+set(CURSES_NEED_WIDE)
 find_package(Curses REQUIRED)
 include_directories(${CURSES_INCLUDE_DIR})
 

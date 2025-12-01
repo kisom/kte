@@ -3,6 +3,9 @@
   stdenv,
   cmake,
   ncurses,
+  SDL2,
+  libGL,
+  xorg,
   installShellFiles,
   ...
 }:
@@ -13,7 +16,7 @@ let
   version = builtins.head (builtins.match ".*set\\(KTE_VERSION \"(.+)\"\\).*" versionLine);
 in
 stdenv.mkDerivation {
-  pname = "ke";
+  pname = "kte";
   inherit version;
 
   src = lib.cleanSource ./.;
@@ -21,11 +24,14 @@ stdenv.mkDerivation {
   nativeBuildInputs = [
     cmake
     ncurses
+    SDL2
+    libGL
+    xorg.libX11
     installShellFiles
   ];
 
   cmakeFlags = [
-    "-DKTE_USE_PIECE_TABLE=ON"
+    "-DBUILD_GUI=ON"
     "-DCMAKE_BUILD_TYPE=Debug"
   ];
 
@@ -34,8 +40,10 @@ stdenv.mkDerivation {
 
     mkdir -p $out/bin
     cp kte $out/bin/
+    cp kge $out/bin/
 
     installManPage ../docs/kte.1
+    installManPage ../docs/kge.1
 
     runHook postInstall
   '';

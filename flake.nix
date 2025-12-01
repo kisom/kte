@@ -12,7 +12,10 @@
     in
     {
       packages.x86_64-linux = {
-        default = pkgs.callPackage ./default.nix { };
+        default = pkgs.callPackage ./default-nogui.nix { };
+        kge     = pkgs.callPackage ./default-gui.nix   { };
+        kte     = pkgs.callPackage ./default-nogui.nix { };
+        full    = pkgs.callPackage ./default.nix       { };
       };
     };
 }
