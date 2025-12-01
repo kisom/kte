@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <filesystem>
+#include <cstdlib>
 
 #include "Command.h"
 #include "Editor.h"
@@ -453,6 +454,36 @@ cmd_save(CommandContext &ctx)
 }
 
 
+// --- Working directory commands ---
+static bool
+cmd_show_working_directory(CommandContext &ctx)
+{
+	try {
+		std::filesystem::path cwd = std::filesystem::current_path();
+		ctx.editor.SetStatus(std::string("cwd: ") + cwd.string());
+		return true;
+	} catch (const std::exception &e) {
+		ctx.editor.SetStatus(std::string("cwd: <error> ") + e.what());
+		return false;
+	}
+}
+
+
+static bool
+cmd_change_working_directory_start(CommandContext &ctx)
+{
+	std::string initial;
+	try {
+		initial = std::filesystem::current_path().string();
+	} catch (...) {
+		initial.clear();
+	}
+	ctx.editor.StartPrompt(Editor::PromptKind::Chdir, "chdir", initial);
+	ctx.editor.SetStatus(std::string("chdir: ") + ctx.editor.PromptText());
+	return true;
+}
+
+
 static bool
 cmd_save_as(CommandContext &ctx)
 {
@@ -762,43 +793,141 @@ cmd_insert_text(CommandContext &ctx)
 	}
 	// If a prompt is active, edit prompt text
 	if (ctx.editor.PromptActive()) {
-		// Special-case: buffer switch prompt supports Tab-completion
-		if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::BufferSwitch && ctx.arg == "\t") {
-			// Complete against buffer names (path and basename)
-			const std::string prefix = ctx.editor.PromptText();
-			std::vector<std::pair<std::string, std::size_t> > cands; // name, index
-			const auto &bs = ctx.editor.Buffers();
-			for (std::size_t i = 0; i < bs.size(); ++i) {
-				std::string full = buffer_display_name(bs[i]);
-				std::string base = buffer_basename(bs[i]);
-				if (full.rfind(prefix, 0) == 0) {
-					cands.emplace_back(full, i);
+		// Special-case: Tab-completion for prompts
+		if (ctx.arg == "\t") {
+			auto kind = ctx.editor.CurrentPromptKind();
+			// Buffer switch prompt supports Tab-completion on buffer names
+			if (kind == Editor::PromptKind::BufferSwitch) {
+				// Complete against buffer names (path and basename)
+				const std::string prefix = ctx.editor.PromptText();
+				std::vector<std::pair<std::string, std::size_t> > cands; // name, index
+				const auto &bs = ctx.editor.Buffers();
+				for (std::size_t i = 0; i < bs.size(); ++i) {
+					std::string full = buffer_display_name(bs[i]);
+					std::string base = buffer_basename(bs[i]);
+					if (full.rfind(prefix, 0) == 0) {
+						cands.emplace_back(full, i);
+					}
+					if (base.rfind(prefix, 0) == 0 && base != full) {
+						cands.emplace_back(base, i);
+					}
 				}
-				if (base.rfind(prefix, 0) == 0 && base != full) {
-					cands.emplace_back(base, i);
+				if (cands.empty()) {
+					// no change
+				} else if (cands.size() == 1) {
+					ctx.editor.SetPromptText(cands[0].first);
+				} else {
+					// extend to longest common prefix
+					std::string lcp = cands[0].first;
+					for (std::size_t i = 1; i < cands.size(); ++i) {
+						const std::string &s = cands[i].first;
+						std::size_t j        = 0;
+						while (j < lcp.size() && j < s.size() && lcp[j] == s[j])
+							++j;
+						lcp.resize(j);
+						if (lcp.empty())
+							break;
+					}
+					if (!lcp.empty() && lcp != ctx.editor.PromptText())
+						ctx.editor.SetPromptText(lcp);
 				}
+				ctx.editor.SetStatus(ctx.editor.PromptLabel() + ": " + ctx.editor.PromptText());
+				return true;
 			}
-			if (cands.empty()) {
-				// no change
-			} else if (cands.size() == 1) {
-				ctx.editor.SetPromptText(cands[0].first);
-			} else {
-				// extend to longest common prefix
-				std::string lcp = cands[0].first;
-				for (std::size_t i = 1; i < cands.size(); ++i) {
-					const std::string &s = cands[i].first;
-					std::size_t j        = 0;
-					while (j < lcp.size() && j < s.size() && lcp[j] == s[j])
-						++j;
-					lcp.resize(j);
-					if (lcp.empty())
-						break;
+
+			// File path completion for OpenFile/SaveAs/Chdir
+			if (kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs
+			    || kind == Editor::PromptKind::Chdir) {
+				auto expand_user_path = [](const std::string &in) -> std::string {
+					if (!in.empty() && in[0] == '~') {
+						const char *home = std::getenv("HOME");
+						if (home && in.size() == 1)
+							return std::string(home);
+						if (home && (in.size() > 1) && (in[1] == '/' || in[1] == '\\')) {
+							std::string rest = in.substr(1); // keep leading slash
+							return std::string(home) + rest;
+						}
+					}
+					return in;
+				};
+
+				std::string text = ctx.editor.PromptText();
+				// Build a path and split dir + base prefix
+				std::string expanded = expand_user_path(text);
+				std::filesystem::path p(expanded);
+				std::filesystem::path dir;
+				std::string base;
+				if (expanded.empty()) {
+					dir = std::filesystem::current_path();
+					base.clear();
+				} else if (std::filesystem::is_directory(p)) {
+					dir = p;
+					base.clear();
+				} else {
+					dir  = p.parent_path();
+					base = p.filename().string();
+					if (dir.empty())
+						dir = std::filesystem::current_path();
 				}
-				if (!lcp.empty() && lcp != ctx.editor.PromptText())
-					ctx.editor.SetPromptText(lcp);
+
+				std::error_code ec;
+				std::vector<std::filesystem::directory_entry> entries;
+				std::filesystem::directory_iterator it(dir, ec), end;
+				for (; !ec && it != end; it.increment(ec)) {
+					entries.push_back(*it);
+				}
+				// Filter by base prefix
+				std::vector<std::string> cands;
+				for (const auto &de: entries) {
+					std::string name = de.path().filename().string();
+					if (base.empty() || name.rfind(base, 0) == 0) {
+						std::string candidate = (dir / name).string();
+						// For dirs, add trailing slash hint
+						if (de.is_directory(ec))
+							candidate += "/";
+						cands.push_back(candidate);
+					}
+				}
+				// If no candidates, keep as-is
+				if (cands.empty()) {
+					// no-op
+				} else if (cands.size() == 1) {
+					ctx.editor.SetPromptText(cands[0]);
+				} else {
+					// Longest common prefix of display strings
+					auto lcp = cands[0];
+					for (size_t i = 1; i < cands.size(); ++i) {
+						const auto &s = cands[i];
+						size_t j      = 0;
+						while (j < lcp.size() && j < s.size() && lcp[j] == s[j])
+							++j;
+						lcp.resize(j);
+						if (lcp.empty())
+							break;
+					}
+					if (!lcp.empty() && lcp != ctx.editor.PromptText()) {
+						ctx.editor.SetPromptText(lcp);
+					} else {
+						// Show some choices in status (trim to avoid spam)
+						std::string msg = ctx.editor.PromptLabel() + ": ";
+						size_t shown    = 0;
+						for (const auto &s: cands) {
+							if (shown >= 10) {
+								msg += " …";
+								break;
+							}
+							if (shown > 0)
+								msg += ' ';
+							msg += std::filesystem::path(s).filename().string();
+							++shown;
+						}
+						ctx.editor.SetStatus(msg);
+						return true;
+					}
+				}
+				ctx.editor.SetStatus(ctx.editor.PromptLabel() + ": " + ctx.editor.PromptText());
+				return true;
 			}
-			ctx.editor.SetStatus(ctx.editor.PromptLabel() + ": " + ctx.editor.PromptText());
-			return true;
 		}
 
 		ctx.editor.AppendPromptText(ctx.arg);
@@ -909,6 +1038,20 @@ cmd_newline(CommandContext &ctx)
 				ensure_cursor_visible(ctx.editor, *b);
 		} else if (kind == Editor::PromptKind::OpenFile) {
 			std::string err;
+			// Expand "~" to the user's home directory
+			auto expand_user_path = [](const std::string &in) -> std::string {
+				if (!in.empty() && in[0] == '~') {
+					const char *home = std::getenv("HOME");
+					if (home && in.size() == 1)
+						return std::string(home);
+					if (home && (in.size() > 1) && (in[1] == '/' || in[1] == '\\')) {
+						std::string rest = in.substr(1);
+						return std::string(home) + rest;
+					}
+				}
+				return in;
+			};
+			value = expand_user_path(value);
 			if (value.empty()) {
 				ctx.editor.SetStatus("Open canceled (empty)");
 			} else if (!ctx.editor.OpenFile(value, err)) {
@@ -953,6 +1096,21 @@ cmd_newline(CommandContext &ctx)
 				if (!buf) {
 					ctx.editor.SetStatus("No buffer to save");
 				} else {
+					// Expand "~" for save path
+					auto expand_user_path = [](const std::string &in) -> std::string {
+						if (!in.empty() && in[0] == '~') {
+							const char *home = std::getenv("HOME");
+							if (home && in.size() == 1)
+								return std::string(home);
+							if (home && (in.size() > 1) && (
+								    in[1] == '/' || in[1] == '\\')) {
+								std::string rest = in.substr(1);
+								return std::string(home) + rest;
+							}
+						}
+						return in;
+					};
+					value = expand_user_path(value);
 					// If this is a first-time save (unnamed/non-file-backed) and the
 					// target exists, ask for confirmation before overwriting.
 					if (!buf->IsFileBacked() && std::filesystem::exists(value)) {
@@ -1031,6 +1189,43 @@ cmd_newline(CommandContext &ctx)
 			buf->SetCursor(0, y);
 			ensure_cursor_visible(ctx.editor, *buf);
 			ctx.editor.SetStatus("Goto line " + std::to_string(line1));
+		} else if (kind == Editor::PromptKind::Chdir) {
+			// Attempt to change the current working directory
+			if (value.empty()) {
+				ctx.editor.SetStatus("chdir canceled (empty)");
+				return true;
+			}
+			try {
+				// Expand "~" for chdir
+				auto expand_user_path = [](const std::string &in) -> std::string {
+					if (!in.empty() && in[0] == '~') {
+						const char *home = std::getenv("HOME");
+						if (home && in.size() == 1)
+							return std::string(home);
+						if (home && (in.size() > 1) && (in[1] == '/' || in[1] == '\\')) {
+							std::string rest = in.substr(1);
+							return std::string(home) + rest;
+						}
+					}
+					return in;
+				};
+				value = expand_user_path(value);
+				std::filesystem::path p(value);
+				std::error_code ec;
+				// Expand if value is relative: resolve against current_path implicitly
+				if (!std::filesystem::exists(p, ec)) {
+					ctx.editor.SetStatus(std::string("chdir: no such path: ") + value);
+					return true;
+				}
+				if (!std::filesystem::is_directory(p, ec)) {
+					ctx.editor.SetStatus(std::string("chdir: not a directory: ") + value);
+					return true;
+				}
+				std::filesystem::current_path(p);
+				ctx.editor.SetStatus(std::string("cwd: ") + std::filesystem::current_path().string());
+			} catch (const std::exception &e) {
+				ctx.editor.SetStatus(std::string("chdir failed: ") + e.what());
+			}
 		}
 		return true;
 	}
@@ -2434,6 +2629,15 @@ InstallDefaultCommands()
 	CommandRegistry::Register({
 		CommandId::MarkAllAndJumpEnd, "mark-all-jump-end", "Set mark at beginning and jump to end",
 		cmd_mark_all_and_jump_end
+	});
+	// Working directory
+	CommandRegistry::Register({
+		CommandId::ShowWorkingDirectory, "show-working-directory", "Show current working directory",
+		cmd_show_working_directory
+	});
+	CommandRegistry::Register({
+		CommandId::ChangeWorkingDirectory, "change-working-directory", "Change current working directory",
+		cmd_change_working_directory_start
 	});
 	// UI helpers
 	CommandRegistry::Register(

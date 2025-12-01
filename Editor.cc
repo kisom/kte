@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <utility>
+#include <filesystem>
 
 
 Editor::Editor() = default;
@@ -40,6 +41,78 @@ Editor::CurrentBuffer() const
 		return nullptr;
 	}
 	return &buffers_[curbuf_];
+}
+
+
+static std::vector<std::filesystem::path>
+split_reverse(const std::filesystem::path &p)
+{
+	std::vector<std::filesystem::path> parts;
+	for (auto it = p; !it.empty(); it = it.parent_path()) {
+		if (it == it.parent_path()) {
+			// root or single element
+			if (!it.empty())
+				parts.push_back(it);
+			break;
+		}
+		parts.push_back(it.filename());
+	}
+	return parts; // from leaf toward root
+}
+
+
+std::string
+Editor::DisplayNameFor(const Buffer &buf) const
+{
+	std::string full = buf.Filename();
+	if (full.empty())
+		return std::string("[no name]");
+
+	std::filesystem::path target(full);
+	auto target_parts = split_reverse(target);
+	if (target_parts.empty())
+		return target.filename().string();
+
+	// Prepare list of other buffer paths
+	std::vector<std::vector<std::filesystem::path> > others;
+	others.reserve(buffers_.size());
+	for (const auto &b: buffers_) {
+		if (&b == &buf)
+			continue;
+		if (b.Filename().empty())
+			continue;
+		others.push_back(split_reverse(std::filesystem::path(b.Filename())));
+	}
+
+	// Increase suffix length until unique among others
+	std::size_t need = 1; // at least basename
+	for (;;) {
+		// Build candidate suffix for target
+		std::filesystem::path cand;
+		for (std::size_t i = 0; i < need && i < target_parts.size(); ++i) {
+			cand = std::filesystem::path(target_parts[i]) / cand;
+		}
+		// Compare against others
+		bool clash = false;
+		for (const auto &o_parts: others) {
+			std::filesystem::path ocand;
+			for (std::size_t i = 0; i < need && i < o_parts.size(); ++i) {
+				ocand = std::filesystem::path(o_parts[i]) / ocand;
+			}
+			if (ocand == cand) {
+				clash = true;
+				break;
+			}
+		}
+		if (!clash || need >= target_parts.size()) {
+			std::string s = cand.string();
+			// Remove any trailing slash that may appear from root joining
+			if (!s.empty() && (s.back() == '/' || s.back() == '\\'))
+				s.pop_back();
+			return s;
+		}
+		++need;
+	}
 }
 
 

@@ -5,6 +5,7 @@
 #include <fstream>
 #include <sstream>
 #include <filesystem>
+#include <cstdlib>
 
 
 Buffer::Buffer()
@@ -129,12 +130,36 @@ Buffer::operator=(Buffer &&other) noexcept
 bool
 Buffer::OpenFromFile(const std::string &path, std::string &err)
 {
+	auto normalize_path = [](const std::string &in) -> std::string {
+		std::string expanded = in;
+		// Expand leading '~' to HOME
+		if (!expanded.empty() && expanded[0] == '~') {
+			const char *home = std::getenv("HOME");
+			if (home && expanded.size() >= 2 && (expanded[1] == '/' || expanded[1] == '\\')) {
+				expanded = std::string(home) + expanded.substr(1);
+			} else if (home && expanded.size() == 1) {
+				expanded = std::string(home);
+			}
+		}
+		try {
+			std::filesystem::path p(expanded);
+			if (std::filesystem::exists(p)) {
+				return std::filesystem::canonical(p).string();
+			}
+			return std::filesystem::absolute(p).string();
+		} catch (...) {
+			// On any error, fall back to input
+			return expanded;
+		}
+	};
+
+	const std::string norm = normalize_path(path);
 	// If the file doesn't exist, initialize an empty, non-file-backed buffer
 	// with the provided filename. Do not touch the filesystem until Save/SaveAs.
-	if (!std::filesystem::exists(path)) {
+	if (!std::filesystem::exists(norm)) {
 		rows_.clear();
 		nrows_          = 0;
-		filename_       = path;
+		filename_       = norm;
 		is_file_backed_ = false;
 		dirty_          = false;
 
@@ -147,9 +172,9 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		return true;
 	}
 
-	std::ifstream in(path, std::ios::in | std::ios::binary);
+	std::ifstream in(norm, std::ios::in | std::ios::binary);
 	if (!in) {
-		err = "Failed to open file: " + path;
+		err = "Failed to open file: " + norm;
 		return false;
 	}
 
@@ -194,7 +219,7 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 	}
 
 	nrows_          = rows_.size();
-	filename_       = path;
+	filename_       = norm;
 	is_file_backed_ = true;
 	dirty_          = false;
 
@@ -250,10 +275,29 @@ Buffer::Save(std::string &err) const
 bool
 Buffer::SaveAs(const std::string &path, std::string &err)
 {
+	// Normalize output path first
+	std::string out_path;
+	try {
+		std::filesystem::path p(path);
+		// Do a light expansion of '~'
+		std::string expanded = path;
+		if (!expanded.empty() && expanded[0] == '~') {
+			const char *home = std::getenv("HOME");
+			if (home && expanded.size() >= 2 && (expanded[1] == '/' || expanded[1] == '\\'))
+				expanded = std::string(home) + expanded.substr(1);
+			else if (home && expanded.size() == 1)
+				expanded = std::string(home);
+		}
+		std::filesystem::path ep(expanded);
+		out_path = std::filesystem::absolute(ep).string();
+	} catch (...) {
+		out_path = path;
+	}
+
 	// Write to the given path
-	std::ofstream out(path, std::ios::out | std::ios::binary | std::ios::trunc);
+	std::ofstream out(out_path, std::ios::out | std::ios::binary | std::ios::trunc);
 	if (!out) {
-		err = "Failed to open for write: " + path;
+		err = "Failed to open for write: " + out_path;
 		return false;
 	}
 	for (std::size_t i = 0; i < rows_.size(); ++i) {
@@ -270,7 +314,7 @@ Buffer::SaveAs(const std::string &path, std::string &err)
 		return false;
 	}
 
-	filename_       = path;
+	filename_       = out_path;
 	is_file_backed_ = true;
 	dirty_          = false;
 	return true;

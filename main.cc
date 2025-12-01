@@ -26,12 +26,13 @@ static void
 PrintUsage(const char *prog)
 {
 	std::cerr << "Usage: " << prog << " [OPTIONS] [files]\n"
-		  << "Options:\n"
-		  << "  -g, --gui        Use GUI frontend (if built)\n"
-		  << "  -t, --term       Use terminal (ncurses) frontend [default]\n"
-		  << "  -h, --help       Show this help and exit\n"
-		  << "  -V, --version    Show version and exit\n";
+		<< "Options:\n"
+		<< "  -g, --gui        Use GUI frontend (if built)\n"
+		<< "  -t, --term       Use terminal (ncurses) frontend [default]\n"
+		<< "  -h, --help       Show this help and exit\n"
+		<< "  -V, --version    Show version and exit\n";
 }
+
 
 int
 main(int argc, const char *argv[])
@@ -39,39 +40,39 @@ main(int argc, const char *argv[])
 	Editor editor;
 
 	// CLI parsing using getopt_long
-	bool req_gui = false;
-	bool req_term = false;
-	bool show_help = false;
+	bool req_gui      = false;
+	bool req_term     = false;
+	bool show_help    = false;
 	bool show_version = false;
 
 	static struct option long_opts[] = {
-	    {"gui",     no_argument, nullptr, 'g'},
-	    {"term",    no_argument, nullptr, 't'},
-	    {"help",    no_argument, nullptr, 'h'},
-	    {"version", no_argument, nullptr, 'V'},
-	    {nullptr,   0,           nullptr, 0}
+		{"gui", no_argument, nullptr, 'g'},
+		{"term", no_argument, nullptr, 't'},
+		{"help", no_argument, nullptr, 'h'},
+		{"version", no_argument, nullptr, 'V'},
+		{nullptr, 0, nullptr, 0}
 	};
 
 	int opt;
 	int long_index = 0;
 	while ((opt = getopt_long(argc, const_cast<char *const *>(argv), "gthV", long_opts, &long_index)) != -1) {
 		switch (opt) {
-			case 'g':
-				req_gui = true;
-				break;
-			case 't':
-				req_term = true;
-				break;
-			case 'h':
-				show_help = true;
-				break;
-			case 'V':
-				show_version = true;
-				break;
-			case '?':
-			default:
-				PrintUsage(argv[0]);
-				return 2;
+		case 'g':
+			req_gui = true;
+			break;
+		case 't':
+			req_term = true;
+			break;
+		case 'h':
+			show_help = true;
+			break;
+		case 'V':
+			show_version = true;
+			break;
+		case '?':
+		default:
+			PrintUsage(argv[0]);
+			return 2;
 		}
 	}
 
@@ -92,7 +93,7 @@ main(int argc, const char *argv[])
 #if !defined(KTE_BUILD_GUI)
 	if (req_gui) {
 		std::cerr << "kte: GUI not built. Reconfigure with -DBUILD_GUI=ON and required deps installed." <<
-			  std::endl;
+			std::endl;
 		return 2;
 	}
 #else
@@ -132,7 +133,7 @@ main(int argc, const char *argv[])
 						// Clamp to >=1 later; 0 disables.
 						try {
 							unsigned long v = std::stoul(p);
-							pending_line = static_cast<std::size_t>(v);
+							pending_line    = static_cast<std::size_t>(v);
 						} catch (...) {
 							// Ignore malformed huge numbers
 							pending_line = 0;
@@ -152,7 +153,7 @@ main(int argc, const char *argv[])
 				// Apply pending +N to the just-opened (current) buffer
 				if (Buffer *b = editor.CurrentBuffer()) {
 					std::size_t nrows = b->Nrows();
-					std::size_t line = pending_line > 0 ? pending_line - 1 : 0;
+					std::size_t line  = pending_line > 0 ? pending_line - 1 : 0;
 					// 1-based to 0-based
 					if (nrows > 0) {
 						if (line >= nrows)
@@ -178,7 +179,7 @@ main(int argc, const char *argv[])
 	InstallDefaultCommands();
 
 	// Select frontend
-	std::unique_ptr <Frontend> fe;
+	std::unique_ptr<Frontend> fe;
 #if defined(KTE_BUILD_GUI)
 	if (use_gui) {
 		fe = std::make_unique<GUIFrontend>();

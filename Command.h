@@ -74,6 +74,8 @@ enum class CommandId {
 	MarkAllAndJumpEnd, // set mark at beginning, jump to end (C-k a)
 	// Direct navigation by line number
 	JumpToLine, // prompt for line and jump (C-k g)
+	ShowWorkingDirectory, // Display the current working directory in the editor message.
+	ChangeWorkingDirectory, // Change the editor's current directory.
 	// Meta
 	UnknownKCommand, // arg: single character that was not recognized after C-k
 };

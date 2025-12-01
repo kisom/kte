@@ -168,13 +168,13 @@ TerminalRenderer::Draw(Editor &ed)
 		const Buffer *b = buf;
 		std::string fname;
 		if (b) {
-			fname = b->Filename();
-		}
-		if (!fname.empty()) {
 			try {
-				fname = std::filesystem::path(fname).filename().string();
+				fname = ed.DisplayNameFor(*b);
 			} catch (...) {
-				// keep original on any error
+				fname = b->Filename();
+				try {
+					fname = std::filesystem::path(fname).filename().string();
+				} catch (...) {}
 			}
 		} else {
 			fname = "[no name]";
@@ -183,6 +183,13 @@ TerminalRenderer::Draw(Editor &ed)
 		left += fname;
 		if (b && b->Dirty())
 			left += " *";
+		// Append total line count as "<n>L"
+		if (b) {
+			unsigned long lcount = static_cast<unsigned long>(b->Rows().size());
+			left += " ";
+			left += std::to_string(lcount);
+			left += "L";
+		}
 	}
 
 	// Build right segment (cursor and mark)

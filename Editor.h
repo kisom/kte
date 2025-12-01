@@ -302,7 +302,7 @@ public:
 
 
 	// --- Generic Prompt subsystem (for search, open-file, save-as, etc.) ---
-	enum class PromptKind { None = 0, Search, OpenFile, SaveAs, Confirm, BufferSwitch, GotoLine };
+	enum class PromptKind { None = 0, Search, OpenFile, SaveAs, Confirm, BufferSwitch, GotoLine, Chdir };
 
 
 	void StartPrompt(PromptKind kind, const std::string &label, const std::string &initial)
@@ -408,6 +408,11 @@ public:
 	Buffer *CurrentBuffer();
 
 	const Buffer *CurrentBuffer() const;
+
+	// Compute a display-friendly short name for a buffer path that is the
+	// shortest unique suffix among all open buffers. If buffer has no name,
+	// returns "[no name]".
+	[[nodiscard]] std::string DisplayNameFor(const Buffer &buf) const;
 
 	// Add an existing buffer (copy/move) or open from file path
 	std::size_t AddBuffer(const Buffer &buf);

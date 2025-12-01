@@ -13,13 +13,13 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 		switch (k_lower) {
 		case 'd':
 			out = CommandId::KillLine;
-			return true; // C-k C-d
-		case 'x':
-			out = CommandId::SaveAndQuit;
-			return true; // C-k C-x
+			return true;
 		case 'q':
 			out = CommandId::QuitNow;
-			return true; // C-k C-q (quit immediately)
+			return true;
+		case 'x':
+			out = CommandId::SaveAndQuit;
+			return true;
 		default:
 			// Important: do not return here — fall through to non-ctrl table
 			// so that C-k u/U still work even if Ctrl is (incorrectly) held
@@ -33,65 +33,72 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 		return true;
 	}
 
-	// 3) Non-control k-table (lowercased)
 	switch (k_lower) {
-	case 'j':
-		out = CommandId::JumpToMark;
-		return true; // C-k j
-	case 'f':
-		out = CommandId::FlushKillRing;
-		return true; // C-k f
-	case 'd':
-		out = CommandId::KillToEOL;
-		return true; // C-k d
-	case 'y':
-		out = CommandId::Yank;
-		return true; // C-k y
-	case 's':
-		out = CommandId::Save;
-		return true; // C-k s
-	case 'e':
-		out = CommandId::OpenFileStart;
-		return true; // C-k e (open file)
-	case 'b':
-		out = CommandId::BufferSwitchStart;
-		return true; // C-k b (switch buffer by name)
-	case 'c':
-		out = CommandId::BufferClose;
-		return true; // C-k c (close current buffer)
-	case 'n':
-		out = CommandId::BufferPrev;
-		return true; // C-k n (switch to previous buffer)
-	case 'x':
-		out = CommandId::SaveAndQuit;
-		return true; // C-k x
-	case 'q':
-		out = CommandId::Quit;
-		return true; // C-k q
-	case 'p':
-		out = CommandId::BufferNext;
-		return true; // C-k p (switch to next buffer)
-	case 'u':
-		out = CommandId::Undo;
-		return true; // C-k u (undo)
-	case '-':
-		out = CommandId::UnindentRegion;
-		return true; // C-k - (unindent region)
-	case '=':
-		out = CommandId::IndentRegion;
-		return true; // C-k = (indent region)
-	case 'l':
-		out = CommandId::ReloadBuffer;
-		return true; // C-k l (reload buffer)
 	case 'a':
 		out = CommandId::MarkAllAndJumpEnd;
-		return true; // C-k a (mark all and jump to end)
+		return true;
+	case 'b':
+		out = CommandId::BufferSwitchStart;
+		return true;
+	case 'c':
+		out = CommandId::BufferClose;
+		return true;
+	case 'd':
+		out = CommandId::KillToEOL;
+		return true;
+	case 'e':
+		out = CommandId::OpenFileStart;
+		return true;
+	case 'f':
+		out = CommandId::FlushKillRing;
+		return true;
 	case 'g':
 		out = CommandId::JumpToLine;
-		return true; // C-k g (goto line)
+		return true;
+	case 'j':
+		out = CommandId::JumpToMark;
+		return true;
+	case 'l':
+		out = CommandId::ReloadBuffer;
+		return true;
+	case 'n':
+		out = CommandId::BufferPrev;
+		return true;
+	case 'o':
+		out = CommandId::ChangeWorkingDirectory;
+		return true;
+	case 'p':
+		out = CommandId::BufferNext;
+		return true;
+	case 'q':
+		out = CommandId::Quit;
+		return true;
+	case 's':
+		out = CommandId::Save;
+		return true;
+	case 'u':
+		out = CommandId::Undo;
+		return true;
+	case 'w':
+		out = CommandId::ShowWorkingDirectory;
+		return true;
+	case 'x':
+		out = CommandId::SaveAndQuit;
+		return true;
+	case 'y':
+		out = CommandId::Yank;
+		return true;
+	case '-':
+		out = CommandId::UnindentRegion;
+		return true;
+	case '=':
+		out = CommandId::IndentRegion;
+		return true;
 	default:
 		break;
 	}
+
+	// 3) Non-control k-table (lowercased)
 	return false;
 }
 

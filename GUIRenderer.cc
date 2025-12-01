@@ -204,18 +204,26 @@ GUIRenderer::Draw(Editor &ed)
 		left += "kge"; // GUI app name
 		left += " ";
 		left += KTE_VERSION_STR;
-		std::string fname = buf->Filename();
-		if (!fname.empty()) {
+		std::string fname;
+		try {
+			fname = ed.DisplayNameFor(*buf);
+		} catch (...) {
+			fname = buf->Filename();
 			try {
 				fname = std::filesystem::path(fname).filename().string();
 			} catch (...) {}
-		} else {
-			fname = "[no name]";
 		}
 		left += "  ";
 		left += fname;
 		if (buf->Dirty())
 			left += " *";
+		// Append total line count as "<n>L"
+		{
+			unsigned long lcount = static_cast<unsigned long>(buf->Rows().size());
+			left += " ";
+			left += std::to_string(lcount);
+			left += "L";
+		}
 
 		// Build right text (cursor/mark)
 		int row1       = static_cast<int>(buf->Cury()) + 1;
