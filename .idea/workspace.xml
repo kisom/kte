@@ -34,10 +34,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Add buffer position display and documentation improvements.&#10;&#10;- Display buffer position prefix &quot;[x/N]&quot; in GUI and terminal renderers.&#10;- Improve `kte` and `kge` man pages with frontend usage details and project homepage.&#10;- Update README with GUI invocation instructions.&#10;- Bump version to 1.0.0.">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ROADMAP.md" beforeDir="false" afterPath="$PROJECT_DIR$/ROADMAP.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -171,7 +168,7 @@
       <workItem from="1764539556448" duration="156000" />
       <workItem from="1764539725338" duration="1075000" />
       <workItem from="1764542392763" duration="3512000" />
-      <workItem from="1764548345516" duration="9275000" />
+      <workItem from="1764548345516" duration="9362000" />
     </task>
     <task id="LOCAL-00001" summary="Add undo/redo infrastructure and buffer management additions.">
       <option name="closed" value="true" />

@@ -1,5 +1,7 @@
 kte - Kyle's Text Editor
 
+![Editor screenshot](./docs/screenshot.jpg)
+
 Vision
 -------
 kte is a small, fast, and understandable text editor with a
