@@ -1,4 +1,4 @@
-kte — Kyle's Text Editor
+kte - Kyle's Text Editor
 
 Vision
 -------
@@ -32,7 +32,7 @@ User Experience (intended)
 - Terminal first: instant startup, responsive editing, no surprises
   over SSH.
 - Optional GUI: an ImGui‑based window with tabs, menus, and
-  palette—sharing the same editor core and command model.
+  palette-sharing the same editor core and command model.
 - Discoverable command model: WordStar/VDE style with a `C-k` prefix,
   Emacs‑like incremental search, and context help.
 - Sensible defaults with a simple config file for remaps and theme
@@ -146,26 +146,26 @@ Dependencies by platform
 ------------------------
 
 - macOS (Homebrew)
-  - Terminal (default):
-    - `brew install ncurses`
-  - Optional GUI (enable with `-DBUILD_GUI=ON`):
-    - `brew install sdl2 freetype`
-    - OpenGL is provided by the system framework on macOS; no package needed.
+    - Terminal (default):
+        - `brew install ncurses`
+    - Optional GUI (enable with `-DBUILD_GUI=ON`):
+        - `brew install sdl2 freetype`
+        - OpenGL is provided by the system framework on macOS; no package needed.
 
 - Debian/Ubuntu
-  - Terminal (default):
-    - `sudo apt-get install -y libncurses5-dev libncursesw5-dev`
-  - Optional GUI (enable with `-DBUILD_GUI=ON`):
-    - `sudo apt-get install -y libsdl2-dev libfreetype6-dev mesa-common-dev`
-    - The `mesa-common-dev` package provides OpenGL headers/libs (`libGL`).
+    - Terminal (default):
+        - `sudo apt-get install -y libncurses5-dev libncursesw5-dev`
+    - Optional GUI (enable with `-DBUILD_GUI=ON`):
+        - `sudo apt-get install -y libsdl2-dev libfreetype6-dev mesa-common-dev`
+        - The `mesa-common-dev` package provides OpenGL headers/libs (`libGL`).
 
 - NixOS/Nix
-  - Terminal (default):
-    - Ad-hoc shell: `nix-shell -p cmake gcc ncurses`
-  - Optional GUI (enable with `-DBUILD_GUI=ON`):
-    - Ad-hoc shell: `nix-shell -p cmake gcc ncurses SDL2 freetype libGL`
-  - With flakes/devshell (example `flake.nix` inputs not provided): include
-    `ncurses` for TUI, and `SDL2`, `freetype`, `libGL` for GUI in your devShell.
+    - Terminal (default):
+        - Ad-hoc shell: `nix-shell -p cmake gcc ncurses`
+    - Optional GUI (enable with `-DBUILD_GUI=ON`):
+        - Ad-hoc shell: `nix-shell -p cmake gcc ncurses SDL2 freetype libGL`
+    - With flakes/devshell (example `flake.nix` inputs not provided): include
+      `ncurses` for TUI, and `SDL2`, `freetype`, `libGL` for GUI in your devShell.
 
 Notes
 -----
@@ -233,7 +233,8 @@ Roadmap (high level)
    zero‑deps, fast path.
 7. Session restore, autosave/journaling, and safe write guarantees.
 8. Extensibility hooks with a small, stable API.
-References
+   References
+
 ----------
 
 - [ke](https://git.wntrmute.dev/kyle/ke) manual and keybinding

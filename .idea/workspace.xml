@@ -33,10 +33,10 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Introduce file picker and GUI configuration with enhancements.&#10;&#10;- Add visual file picker for GUI with toggle support.&#10;- Introduce `GUIConfig` class for loading GUI settings from configuration file.&#10;- Refactor window initialization to support dynamic sizing based on configuration.&#10;- Add macOS-specific handling for fullscreen behavior.&#10;- Improve header inclusion order and minor code cleanup.">
-      <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
+    <list default="true" id="e1fe3ab0-3650-4fca-8664-a247d5dfa457" name="Changes" comment="Add buffer position display and documentation improvements.&#10;&#10;- Display buffer position prefix &quot;[x/N]&quot; in GUI and terminal renderers.&#10;- Improve `kte` and `kge` man pages with frontend usage details and project homepage.&#10;- Update README with GUI invocation instructions.&#10;- Bump version to 1.0.0.">
+      <change afterPath="$PROJECT_DIR$/docs/screenshot.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/kte.1" beforeDir="false" afterPath="$PROJECT_DIR$/docs/kte.1" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -51,6 +51,12 @@
     <option name="myRunOnSave" value="true" />
   </component>
   <component name="Git.Settings">
+    <option name="PUSH_TAGS">
+      <GitPushTagMode>
+        <option name="argument" value="--tags" />
+        <option name="title" value="All" />
+      </GitPushTagMode>
+    </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
     <option name="UPDATE_TYPE" value="REBASE" />
   </component>
@@ -164,7 +170,7 @@
       <workItem from="1764539556448" duration="156000" />
       <workItem from="1764539725338" duration="1075000" />
       <workItem from="1764542392763" duration="3512000" />
-      <workItem from="1764548345516" duration="8203000" />
+      <workItem from="1764548345516" duration="8695000" />
     </task>
     <task id="LOCAL-00001" summary="Add undo/redo infrastructure and buffer management additions.">
       <option name="closed" value="true" />
@@ -262,7 +268,15 @@
       <option name="project" value="LOCAL" />
       <updated>1764556512864</updated>
     </task>
-    <option name="localTasksCounter" value="13" />
+    <task id="LOCAL-00013" summary="Add buffer position display and documentation improvements.&#10;&#10;- Display buffer position prefix &quot;[x/N]&quot; in GUI and terminal renderers.&#10;- Improve `kte` and `kge` man pages with frontend usage details and project homepage.&#10;- Update README with GUI invocation instructions.&#10;- Bump version to 1.0.0.">
+      <option name="closed" value="true" />
+      <created>1764556854788</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1764556854788</updated>
+    </task>
+    <option name="localTasksCounter" value="14" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -288,7 +302,8 @@
     <MESSAGE value="Refactor code for consistency and enhanced functionality.&#10;&#10;- Normalize path handling for buffer operations, supporting tilde expansion and absolute paths.&#10;- Introduce `DisplayNameFor` to uniquely resolve buffer display names, minimizing filename clashes.&#10;- Add new commands: `ShowWorkingDirectory` and `ChangeWorkingDirectory`.&#10;- Refine keybindings and enhance existing commands for improved command flow.&#10;- Adjust GUI and terminal renderers to display total line counts alongside filenames.&#10;- Update coding style to align with project guidelines." />
     <MESSAGE value="Add horizontal scrolling support and refactor mouse click handling in GUI.&#10;&#10;- Introduce horizontal scrolling with column offset synchronization in GUI.&#10;- Refactor mouse click handling for improved accuracy and viewport alignment.&#10;- Enhance tab expansion and cursor rendering logic for better user experience.&#10;- Replace redundant variable declarations in `Buffer` for cleaner code." />
     <MESSAGE value="Introduce file picker and GUI configuration with enhancements.&#10;&#10;- Add visual file picker for GUI with toggle support.&#10;- Introduce `GUIConfig` class for loading GUI settings from configuration file.&#10;- Refactor window initialization to support dynamic sizing based on configuration.&#10;- Add macOS-specific handling for fullscreen behavior.&#10;- Improve header inclusion order and minor code cleanup." />
-    <option name="LAST_COMMIT_MESSAGE" value="Introduce file picker and GUI configuration with enhancements.&#10;&#10;- Add visual file picker for GUI with toggle support.&#10;- Introduce `GUIConfig` class for loading GUI settings from configuration file.&#10;- Refactor window initialization to support dynamic sizing based on configuration.&#10;- Add macOS-specific handling for fullscreen behavior.&#10;- Improve header inclusion order and minor code cleanup." />
+    <MESSAGE value="Add buffer position display and documentation improvements.&#10;&#10;- Display buffer position prefix &quot;[x/N]&quot; in GUI and terminal renderers.&#10;- Improve `kte` and `kge` man pages with frontend usage details and project homepage.&#10;- Update README with GUI invocation instructions.&#10;- Bump version to 1.0.0." />
+    <option name="LAST_COMMIT_MESSAGE" value="Add buffer position display and documentation improvements.&#10;&#10;- Display buffer position prefix &quot;[x/N]&quot; in GUI and terminal renderers.&#10;- Improve `kte` and `kge` man pages with frontend usage details and project homepage.&#10;- Update README with GUI invocation instructions.&#10;- Bump version to 1.0.0." />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
