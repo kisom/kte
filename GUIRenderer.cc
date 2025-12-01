@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <limits>
+#include <cstdlib>
 #include <string>
 
 #include <imgui.h>
@@ -280,28 +281,59 @@ GUIRenderer::Draw(Editor &ed)
 		}
 		ImGui::EndChild();
 
-		// Status bar spanning full width
-		ImGui::Separator();
+  // Status bar spanning full width
+  ImGui::Separator();
 
-		// Build three segments: left (app/version/buffer/dirty), middle (message), right (cursor/mark)
-		// Compute full content width and draw a filled background rectangle
-		ImVec2 win_pos = ImGui::GetWindowPos();
-		ImVec2 cr_min  = ImGui::GetWindowContentRegionMin();
-		ImVec2 cr_max  = ImGui::GetWindowContentRegionMax();
-		float x0       = win_pos.x + cr_min.x;
-		float x1       = win_pos.x + cr_max.x;
-		ImVec2 cursor  = ImGui::GetCursorScreenPos();
-		float bar_h    = ImGui::GetFrameHeight();
-		ImVec2 p0(x0, cursor.y);
-		ImVec2 p1(x1, cursor.y + bar_h);
-		ImU32 bg_col = ImGui::GetColorU32(ImGuiCol_HeaderActive);
-		ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, bg_col);
-		// Build left text
-		std::string left;
-		left.reserve(256);
-		left += "kge"; // GUI app name
-		left += " ";
-		left += KTE_VERSION_STR;
+  // Compute full content width and draw a filled background rectangle
+  ImVec2 win_pos = ImGui::GetWindowPos();
+  ImVec2 cr_min  = ImGui::GetWindowContentRegionMin();
+  ImVec2 cr_max  = ImGui::GetWindowContentRegionMax();
+  float x0       = win_pos.x + cr_min.x;
+  float x1       = win_pos.x + cr_max.x;
+  ImVec2 cursor  = ImGui::GetCursorScreenPos();
+  float bar_h    = ImGui::GetFrameHeight();
+  ImVec2 p0(x0, cursor.y);
+  ImVec2 p1(x1, cursor.y + bar_h);
+  ImU32 bg_col = ImGui::GetColorU32(ImGuiCol_HeaderActive);
+  ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, bg_col);
+  // If a prompt is active, replace the entire status bar with the prompt text
+  if (ed.PromptActive()) {
+      std::string msg = ed.PromptLabel();
+      if (!msg.empty()) msg += ": ";
+      std::string ptext = ed.PromptText();
+      auto kind         = ed.CurrentPromptKind();
+      if (kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs ||
+          kind == Editor::PromptKind::Chdir) {
+          const char *home_c = std::getenv("HOME");
+          if (home_c && *home_c) {
+              std::string home(home_c);
+              if (ptext.rfind(home, 0) == 0) {
+                  std::string rest = ptext.substr(home.size());
+                  if (rest.empty())
+                      ptext = "~";
+                  else if (!rest.empty() && (rest[0] == '/' || rest[0] == '\\'))
+                      ptext = std::string("~") + rest;
+              }
+          }
+      }
+      msg += ptext;
+
+      float pad = 6.f;
+      ImVec2 msg_sz = ImGui::CalcTextSize(msg.c_str());
+      float left_x = p0.x + pad;
+      ImGui::PushClipRect(ImVec2(p0.x, p0.y), ImVec2(p1.x, p1.y), true);
+      ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - msg_sz.y) * 0.5f));
+      ImGui::TextUnformatted(msg.c_str());
+      ImGui::PopClipRect();
+      // Advance cursor to after the bar to keep layout consistent
+      ImGui::Dummy(ImVec2(x1 - x0, bar_h));
+  } else {
+  // Build left text
+  std::string left;
+  left.reserve(256);
+  left += "kge"; // GUI app name
+  left += " ";
+  left += KTE_VERSION_STR;
 		std::string fname;
 		try {
 			fname = ed.DisplayNameFor(*buf);
@@ -400,8 +432,9 @@ GUIRenderer::Draw(Editor &ed)
 				ImGui::PopClipRect();
 			}
 		}
-		// Advance cursor to after the bar to keep layout consistent
-		ImGui::Dummy(ImVec2(x1 - x0, bar_h));
+  // Advance cursor to after the bar to keep layout consistent
+  ImGui::Dummy(ImVec2(x1 - x0, bar_h));
+  }
 	}
 
 	ImGui::End();

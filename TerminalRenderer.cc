@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
+#include <cstdlib>
 #include <ncurses.h>
 #include <string>
 
@@ -149,13 +150,50 @@ TerminalRenderer::Draw(Editor &ed)
 		mvaddstr(0, 0, "[no buffer]");
 	}
 
-	// Status line (inverse) — left: app/version/buffer/dirty, middle: message, right: cursor/mark
-	move(rows - 1, 0);
-	attron(A_REVERSE);
+ // Status line (inverse)
+ move(rows - 1, 0);
+ attron(A_REVERSE);
 
-	// Fill the status line with spaces first
-	for (int i = 0; i < cols; ++i)
-		addch(' ');
+ // Fill the status line with spaces first
+ for (int i = 0; i < cols; ++i)
+     addch(' ');
+
+ // If a prompt is active, replace the status bar with the full prompt text
+ if (ed.PromptActive()) {
+     // Build prompt text: "Label: text" and shorten HOME path for file-related prompts
+     std::string msg = ed.PromptLabel();
+     if (!msg.empty())
+         msg += ": ";
+     std::string ptext = ed.PromptText();
+     auto kind         = ed.CurrentPromptKind();
+     if (kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs ||
+         kind == Editor::PromptKind::Chdir) {
+         const char *home_c = std::getenv("HOME");
+         if (home_c && *home_c) {
+             std::string home(home_c);
+             // Ensure we match only at the start
+             if (ptext.rfind(home, 0) == 0) {
+                 std::string rest = ptext.substr(home.size());
+                 if (rest.empty())
+                     ptext = "~";
+                 else if (rest[0] == '/' || rest[0] == '\\')
+                     ptext = std::string("~") + rest;
+             }
+         }
+     }
+     msg += ptext;
+
+     // Draw left-aligned, clipped to width
+     if (!msg.empty())
+         mvaddnstr(rows - 1, 0, msg.c_str(), std::max(0, cols));
+
+     // End status rendering for prompt mode
+     attroff(A_REVERSE);
+     // Restore logical cursor position in content area
+     if (saved_cur_y >= 0 && saved_cur_x >= 0)
+         move(saved_cur_y, saved_cur_x);
+     return;
+ }
 
 	// Build left segment
 	std::string left;
@@ -243,10 +281,10 @@ TerminalRenderer::Draw(Editor &ed)
 	if (llen > 0)
 		mvaddnstr(rows - 1, 0, left.c_str(), llen);
 
-	// Draw right, flush to end
-	int rstart = std::max(0, cols - rlen);
-	if (rlen > 0)
-		mvaddnstr(rows - 1, rstart, right.c_str(), rlen);
+ // Draw right, flush to end
+ int rstart = std::max(0, cols - rlen);
+ if (rlen > 0)
+     mvaddnstr(rows - 1, rstart, right.c_str(), rlen);
 
 	// Middle message
 	const std::string &msg = ed.Status();
@@ -262,7 +300,7 @@ TerminalRenderer::Draw(Editor &ed)
 		}
 	}
 
-	attroff(A_REVERSE);
+ attroff(A_REVERSE);
 
 	// Restore terminal cursor to the content position so a visible caret
 	// remains in the editing area (not on the status line).
