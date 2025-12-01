@@ -15,6 +15,7 @@
 #include "GUIFrontend.h"
 #include "Font.h" // embedded default font (DefaultFontRegular)
 #include "GUIConfig.h"
+#include "GUITheme.h"
 
 
 #ifndef KTE_FONT_SIZE
@@ -74,7 +75,7 @@ GUIFrontend::Init(Editor &ed)
 	}
 
 	window_ = SDL_CreateWindow(
-		"kge - kyle's text editor " KTE_VERSION_STR,
+		"kge - kyle's graphical editor " KTE_VERSION_STR,
 		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
 		width_, height_,
 		win_flags);
@@ -104,6 +105,8 @@ GUIFrontend::Init(Editor &ed)
 	ImGuiIO &io = ImGui::GetIO();
 	(void) io;
 	ImGui::StyleColorsDark();
+	// Apply a Nord-inspired theme
+	kte::ApplyNordImGuiTheme();
 
 	if (!ImGui_ImplSDL2_InitForOpenGL(window_, gl_ctx_))
 		return false;
@@ -264,8 +267,8 @@ GUIFrontend::LoadGuiFont_(const char * /*path*/, float size_px)
 	ImGuiIO &io = ImGui::GetIO();
 	io.Fonts->Clear();
 	ImFont *font = io.Fonts->AddFontFromMemoryCompressedTTF(
-		(void *) DefaultFontRegularCompressedData,
-		(int) DefaultFontRegularCompressedSize,
+		(void *) DefaultFontBoldCompressedData,
+		(int) DefaultFontBoldCompressedSize,
 		size_px);
 	if (!font) {
 		font = io.Fonts->AddFontDefault();

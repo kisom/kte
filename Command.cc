@@ -1918,6 +1918,8 @@ cmd_backspace(CommandContext &ctx)
 			char deleted = rows[y][x - 1];
 			rows[y].erase(x - 1, 1);
 			--x;
+			// Update buffer cursor BEFORE Begin so batching sees correct cursor for backspace
+			buf->SetCursor(x, y);
 			// Record undo after deletion and cursor update
 			if (u) {
 				u->Begin(UndoType::Delete);
@@ -1930,6 +1932,8 @@ cmd_backspace(CommandContext &ctx)
 			rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(y));
 			y = y - 1;
 			x = prev_len;
+			// Update cursor to the join point BEFORE Begin to keep invariants consistent
+			buf->SetCursor(x, y);
 			// Record a newline deletion that joined lines; commit immediately
 			if (u) {
 				u->Begin(UndoType::Newline);
@@ -1940,6 +1944,7 @@ cmd_backspace(CommandContext &ctx)
 			break;
 		}
 	}
+	// Ensure buffer cursor reflects final x,y
 	buf->SetCursor(x, y);
 	buf->SetDirty(true);
 	ensure_cursor_visible(ctx.editor, *buf);

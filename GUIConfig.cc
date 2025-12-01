@@ -23,7 +23,7 @@ default_config_path()
 {
 	const char *home = std::getenv("HOME");
 	if (!home || !*home)
-		return std::string();
+		return {};
 	std::string path(home);
 	path += "/.config/kte/kge.ini";
 	return path;
@@ -34,7 +34,8 @@ GUIConfig
 GUIConfig::Load()
 {
 	GUIConfig cfg; // defaults already set
-	std::string path = default_config_path();
+	const std::string path = default_config_path();
+
 	if (!path.empty()) {
 		cfg.LoadFromFile(path);
 	}
@@ -98,8 +99,9 @@ GUIConfig::LoadFromFile(const std::string &path)
 			try {
 				v = std::stof(val);
 			} catch (...) {}
-			if (v > 0.0f)
+			if (v > 0.0f) {
 				font_size = v;
+			}
 		}
 	}
 

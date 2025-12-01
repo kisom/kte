@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <algorithm>
 #include <ncurses.h>
 
 #include <SDL.h>
@@ -91,11 +92,9 @@ map_key(const SDL_Keycode key,
 		out = {true, CommandId::Backspace, "", 0};
 		return true;
 	case SDLK_TAB:
-		// Insert a literal tab character
-		out.hasCommand = true;
-		out.id    = CommandId::InsertText;
-		out.arg   = "\t";
-		out.count = 0;
+		// Do not insert text on KEYDOWN; allow SDL_TEXTINPUT to deliver '\t'
+		// as printable input so that all printable characters flow via TEXTINPUT.
+		out.hasCommand = false;
 		return true;
 	case SDLK_RETURN:
 	case SDLK_KP_ENTER:
@@ -520,11 +519,21 @@ GUIInputHandler::ProcessSDLEvent(const SDL_Event &e)
 			break;
 		}
 		if (!k_prefix_ && e.text.text[0] != '\0') {
-			mi.hasCommand = true;
-			mi.id         = CommandId::InsertText;
-			mi.arg        = std::string(e.text.text);
-			mi.count      = 0;
-			produced      = true;
+			// Ensure InsertText never carries a newline; those must originate from KEYDOWN
+			std::string text(e.text.text);
+			// Strip any CR/LF that might slip through from certain platforms/IME behaviors
+			text.erase(std::remove(text.begin(), text.end(), '\n'), text.end());
+			text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+			if (!text.empty()) {
+				mi.hasCommand = true;
+				mi.id         = CommandId::InsertText;
+				mi.arg        = std::move(text);
+				mi.count      = 0;
+				produced      = true;
+			} else {
+				// Nothing to insert after filtering; consume the event
+				produced = true;
+			}
 		} else {
 			produced = true; // consumed while k-prefix is active
 		}
