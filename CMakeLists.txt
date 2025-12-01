@@ -201,4 +201,5 @@ if (${BUILD_GUI})
     endif ()
     # Install kge man page only when GUI is built
     install(FILES docs/kge.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
+    install(FILES kge.png    DESTINATION ${CMAKE_INSTALL_PREFIX}/share/icons)
 endif ()
