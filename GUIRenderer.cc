@@ -152,14 +152,14 @@ GUIRenderer::Draw(Editor &ed)
 				}
 			}
 		}
-  // Handle mouse click before rendering to avoid dependent on drawn items
-  if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-      ImVec2 mp = ImGui::GetIO().MousePos;
-      // Compute viewport-relative row so (0) is top row of the visible area
-      float vy_f = (mp.y - list_origin.y - scroll_y) / row_h;
-      long vy    = static_cast<long>(vy_f);
-      if (vy < 0)
-          vy = 0;
+		// Handle mouse click before rendering to avoid dependent on drawn items
+		if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+			ImVec2 mp = ImGui::GetIO().MousePos;
+			// Compute viewport-relative row so (0) is top row of the visible area
+			float vy_f = (mp.y - list_origin.y - scroll_y) / row_h;
+			long vy    = static_cast<long>(vy_f);
+			if (vy < 0)
+				vy = 0;
 
 			// Clamp vy within visible content height to avoid huge jumps
 			ImVec2 cr_min = ImGui::GetWindowContentRegionMin();
@@ -171,163 +171,169 @@ GUIRenderer::Draw(Editor &ed)
 			if (vy >= vis_rows)
 				vy = vis_rows - 1;
 
-            // Translate viewport row to buffer row using Buffer::Rowoffs
-            std::size_t by = buf->Rowoffs() + static_cast<std::size_t>(vy);
-            if (by >= lines.size()) {
-                if (!lines.empty())
-                    by = lines.size() - 1;
-                else
-                    by = 0;
-            }
+			// Translate viewport row to buffer row using Buffer::Rowoffs
+			std::size_t by = buf->Rowoffs() + static_cast<std::size_t>(vy);
+			if (by >= lines.size()) {
+				if (!lines.empty())
+					by = lines.size() - 1;
+				else
+					by = 0;
+			}
 
-            // Compute desired pixel X inside the viewport content (subtract horizontal scroll)
-            float px = (mp.x - list_origin.x - scroll_x);
-            if (px < 0.0f)
-                px = 0.0f;
+			// Compute desired pixel X inside the viewport content (subtract horizontal scroll)
+			float px = (mp.x - list_origin.x - scroll_x);
+			if (px < 0.0f)
+				px = 0.0f;
 
-            // Empty buffer guard: if there are no lines yet, just move to 0:0
-            if (lines.empty()) {
-                Execute(ed, CommandId::MoveCursorTo, std::string("0:0"));
-            } else {
-                // Convert pixel X to a render-column target including horizontal col offset
-                // Use our own tab expansion of width 8 to match command layer logic.
-                std::string line_clicked = static_cast<std::string>(lines[by]);
-                const std::size_t tabw          = 8;
-                // We iterate source columns computing absolute rendered column (rx_abs) from 0,
-                // then translate to viewport-space by subtracting Coloffs.
-                std::size_t coloffs = buf->Coloffs();
-                std::size_t rx_abs  = 0; // absolute rendered column
-                std::size_t i       = 0; // source column iterator
+			// Empty buffer guard: if there are no lines yet, just move to 0:0
+			if (lines.empty()) {
+				Execute(ed, CommandId::MoveCursorTo, std::string("0:0"));
+			} else {
+				// Convert pixel X to a render-column target including horizontal col offset
+				// Use our own tab expansion of width 8 to match command layer logic.
+				std::string line_clicked = static_cast<std::string>(lines[by]);
+				const std::size_t tabw   = 8;
+				// We iterate source columns computing absolute rendered column (rx_abs) from 0,
+				// then translate to viewport-space by subtracting Coloffs.
+				std::size_t coloffs = buf->Coloffs();
+				std::size_t rx_abs  = 0; // absolute rendered column
+				std::size_t i       = 0; // source column iterator
 
-                // Fast-forward i until rx_abs >= coloffs to align with leftmost visible column
-                if (!line_clicked.empty() && coloffs > 0) {
-                    while (i < line_clicked.size() && rx_abs < coloffs) {
-                        if (line_clicked[i] == '\t') {
-                            rx_abs += (tabw - (rx_abs % tabw));
-                        } else {
-                            rx_abs += 1;
-                        }
-                        ++i;
-                    }
-                }
+				// Fast-forward i until rx_abs >= coloffs to align with leftmost visible column
+				if (!line_clicked.empty() && coloffs > 0) {
+					while (i < line_clicked.size() && rx_abs < coloffs) {
+						if (line_clicked[i] == '\t') {
+							rx_abs += (tabw - (rx_abs % tabw));
+						} else {
+							rx_abs += 1;
+						}
+						++i;
+					}
+				}
 
-                // Now search for closest source column to clicked px within/after viewport
-                std::size_t best_col = i; // default to first visible column
-                float best_dist      = std::numeric_limits<float>::infinity();
-                while (true) {
-                    // For i in [current..size], evaluate candidate including the implicit end position
-                    std::size_t rx_view = (rx_abs >= coloffs) ? (rx_abs - coloffs) : 0;
-                    float rx_px         = static_cast<float>(rx_view) * space_w;
-                    float dist          = std::fabs(px - rx_px);
-                    if (dist <= best_dist) {
-                        best_dist = dist;
-                        best_col  = i;
-                    }
-                    if (i == line_clicked.size())
-                        break;
-                    // advance to next source column
-                    if (line_clicked[i] == '\t') {
-                        rx_abs += (tabw - (rx_abs % tabw));
-                    } else {
-                        rx_abs += 1;
-                    }
-                    ++i;
-                }
+				// Now search for closest source column to clicked px within/after viewport
+				std::size_t best_col = i; // default to first visible column
+				float best_dist      = std::numeric_limits<float>::infinity();
+				while (true) {
+					// For i in [current..size], evaluate candidate including the implicit end position
+					std::size_t rx_view = (rx_abs >= coloffs) ? (rx_abs - coloffs) : 0;
+					float rx_px         = static_cast<float>(rx_view) * space_w;
+					float dist          = std::fabs(px - rx_px);
+					if (dist <= best_dist) {
+						best_dist = dist;
+						best_col  = i;
+					}
+					if (i == line_clicked.size())
+						break;
+					// advance to next source column
+					if (line_clicked[i] == '\t') {
+						rx_abs += (tabw - (rx_abs % tabw));
+					} else {
+						rx_abs += 1;
+					}
+					++i;
+				}
 
-                // Dispatch absolute buffer coordinates (row:col)
-                char tmp[64];
-                std::snprintf(tmp, sizeof(tmp), "%zu:%zu", by, best_col);
-                Execute(ed, CommandId::MoveCursorTo, std::string(tmp));
-            }
-        }
+				// Dispatch absolute buffer coordinates (row:col)
+				char tmp[64];
+				std::snprintf(tmp, sizeof(tmp), "%zu:%zu", by, best_col);
+				Execute(ed, CommandId::MoveCursorTo, std::string(tmp));
+			}
+		}
 		// Cache current horizontal offset in rendered columns
 		const std::size_t coloffs_now = buf->Coloffs();
-  for (std::size_t i = rowoffs; i < lines.size(); ++i) {
-            // Capture the screen position before drawing the line
-            ImVec2 line_pos         = ImGui::GetCursorScreenPos();
-            std::string line = static_cast<std::string>(lines[i]);
+		for (std::size_t i = rowoffs; i < lines.size(); ++i) {
+			// Capture the screen position before drawing the line
+			ImVec2 line_pos  = ImGui::GetCursorScreenPos();
+			std::string line = static_cast<std::string>(lines[i]);
 
-            // Expand tabs to spaces with width=8 and apply horizontal scroll offset
-            const std::size_t tabw = 8;
-            std::string expanded;
-            expanded.reserve(line.size() + 16);
-            std::size_t rx_abs_draw = 0; // rendered column for drawing
-            // Compute search highlight ranges for this line in source indices
-            bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
-            std::vector<std::pair<std::size_t, std::size_t>> hl_src_ranges;
-            if (search_mode) {
-                // If we're in RegexSearch or RegexReplaceFind mode, compute ranges using regex; otherwise plain substring
-                if (ed.PromptActive() && (ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch || ed.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind)) {
-                    try {
-                        std::regex rx(ed.SearchQuery());
-                        for (auto it = std::sregex_iterator(line.begin(), line.end(), rx);
-                             it != std::sregex_iterator(); ++it) {
-                            const auto &m = *it;
-                            std::size_t sx = static_cast<std::size_t>(m.position());
-                            std::size_t ex = sx + static_cast<std::size_t>(m.length());
-                            hl_src_ranges.emplace_back(sx, ex);
-                        }
-                    } catch (const std::regex_error &) {
-                        // ignore invalid patterns here; status line already shows the error
-                    }
-                } else {
-                    const std::string &q = ed.SearchQuery();
-                    std::size_t pos = 0;
-                    while (!q.empty() && (pos = line.find(q, pos)) != std::string::npos) {
-                        hl_src_ranges.emplace_back(pos, pos + q.size());
-                        pos += q.size();
-                    }
-                }
-            }
-            auto src_to_rx = [&](std::size_t upto_src_exclusive) -> std::size_t {
-                std::size_t rx = 0;
-                std::size_t s  = 0;
-                while (s < upto_src_exclusive && s < line.size()) {
-                    if (line[s] == '\t')
-                        rx += (tabw - (rx % tabw));
-                    else
-                        rx += 1;
-                    ++s;
-                }
-                return rx;
-            };
-            // Draw background highlights (under text)
-            if (search_mode && !hl_src_ranges.empty()) {
-                // Current match emphasis
-                bool has_current = ed.SearchMatchLen() > 0 && ed.SearchMatchY() == i;
-                std::size_t cur_x = has_current ? ed.SearchMatchX() : 0;
-                std::size_t cur_end = has_current ? (ed.SearchMatchX() + ed.SearchMatchLen()) : 0;
-                for (const auto &rg : hl_src_ranges) {
-                    std::size_t sx = rg.first, ex = rg.second;
-                    std::size_t rx_start = src_to_rx(sx);
-                    std::size_t rx_end   = src_to_rx(ex);
-                    // Apply horizontal scroll offset
-                    if (rx_end <= coloffs_now) continue; // fully left of view
-                    std::size_t vx0 = (rx_start > coloffs_now) ? (rx_start - coloffs_now) : 0;
-                    std::size_t vx1 = rx_end - coloffs_now;
-                    ImVec2 p0 = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w, line_pos.y);
-                    ImVec2 p1 = ImVec2(line_pos.x + static_cast<float>(vx1) * space_w, line_pos.y + line_h);
-                    // Choose color: current match stronger
-                    bool is_current = has_current && sx == cur_x && ex == cur_end;
-                    ImU32 col = is_current ? IM_COL32(255, 220, 120, 140) : IM_COL32(200, 200, 0, 90);
-                    ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
-                }
-            }
-            // Emit entire line (ImGui child scrolling will handle clipping)
-            for (std::size_t src = 0; src < line.size(); ++src) {
-                char c = line[src];
-                if (c == '\t') {
-                    std::size_t adv = (tabw - (rx_abs_draw % tabw));
-                    // Emit spaces for the tab
-                    expanded.append(adv, ' ');
-                    rx_abs_draw += adv;
-                } else {
-                    expanded.push_back(c);
-                    rx_abs_draw += 1;
-                }
-            }
+			// Expand tabs to spaces with width=8 and apply horizontal scroll offset
+			const std::size_t tabw = 8;
+			std::string expanded;
+			expanded.reserve(line.size() + 16);
+			std::size_t rx_abs_draw = 0; // rendered column for drawing
+			// Compute search highlight ranges for this line in source indices
+			bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
+			std::vector<std::pair<std::size_t, std::size_t> > hl_src_ranges;
+			if (search_mode) {
+				// If we're in RegexSearch or RegexReplaceFind mode, compute ranges using regex; otherwise plain substring
+				if (ed.PromptActive() && (
+					    ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch || ed.
+					    CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind)) {
+					try {
+						std::regex rx(ed.SearchQuery());
+						for (auto it = std::sregex_iterator(line.begin(), line.end(), rx);
+						     it != std::sregex_iterator(); ++it) {
+							const auto &m  = *it;
+							std::size_t sx = static_cast<std::size_t>(m.position());
+							std::size_t ex = sx + static_cast<std::size_t>(m.length());
+							hl_src_ranges.emplace_back(sx, ex);
+						}
+					} catch (const std::regex_error &) {
+						// ignore invalid patterns here; status line already shows the error
+					}
+				} else {
+					const std::string &q = ed.SearchQuery();
+					std::size_t pos      = 0;
+					while (!q.empty() && (pos = line.find(q, pos)) != std::string::npos) {
+						hl_src_ranges.emplace_back(pos, pos + q.size());
+						pos += q.size();
+					}
+				}
+			}
+			auto src_to_rx = [&](std::size_t upto_src_exclusive) -> std::size_t {
+				std::size_t rx = 0;
+				std::size_t s  = 0;
+				while (s < upto_src_exclusive && s < line.size()) {
+					if (line[s] == '\t')
+						rx += (tabw - (rx % tabw));
+					else
+						rx += 1;
+					++s;
+				}
+				return rx;
+			};
+			// Draw background highlights (under text)
+			if (search_mode && !hl_src_ranges.empty()) {
+				// Current match emphasis
+				bool has_current    = ed.SearchMatchLen() > 0 && ed.SearchMatchY() == i;
+				std::size_t cur_x   = has_current ? ed.SearchMatchX() : 0;
+				std::size_t cur_end = has_current ? (ed.SearchMatchX() + ed.SearchMatchLen()) : 0;
+				for (const auto &rg: hl_src_ranges) {
+					std::size_t sx       = rg.first, ex = rg.second;
+					std::size_t rx_start = src_to_rx(sx);
+					std::size_t rx_end   = src_to_rx(ex);
+					// Apply horizontal scroll offset
+					if (rx_end <= coloffs_now)
+						continue; // fully left of view
+					std::size_t vx0 = (rx_start > coloffs_now) ? (rx_start - coloffs_now) : 0;
+					std::size_t vx1 = rx_end - coloffs_now;
+					ImVec2 p0 = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w, line_pos.y);
+					ImVec2 p1 = ImVec2(line_pos.x + static_cast<float>(vx1) * space_w,
+					                   line_pos.y + line_h);
+					// Choose color: current match stronger
+					bool is_current = has_current && sx == cur_x && ex == cur_end;
+					ImU32 col       = is_current
+						                  ? IM_COL32(255, 220, 120, 140)
+						                  : IM_COL32(200, 200, 0, 90);
+					ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
+				}
+			}
+			// Emit entire line (ImGui child scrolling will handle clipping)
+			for (std::size_t src = 0; src < line.size(); ++src) {
+				char c = line[src];
+				if (c == '\t') {
+					std::size_t adv = (tabw - (rx_abs_draw % tabw));
+					// Emit spaces for the tab
+					expanded.append(adv, ' ');
+					rx_abs_draw += adv;
+				} else {
+					expanded.push_back(c);
+					rx_abs_draw += 1;
+				}
+			}
 
-            ImGui::TextUnformatted(expanded.c_str());
+			ImGui::TextUnformatted(expanded.c_str());
 
 			// Draw a visible cursor indicator on the current line
 			if (i == cy) {
@@ -349,207 +355,220 @@ GUIRenderer::Draw(Editor &ed)
 		}
 		ImGui::EndChild();
 
-  // Status bar spanning full width
-  ImGui::Separator();
+		// Status bar spanning full width
+		ImGui::Separator();
 
-  // Compute full content width and draw a filled background rectangle
-  ImVec2 win_pos = ImGui::GetWindowPos();
-  ImVec2 cr_min  = ImGui::GetWindowContentRegionMin();
-  ImVec2 cr_max  = ImGui::GetWindowContentRegionMax();
-  float x0       = win_pos.x + cr_min.x;
-  float x1       = win_pos.x + cr_max.x;
-  ImVec2 cursor  = ImGui::GetCursorScreenPos();
-  float bar_h    = ImGui::GetFrameHeight();
-  ImVec2 p0(x0, cursor.y);
-  ImVec2 p1(x1, cursor.y + bar_h);
-  ImU32 bg_col = ImGui::GetColorU32(ImGuiCol_HeaderActive);
-  ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, bg_col);
-  // If a prompt is active, replace the entire status bar with the prompt text
-  if (ed.PromptActive()) {
-      std::string label = ed.PromptLabel();
-      std::string ptext = ed.PromptText();
-      auto kind         = ed.CurrentPromptKind();
-      if (kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs ||
-          kind == Editor::PromptKind::Chdir) {
-          const char *home_c = std::getenv("HOME");
-          if (home_c && *home_c) {
-              std::string home(home_c);
-              if (ptext.rfind(home, 0) == 0) {
-                  std::string rest = ptext.substr(home.size());
-                  if (rest.empty())
-                      ptext = "~";
-                  else if (!rest.empty() && (rest[0] == '/' || rest[0] == '\\'))
-                      ptext = std::string("~") + rest;
-              }
-          }
-      }
-
-      float pad = 6.f;
-      float left_x = p0.x + pad;
-      float right_x = p1.x - pad;
-      float max_px = std::max(0.0f, right_x - left_x);
-
-      std::string prefix;
-      if (!label.empty()) prefix = label + ": ";
-
-      // Compose showing right-end of filename portion when too long for space
-      std::string final_msg;
-      ImVec2 prefix_sz = ImGui::CalcTextSize(prefix.c_str());
-      float avail_px = std::max(0.0f, max_px - prefix_sz.x);
-      if ((kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs || kind == Editor::PromptKind::Chdir) && avail_px > 0.0f) {
-          // Trim from left until it fits by pixel width
-          std::string tail = ptext;
-          ImVec2 tail_sz = ImGui::CalcTextSize(tail.c_str());
-          if (tail_sz.x > avail_px) {
-              // Remove leading chars until it fits
-              // Use a simple loop; text lengths are small here
-              size_t start = 0;
-              // To avoid O(n^2) worst-case, remove chunks
-              while (start < tail.size()) {
-                  // Estimate how many chars to skip based on ratio
-                  float ratio = tail_sz.x / avail_px;
-                  size_t skip = ratio > 1.5f ? std::min(tail.size() - start, (size_t)std::max<size_t>(1, (size_t)(tail.size() / 4))) : 1;
-                  start += skip;
-                  std::string candidate = tail.substr(start);
-                  ImVec2 cand_sz = ImGui::CalcTextSize(candidate.c_str());
-                  if (cand_sz.x <= avail_px) {
-                      tail = candidate;
-                      tail_sz = cand_sz;
-                      break;
-                  }
-              }
-              if (ImGui::CalcTextSize(tail.c_str()).x > avail_px && !tail.empty()) {
-                  // As a last resort, ensure fit by chopping exactly
-                  // binary reduce
-                  size_t lo = 0, hi = tail.size();
-                  while (lo < hi) {
-                      size_t mid = (lo + hi) / 2;
-                      std::string cand = tail.substr(mid);
-                      if (ImGui::CalcTextSize(cand.c_str()).x <= avail_px) hi = mid; else lo = mid + 1;
-                  }
-                  tail = tail.substr(lo);
-              }
-          }
-          final_msg = prefix + tail;
-      } else {
-          final_msg = prefix + ptext;
-      }
-
-      ImVec2 msg_sz = ImGui::CalcTextSize(final_msg.c_str());
-      ImGui::PushClipRect(ImVec2(p0.x, p0.y), ImVec2(p1.x, p1.y), true);
-      ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - msg_sz.y) * 0.5f));
-      ImGui::TextUnformatted(final_msg.c_str());
-      ImGui::PopClipRect();
-      // Advance cursor to after the bar to keep layout consistent
-      ImGui::Dummy(ImVec2(x1 - x0, bar_h));
-  } else {
-  // Build left text
-  std::string left;
-  left.reserve(256);
-  left += "kge"; // GUI app name
-  left += " ";
-  left += KTE_VERSION_STR;
-		std::string fname;
-		try {
-			fname = ed.DisplayNameFor(*buf);
-		} catch (...) {
-			fname = buf->Filename();
-			try {
-				fname = std::filesystem::path(fname).filename().string();
-			} catch (...) {}
-		}
-		left += "  ";
-		// Insert buffer position prefix "[x/N] " before filename
-		{
-			std::size_t total = ed.BufferCount();
-			if (total > 0) {
-				std::size_t idx1 = ed.CurrentBufferIndex() + 1; // 1-based for display
-				left += "[";
-				left += std::to_string(static_cast<unsigned long long>(idx1));
-				left += "/";
-				left += std::to_string(static_cast<unsigned long long>(total));
-				left += "] ";
-			}
-		}
-		left += fname;
-		if (buf->Dirty())
-			left += " *";
-		// Append total line count as "<n>L"
-		{
-			unsigned long lcount = static_cast<unsigned long>(buf->Rows().size());
-			left += " ";
-			left += std::to_string(lcount);
-			left += "L";
-		}
-
-		// Build right text (cursor/mark)
-		int row1       = static_cast<int>(buf->Cury()) + 1;
-		int col1       = static_cast<int>(buf->Curx()) + 1;
-		bool have_mark = buf->MarkSet();
-		int mrow1      = have_mark ? static_cast<int>(buf->MarkCury()) + 1 : 0;
-		int mcol1      = have_mark ? static_cast<int>(buf->MarkCurx()) + 1 : 0;
-		char rbuf[128];
-		if (have_mark)
-			std::snprintf(rbuf, sizeof(rbuf), "%d,%d | M: %d,%d", row1, col1, mrow1, mcol1);
-		else
-			std::snprintf(rbuf, sizeof(rbuf), "%d,%d | M: not set", row1, col1);
-		std::string right = rbuf;
-
-		// Middle message: if a prompt is active, show "Label: text"; otherwise show status
-		std::string msg;
+		// Compute full content width and draw a filled background rectangle
+		ImVec2 win_pos = ImGui::GetWindowPos();
+		ImVec2 cr_min  = ImGui::GetWindowContentRegionMin();
+		ImVec2 cr_max  = ImGui::GetWindowContentRegionMax();
+		float x0       = win_pos.x + cr_min.x;
+		float x1       = win_pos.x + cr_max.x;
+		ImVec2 cursor  = ImGui::GetCursorScreenPos();
+		float bar_h    = ImGui::GetFrameHeight();
+		ImVec2 p0(x0, cursor.y);
+		ImVec2 p1(x1, cursor.y + bar_h);
+		ImU32 bg_col = ImGui::GetColorU32(ImGuiCol_HeaderActive);
+		ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, bg_col);
+		// If a prompt is active, replace the entire status bar with the prompt text
 		if (ed.PromptActive()) {
-			msg = ed.PromptLabel();
-			if (!msg.empty())
-				msg += ": ";
-			msg += ed.PromptText();
-		} else {
-			msg = ed.Status();
-		}
+			std::string label = ed.PromptLabel();
+			std::string ptext = ed.PromptText();
+			auto kind         = ed.CurrentPromptKind();
+			if (kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs ||
+			    kind == Editor::PromptKind::Chdir) {
+				const char *home_c = std::getenv("HOME");
+				if (home_c && *home_c) {
+					std::string home(home_c);
+					if (ptext.rfind(home, 0) == 0) {
+						std::string rest = ptext.substr(home.size());
+						if (rest.empty())
+							ptext = "~";
+						else if (!rest.empty() && (rest[0] == '/' || rest[0] == '\\'))
+							ptext = std::string("~") + rest;
+					}
+				}
+			}
 
-		// Measurements
-		ImVec2 left_sz  = ImGui::CalcTextSize(left.c_str());
-		ImVec2 right_sz = ImGui::CalcTextSize(right.c_str());
-		float pad       = 6.f;
-		float left_x    = p0.x + pad;
-		float right_x   = p1.x - pad - right_sz.x;
-		if (right_x < left_x + left_sz.x + pad) {
-			// Not enough room; clip left to fit
-			float max_left = std::max(0.0f, right_x - left_x - pad);
-			if (max_left < left_sz.x && max_left > 10.0f) {
-				// Render a clipped left using a child region
+			float pad     = 6.f;
+			float left_x  = p0.x + pad;
+			float right_x = p1.x - pad;
+			float max_px  = std::max(0.0f, right_x - left_x);
+
+			std::string prefix;
+			if (kind == Editor::PromptKind::Command) {
+				prefix = ": ";
+			} else if (!label.empty()) {
+				prefix = label + ": ";
+			}
+
+			// Compose showing right-end of filename portion when too long for space
+			std::string final_msg;
+			ImVec2 prefix_sz = ImGui::CalcTextSize(prefix.c_str());
+			float avail_px   = std::max(0.0f, max_px - prefix_sz.x);
+			if ((kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs || kind ==
+			     Editor::PromptKind::Chdir) && avail_px > 0.0f) {
+				// Trim from left until it fits by pixel width
+				std::string tail = ptext;
+				ImVec2 tail_sz   = ImGui::CalcTextSize(tail.c_str());
+				if (tail_sz.x > avail_px) {
+					// Remove leading chars until it fits
+					// Use a simple loop; text lengths are small here
+					size_t start = 0;
+					// To avoid O(n^2) worst-case, remove chunks
+					while (start < tail.size()) {
+						// Estimate how many chars to skip based on ratio
+						float ratio = tail_sz.x / avail_px;
+						size_t skip = ratio > 1.5f
+							              ? std::min(tail.size() - start,
+								              (size_t) std::max<size_t>(
+									              1, (size_t) (tail.size() / 4)))
+							              : 1;
+						start += skip;
+						std::string candidate = tail.substr(start);
+						ImVec2 cand_sz        = ImGui::CalcTextSize(candidate.c_str());
+						if (cand_sz.x <= avail_px) {
+							tail    = candidate;
+							tail_sz = cand_sz;
+							break;
+						}
+					}
+					if (ImGui::CalcTextSize(tail.c_str()).x > avail_px && !tail.empty()) {
+						// As a last resort, ensure fit by chopping exactly
+						// binary reduce
+						size_t lo = 0, hi = tail.size();
+						while (lo < hi) {
+							size_t mid       = (lo + hi) / 2;
+							std::string cand = tail.substr(mid);
+							if (ImGui::CalcTextSize(cand.c_str()).x <= avail_px)
+								hi = mid;
+							else
+								lo = mid + 1;
+						}
+						tail = tail.substr(lo);
+					}
+				}
+				final_msg = prefix + tail;
+			} else {
+				final_msg = prefix + ptext;
+			}
+
+			ImVec2 msg_sz = ImGui::CalcTextSize(final_msg.c_str());
+			ImGui::PushClipRect(ImVec2(p0.x, p0.y), ImVec2(p1.x, p1.y), true);
+			ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - msg_sz.y) * 0.5f));
+			ImGui::TextUnformatted(final_msg.c_str());
+			ImGui::PopClipRect();
+			// Advance cursor to after the bar to keep layout consistent
+			ImGui::Dummy(ImVec2(x1 - x0, bar_h));
+		} else {
+			// Build left text
+			std::string left;
+			left.reserve(256);
+			left += "kge"; // GUI app name
+			left += " ";
+			left += KTE_VERSION_STR;
+			std::string fname;
+			try {
+				fname = ed.DisplayNameFor(*buf);
+			} catch (...) {
+				fname = buf->Filename();
+				try {
+					fname = std::filesystem::path(fname).filename().string();
+				} catch (...) {}
+			}
+			left += "  ";
+			// Insert buffer position prefix "[x/N] " before filename
+			{
+				std::size_t total = ed.BufferCount();
+				if (total > 0) {
+					std::size_t idx1 = ed.CurrentBufferIndex() + 1; // 1-based for display
+					left += "[";
+					left += std::to_string(static_cast<unsigned long long>(idx1));
+					left += "/";
+					left += std::to_string(static_cast<unsigned long long>(total));
+					left += "] ";
+				}
+			}
+			left += fname;
+			if (buf->Dirty())
+				left += " *";
+			// Append total line count as "<n>L"
+			{
+				unsigned long lcount = static_cast<unsigned long>(buf->Rows().size());
+				left += " ";
+				left += std::to_string(lcount);
+				left += "L";
+			}
+
+			// Build right text (cursor/mark)
+			int row1       = static_cast<int>(buf->Cury()) + 1;
+			int col1       = static_cast<int>(buf->Curx()) + 1;
+			bool have_mark = buf->MarkSet();
+			int mrow1      = have_mark ? static_cast<int>(buf->MarkCury()) + 1 : 0;
+			int mcol1      = have_mark ? static_cast<int>(buf->MarkCurx()) + 1 : 0;
+			char rbuf[128];
+			if (have_mark)
+				std::snprintf(rbuf, sizeof(rbuf), "%d,%d | M: %d,%d", row1, col1, mrow1, mcol1);
+			else
+				std::snprintf(rbuf, sizeof(rbuf), "%d,%d | M: not set", row1, col1);
+			std::string right = rbuf;
+
+			// Middle message: if a prompt is active, show "Label: text"; otherwise show status
+			std::string msg;
+			if (ed.PromptActive()) {
+				msg = ed.PromptLabel();
+				if (!msg.empty())
+					msg += ": ";
+				msg += ed.PromptText();
+			} else {
+				msg = ed.Status();
+			}
+
+			// Measurements
+			ImVec2 left_sz  = ImGui::CalcTextSize(left.c_str());
+			ImVec2 right_sz = ImGui::CalcTextSize(right.c_str());
+			float pad       = 6.f;
+			float left_x    = p0.x + pad;
+			float right_x   = p1.x - pad - right_sz.x;
+			if (right_x < left_x + left_sz.x + pad) {
+				// Not enough room; clip left to fit
+				float max_left = std::max(0.0f, right_x - left_x - pad);
+				if (max_left < left_sz.x && max_left > 10.0f) {
+					// Render a clipped left using a child region
+					ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - left_sz.y) * 0.5f));
+					ImGui::PushClipRect(ImVec2(left_x, p0.y), ImVec2(right_x - pad, p1.y), true);
+					ImGui::TextUnformatted(left.c_str());
+					ImGui::PopClipRect();
+				}
+			} else {
+				// Draw left normally
 				ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - left_sz.y) * 0.5f));
-				ImGui::PushClipRect(ImVec2(left_x, p0.y), ImVec2(right_x - pad, p1.y), true);
 				ImGui::TextUnformatted(left.c_str());
-				ImGui::PopClipRect();
 			}
-		} else {
-			// Draw left normally
-			ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - left_sz.y) * 0.5f));
-			ImGui::TextUnformatted(left.c_str());
-		}
 
-		// Draw right
-		ImGui::SetCursorScreenPos(ImVec2(std::max(right_x, left_x), p0.y + (bar_h - right_sz.y) * 0.5f));
-		ImGui::TextUnformatted(right.c_str());
+			// Draw right
+			ImGui::SetCursorScreenPos(ImVec2(std::max(right_x, left_x),
+			                                 p0.y + (bar_h - right_sz.y) * 0.5f));
+			ImGui::TextUnformatted(right.c_str());
 
-		// Draw middle message centered in remaining space
-		if (!msg.empty()) {
-			float mid_left  = left_x + left_sz.x + pad;
-			float mid_right = std::max(right_x - pad, mid_left);
-			float mid_w     = std::max(0.0f, mid_right - mid_left);
-			if (mid_w > 1.0f) {
-				ImVec2 msg_sz = ImGui::CalcTextSize(msg.c_str());
-				float msg_x   = mid_left + std::max(0.0f, (mid_w - msg_sz.x) * 0.5f);
-				// Clip to middle region
-				ImGui::PushClipRect(ImVec2(mid_left, p0.y), ImVec2(mid_right, p1.y), true);
-				ImGui::SetCursorScreenPos(ImVec2(msg_x, p0.y + (bar_h - msg_sz.y) * 0.5f));
-				ImGui::TextUnformatted(msg.c_str());
-				ImGui::PopClipRect();
+			// Draw middle message centered in remaining space
+			if (!msg.empty()) {
+				float mid_left  = left_x + left_sz.x + pad;
+				float mid_right = std::max(right_x - pad, mid_left);
+				float mid_w     = std::max(0.0f, mid_right - mid_left);
+				if (mid_w > 1.0f) {
+					ImVec2 msg_sz = ImGui::CalcTextSize(msg.c_str());
+					float msg_x   = mid_left + std::max(0.0f, (mid_w - msg_sz.x) * 0.5f);
+					// Clip to middle region
+					ImGui::PushClipRect(ImVec2(mid_left, p0.y), ImVec2(mid_right, p1.y), true);
+					ImGui::SetCursorScreenPos(ImVec2(msg_x, p0.y + (bar_h - msg_sz.y) * 0.5f));
+					ImGui::TextUnformatted(msg.c_str());
+					ImGui::PopClipRect();
+				}
 			}
+			// Advance cursor to after the bar to keep layout consistent
+			ImGui::Dummy(ImVec2(x1 - x0, bar_h));
 		}
-  // Advance cursor to after the bar to keep layout consistent
-  ImGui::Dummy(ImVec2(x1 - x0, bar_h));
-  }
 	}
 
 	ImGui::End();

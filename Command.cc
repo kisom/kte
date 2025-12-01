@@ -4,12 +4,16 @@
 #include <regex>
 #include <fstream>
 #include <sstream>
+#include <cctype>
 
 #include "Command.h"
 #include "Editor.h"
 #include "Buffer.h"
 #include "UndoSystem.h"
 #include "HelpText.h"
+#ifdef KTE_BUILD_GUI
+#include "GUITheme.h"
+#endif
 
 
 // Keep buffer viewport offsets so that the cursor stays within the visible
@@ -64,9 +68,9 @@ ensure_cursor_visible(const Editor &ed, Buffer &buf)
 	// Horizontal scrolling (use rendered columns with tabs expanded)
 	std::size_t rx    = 0;
 	const auto &lines = buf.Rows();
- if (cury < lines.size()) {
-        rx = compute_render_x(static_cast<std::string>(lines[cury]), curx, 8);
-    }
+	if (cury < lines.size()) {
+		rx = compute_render_x(static_cast<std::string>(lines[cury]), curx, 8);
+	}
 	if (rx < coloffs) {
 		coloffs = rx;
 	} else if (rx >= coloffs + cols) {
@@ -87,29 +91,31 @@ ensure_at_least_one_line(Buffer &buf)
 	}
 }
 
+
 // Determine if a command mutates the buffer contents (text edits)
-static bool is_mutating_command(CommandId id)
+static bool
+is_mutating_command(CommandId id)
 {
-    switch (id) {
-    case CommandId::InsertText:
-    case CommandId::Newline:
-    case CommandId::Backspace:
-    case CommandId::DeleteChar:
-    case CommandId::KillToEOL:
-    case CommandId::KillLine:
-    case CommandId::Yank:
-    case CommandId::DeleteWordPrev:
-    case CommandId::DeleteWordNext:
-    case CommandId::IndentRegion:
-    case CommandId::UnindentRegion:
-    case CommandId::ReflowParagraph:
-    case CommandId::KillRegion:
-    case CommandId::Undo:
-    case CommandId::Redo:
-        return true;
-    default:
-        return false;
-    }
+	switch (id) {
+	case CommandId::InsertText:
+	case CommandId::Newline:
+	case CommandId::Backspace:
+	case CommandId::DeleteChar:
+	case CommandId::KillToEOL:
+	case CommandId::KillLine:
+	case CommandId::Yank:
+	case CommandId::DeleteWordPrev:
+	case CommandId::DeleteWordNext:
+	case CommandId::IndentRegion:
+	case CommandId::UnindentRegion:
+	case CommandId::ReflowParagraph:
+	case CommandId::KillRegion:
+	case CommandId::Undo:
+	case CommandId::Redo:
+		return true;
+	default:
+		return false;
+	}
 }
 
 
@@ -154,32 +160,32 @@ compute_mark_region(Buffer &buf, std::size_t &sx, std::size_t &sy, std::size_t &
 static std::string
 extract_region_text(const Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::size_t ey)
 {
- const auto &rows = buf.Rows();
+	const auto &rows = buf.Rows();
 	if (sy >= rows.size())
 		return std::string();
 	if (ey >= rows.size())
 		ey = rows.size() - 1;
- if (sy == ey) {
-        const auto &line = rows[sy];
-        std::size_t xs   = std::min(sx, line.size());
-        std::size_t xe   = std::min(ex, line.size());
-        if (xe < xs)
-            std::swap(xs, xe);
-        return line.substr(xs, xe - xs);
-    }
-    std::string out;
-    // first line tail
-    {
-        const auto &line = rows[sy];
-        std::size_t xs   = std::min(sx, line.size());
-        out += line.substr(xs);
-        out += '\n';
-    }
-    // middle lines full
-    for (std::size_t y = sy + 1; y < ey; ++y) {
-        out += static_cast<std::string>(rows[y]);
-        out += '\n';
-    }
+	if (sy == ey) {
+		const auto &line = rows[sy];
+		std::size_t xs   = std::min(sx, line.size());
+		std::size_t xe   = std::min(ex, line.size());
+		if (xe < xs)
+			std::swap(xs, xe);
+		return line.substr(xs, xe - xs);
+	}
+	std::string out;
+	// first line tail
+	{
+		const auto &line = rows[sy];
+		std::size_t xs   = std::min(sx, line.size());
+		out += line.substr(xs);
+		out += '\n';
+	}
+	// middle lines full
+	for (std::size_t y = sy + 1; y < ey; ++y) {
+		out += static_cast<std::string>(rows[y]);
+		out += '\n';
+	}
 	// last line head
 	{
 		const auto &line = rows[ey];
@@ -267,7 +273,7 @@ insert_text_at_cursor(Buffer &buf, const std::string &text)
 		std::string after = rows[cur_y].substr(cur_x);
 		rows[cur_y].erase(cur_x);
 		// create new line after current with the 'after' tail
-  rows.insert(rows.begin() + static_cast<std::ptrdiff_t>(cur_y + 1), Buffer::Line(after));
+		rows.insert(rows.begin() + static_cast<std::ptrdiff_t>(cur_y + 1), Buffer::Line(after));
 		// move to start of next line
 		cur_y += 1;
 		cur_x = 0;
@@ -356,11 +362,11 @@ cmd_move_cursor_to(CommandContext &ctx)
 					}
 					if (by >= lines2.size())
 						by = lines2.size() - 1;
-     std::string line2 = static_cast<std::string>(lines2[by]);
-					std::size_t rx_target    = bco + vx;
-					std::size_t sx           = inverse_render_to_source_col(line2, rx_target, 8);
-					row                      = by;
-					col                      = sx;
+					std::string line2     = static_cast<std::string>(lines2[by]);
+					std::size_t rx_target = bco + vx;
+					std::size_t sx        = inverse_render_to_source_col(line2, rx_target, 8);
+					row                   = by;
+					col                   = sx;
 				} else {
 					row = static_cast<std::size_t>(ay);
 					col = static_cast<std::size_t>(ax);
@@ -376,7 +382,7 @@ cmd_move_cursor_to(CommandContext &ctx)
 	}
 	if (row >= lines.size())
 		row = lines.size() - 1;
- std::string line = static_cast<std::string>(lines[row]);
+	std::string line = static_cast<std::string>(lines[row]);
 	if (col > line.size())
 		col = line.size();
 	buf->SetCursor(col, row);
@@ -393,14 +399,14 @@ search_compute_matches(const Buffer &buf, const std::string &q)
 	if (q.empty())
 		return out;
 	const auto &rows = buf.Rows();
- for (std::size_t y = 0; y < rows.size(); ++y) {
-        std::string line = static_cast<std::string>(rows[y]);
-        std::size_t pos         = 0;
-        while (!q.empty() && (pos = line.find(q, pos)) != std::string::npos) {
-            out.emplace_back(y, pos);
-            pos += q.size();
-        }
-    }
+	for (std::size_t y = 0; y < rows.size(); ++y) {
+		std::string line = static_cast<std::string>(rows[y]);
+		std::size_t pos  = 0;
+		while (!q.empty() && (pos = line.find(q, pos)) != std::string::npos) {
+			out.emplace_back(y, pos);
+			pos += q.size();
+		}
+	}
 	return out;
 }
 
@@ -423,16 +429,16 @@ search_compute_matches_regex(const Buffer &buf, const std::string &pattern, std:
 	try {
 		const std::regex rx(pattern);
 		const auto &rows = buf.Rows();
-  for (std::size_t y = 0; y < rows.size(); ++y) {
-            std::string line = static_cast<std::string>(rows[y]);
-            for (auto it = std::sregex_iterator(line.begin(), line.end(), rx);
-                 it != std::sregex_iterator(); ++it) {
-                const auto &m = *it;
-                out.push_back(RegexMatch{
-                    y, static_cast<std::size_t>(m.position()), static_cast<std::size_t>(m.length())
-                });
-            }
-        }
+		for (std::size_t y = 0; y < rows.size(); ++y) {
+			std::string line = static_cast<std::string>(rows[y]);
+			for (auto it = std::sregex_iterator(line.begin(), line.end(), rx);
+			     it != std::sregex_iterator(); ++it) {
+				const auto &m = *it;
+				out.push_back(RegexMatch{
+					y, static_cast<std::size_t>(m.position()), static_cast<std::size_t>(m.length())
+				});
+			}
+		}
 	} catch (const std::regex_error &e) {
 		err_out = e.what();
 		// Return empty results on error
@@ -670,7 +676,7 @@ static bool
 cmd_refresh(CommandContext &ctx)
 {
 	// If a generic prompt is active, cancel it
- if (ctx.editor.PromptActive()) {
+	if (ctx.editor.PromptActive()) {
 		// If also in search mode, restore state
 		if (ctx.editor.SearchActive()) {
 			Buffer *buf = ctx.editor.CurrentBuffer();
@@ -723,6 +729,21 @@ cmd_kprefix(CommandContext &ctx)
 }
 
 
+// Start generic command prompt (": ")
+static bool
+cmd_command_prompt_start(const CommandContext &ctx)
+{
+	// Close any pending edit batch before entering prompt
+	if (Buffer *b = ctx.editor.CurrentBuffer()) {
+		if (auto *u = b->Undo())
+			u->commit();
+	}
+	ctx.editor.StartPrompt(Editor::PromptKind::Command, "", "");
+	ctx.editor.SetStatus(": ");
+	return true;
+}
+
+
 static bool
 cmd_unknown_kcommand(CommandContext &ctx)
 {
@@ -737,8 +758,135 @@ cmd_unknown_kcommand(CommandContext &ctx)
 }
 
 
+// GUI theme cycling commands (available in GUI build; show message otherwise)
+#ifdef KTE_BUILD_GUI
 static bool
-cmd_find_start(CommandContext &ctx)
+cmd_theme_next(CommandContext &ctx)
+{
+	auto id = kte::NextTheme();
+	ctx.editor.SetStatus(std::string("Theme: ") + kte::ThemeName(id));
+	return true;
+}
+
+
+static bool
+cmd_theme_prev(CommandContext &ctx)
+{
+	auto id = kte::PrevTheme();
+	ctx.editor.SetStatus(std::string("Theme: ") + kte::ThemeName(id));
+	return true;
+}
+#else
+static bool
+cmd_theme_next(CommandContext &ctx)
+{
+	ctx.editor.SetStatus("Theme switching only available in GUI build");
+	return true;
+}
+
+static bool
+cmd_theme_prev(CommandContext &ctx)
+{
+	ctx.editor.SetStatus("Theme switching only available in GUI build");
+	return true;
+}
+#endif
+
+
+// Theme set by name command
+#ifdef KTE_BUILD_GUI
+static bool
+cmd_theme_set_by_name(const CommandContext &ctx)
+{
+	std::string name = ctx.arg;
+	// trim spaces
+	auto ltrim = [](std::string &s) {
+		s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}));
+	};
+	auto rtrim = [](std::string &s) {
+		s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}).base(), s.end());
+	};
+	ltrim(name);
+	rtrim(name);
+	if (name.empty()) {
+		ctx.editor.SetStatus("theme: missing name");
+		return true;
+	}
+	if (kte::ApplyThemeByName(name)) {
+		ctx.editor.SetStatus(
+			std::string("Theme: ") + name + std::string(" (bg: ") + kte::BackgroundModeName() + ")");
+	} else {
+		// Build list of available themes
+		const auto &reg = kte::ThemeRegistry();
+		std::string avail;
+		for (size_t i = 0; i < reg.size(); ++i) {
+			if (i)
+				avail += ", ";
+			avail += reg[i]->Name();
+		}
+		ctx.editor.SetStatus(std::string("Unknown theme; available: ") + avail);
+	}
+	return true;
+}
+#else
+static bool
+cmd_theme_set_by_name(CommandContext &ctx)
+{
+	(void) ctx;
+	// No-op in terminal build
+	return true;
+}
+#endif
+
+
+// Background set command (GUI)
+#ifdef KTE_BUILD_GUI
+static bool
+cmd_background_set(const CommandContext &ctx)
+{
+	std::string mode = ctx.arg;
+	// trim
+	auto ltrim = [](std::string &s) {
+		s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}));
+	};
+	auto rtrim = [](std::string &s) {
+		s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}).base(), s.end());
+	};
+	ltrim(mode);
+	rtrim(mode);
+	std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char c) {
+		return (char) std::tolower(c);
+	});
+	if (mode != "light" && mode != "dark") {
+		ctx.editor.SetStatus("background: expected 'light' or 'dark'");
+		return true;
+	}
+	kte::SetBackgroundMode(mode == "light" ? kte::BackgroundMode::Light : kte::BackgroundMode::Dark);
+	// Re-apply current theme to reflect background change
+	kte::ApplyThemeByName(kte::CurrentThemeName());
+	ctx.editor.SetStatus(std::string("Background: ") + mode + std::string("; Theme: ") + kte::CurrentThemeName());
+	return true;
+}
+#else
+static bool
+cmd_background_set(CommandContext &ctx)
+{
+	(void) ctx;
+	return true;
+}
+#endif
+
+
+static bool
+cmd_find_start(const CommandContext &ctx)
 {
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf) {
@@ -761,7 +909,7 @@ cmd_find_start(CommandContext &ctx)
 
 
 static bool
-cmd_regex_find_start(CommandContext &ctx)
+cmd_regex_find_start(const CommandContext &ctx)
 {
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf) {
@@ -784,7 +932,7 @@ cmd_regex_find_start(CommandContext &ctx)
 
 
 static bool
-cmd_search_replace_start(CommandContext &ctx)
+cmd_search_replace_start(const CommandContext &ctx)
 {
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf) {
@@ -808,31 +956,31 @@ cmd_search_replace_start(CommandContext &ctx)
 
 
 static bool
-cmd_regex_replace_start(CommandContext &ctx)
+cmd_regex_replace_start(const CommandContext &ctx)
 {
-    Buffer *buf = ctx.editor.CurrentBuffer();
-    if (!buf) {
-        ctx.editor.SetStatus("No buffer to search");
-        return false;
-    }
-    // Save original cursor/viewport to restore on cancel
-    ctx.editor.SetSearchOrigin(buf->Curx(), buf->Cury(), buf->Rowoffs(), buf->Coloffs());
-    // Enter search-highlighting mode for the find step (regex)
-    ctx.editor.SetSearchActive(true);
-    ctx.editor.SetSearchQuery("");
-    ctx.editor.SetSearchMatch(0, 0, 0);
-    ctx.editor.SetSearchIndex(-1);
-    // Two-step prompt: first collect regex find pattern, then replacement
-    ctx.editor.SetReplaceFindTmp("");
-    ctx.editor.SetReplaceWithTmp("");
-    ctx.editor.StartPrompt(Editor::PromptKind::RegexReplaceFind, "Regex replace: find", "");
-    ctx.editor.SetStatus("Regex replace: find: ");
-    return true;
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf) {
+		ctx.editor.SetStatus("No buffer to search");
+		return false;
+	}
+	// Save original cursor/viewport to restore on cancel
+	ctx.editor.SetSearchOrigin(buf->Curx(), buf->Cury(), buf->Rowoffs(), buf->Coloffs());
+	// Enter search-highlighting mode for the find step (regex)
+	ctx.editor.SetSearchActive(true);
+	ctx.editor.SetSearchQuery("");
+	ctx.editor.SetSearchMatch(0, 0, 0);
+	ctx.editor.SetSearchIndex(-1);
+	// Two-step prompt: first collect regex find pattern, then replacement
+	ctx.editor.SetReplaceFindTmp("");
+	ctx.editor.SetReplaceWithTmp("");
+	ctx.editor.StartPrompt(Editor::PromptKind::RegexReplaceFind, "Regex replace: find", "");
+	ctx.editor.SetStatus("Regex replace: find: ");
+	return true;
 }
 
 
 static bool
-cmd_open_file_start(CommandContext &ctx)
+cmd_open_file_start(const CommandContext &ctx)
 {
 	// Start a generic prompt to read a path
 	ctx.editor.StartPrompt(Editor::PromptKind::OpenFile, "Open", "");
@@ -843,7 +991,7 @@ cmd_open_file_start(CommandContext &ctx)
 
 // GUI: toggle visual file picker (no-op in terminal; renderer will consume flag)
 static bool
-cmd_visual_file_picker_toggle(CommandContext &ctx)
+cmd_visual_file_picker_toggle(const CommandContext &ctx)
 {
 	// Toggle visibility
 	bool show = !ctx.editor.FilePickerVisible();
@@ -866,7 +1014,7 @@ cmd_visual_file_picker_toggle(CommandContext &ctx)
 
 
 static bool
-cmd_jump_to_line_start(CommandContext &ctx)
+cmd_jump_to_line_start(const CommandContext &ctx)
 {
 	// Start a prompt to read a 1-based line number and jump there (clamped)
 	ctx.editor.StartPrompt(Editor::PromptKind::GotoLine, "Goto", "");
@@ -877,7 +1025,7 @@ cmd_jump_to_line_start(CommandContext &ctx)
 
 // --- Buffers: switch/next/prev/close ---
 static bool
-cmd_buffer_switch_start(CommandContext &ctx)
+cmd_buffer_switch_start(const CommandContext &ctx)
 {
 	// If only one (or zero) buffer is open, do nothing per spec
 	if (ctx.editor.BufferCount() <= 1) {
@@ -895,7 +1043,7 @@ buffer_display_name(const Buffer &b)
 {
 	if (!b.Filename().empty())
 		return b.Filename();
-	return std::string("<untitled>");
+	return {"<untitled>"};
 }
 
 
@@ -904,7 +1052,7 @@ buffer_basename(const Buffer &b)
 {
 	const std::string &p = b.Filename();
 	if (p.empty())
-		return std::string("<untitled>");
+		return {"<untitled>"};
 	auto pos = p.find_last_of("/\\");
 	if (pos == std::string::npos)
 		return p;
@@ -913,7 +1061,7 @@ buffer_basename(const Buffer &b)
 
 
 static bool
-cmd_buffer_next(CommandContext &ctx)
+cmd_buffer_next(const CommandContext &ctx)
 {
 	const auto cnt = ctx.editor.BufferCount();
 	if (cnt <= 1) {
@@ -930,7 +1078,7 @@ cmd_buffer_next(CommandContext &ctx)
 
 
 static bool
-cmd_buffer_prev(CommandContext &ctx)
+cmd_buffer_prev(const CommandContext &ctx)
 {
 	const auto cnt = ctx.editor.BufferCount();
 	if (cnt <= 1) {
@@ -947,7 +1095,7 @@ cmd_buffer_prev(CommandContext &ctx)
 
 
 static bool
-cmd_buffer_close(CommandContext &ctx)
+cmd_buffer_close(const CommandContext &ctx)
 {
 	if (ctx.editor.BufferCount() == 0)
 		return true;
@@ -1116,38 +1264,117 @@ cmd_insert_text(CommandContext &ctx)
 				ctx.editor.SetStatus(ctx.editor.PromptLabel() + ": " + ctx.editor.PromptText());
 				return true;
 			}
+
+			// Generic command prompt completion
+			if (kind == Editor::PromptKind::Command) {
+				std::string text = ctx.editor.PromptText();
+				// Split into command and arg prefix
+				auto sp = text.find(' ');
+				if (sp == std::string::npos) {
+					// complete command name from public commands
+					std::string prefix = text;
+					std::vector<std::string> names;
+					for (const auto &c: CommandRegistry::All()) {
+						if (c.isPublic) {
+							if (prefix.empty() || c.name.rfind(prefix, 0) == 0)
+								names.push_back(c.name);
+						}
+					}
+					if (names.empty()) {
+						// no change
+					} else if (names.size() == 1) {
+						ctx.editor.SetPromptText(names[0]);
+					} else {
+						// compute LCP
+						std::string lcp = names[0];
+						for (size_t i = 1; i < names.size(); ++i) {
+							const std::string &s = names[i];
+							size_t j             = 0;
+							while (j < lcp.size() && j < s.size() && lcp[j] == s[j])
+								++j;
+							lcp.resize(j);
+							if (lcp.empty())
+								break;
+						}
+						if (!lcp.empty() && lcp != text)
+							ctx.editor.SetPromptText(lcp);
+					}
+					ctx.editor.SetStatus(std::string(": ") + ctx.editor.PromptText());
+					return true;
+				} else {
+					std::string cmd       = text.substr(0, sp);
+					std::string argprefix = text.substr(sp + 1);
+					// Only special-case argument completion for certain commands
+					if (cmd == "theme") {
+#ifdef KTE_BUILD_GUI
+						std::vector<std::string> cands;
+						const auto &reg = kte::ThemeRegistry();
+						for (const auto &t: reg) {
+							std::string n = t->Name();
+							if (argprefix.empty() || n.rfind(argprefix, 0) == 0)
+								cands.push_back(n);
+						}
+						if (cands.empty()) {
+							// no change
+						} else if (cands.size() == 1) {
+							ctx.editor.SetPromptText(cmd + std::string(" ") + cands[0]);
+						} else {
+							std::string lcp = cands[0];
+							for (size_t i = 1; i < cands.size(); ++i) {
+								const std::string &s = cands[i];
+								size_t j             = 0;
+								while (j < lcp.size() && j < s.size() && lcp[j] == s[j])
+									++j;
+								lcp.resize(j);
+								if (lcp.empty())
+									break;
+							}
+							if (!lcp.empty() && lcp != argprefix)
+								ctx.editor.SetPromptText(cmd + std::string(" ") + lcp);
+						}
+						ctx.editor.SetStatus(std::string(": ") + ctx.editor.PromptText());
+						return true;
+#else
+						(void) argprefix; // no completion in non-GUI build
+#endif
+					}
+					// default: no special arg completion
+					ctx.editor.SetStatus(std::string(": ") + ctx.editor.PromptText());
+					return true;
+				}
+			}
 		}
 
 		ctx.editor.AppendPromptText(ctx.arg);
 		// If it's a search prompt, mirror text to search state
-  if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search ||
-      ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
-      ctx.editor.CurrentPromptKind() == Editor::PromptKind::ReplaceFind ||
-      ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind) {
-      ctx.editor.SetSearchQuery(ctx.editor.PromptText());
-      if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
-          ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind) {
-          std::string err;
-          auto rmatches = search_compute_matches_regex(*buf, ctx.editor.SearchQuery(), err);
-          if (!err.empty()) {
-              ctx.editor.SetStatus(
-                  std::string("Regex: ") + ctx.editor.PromptText() + "  [error: " + err +
-                  "]");
-          }
-          if (ctx.editor.SearchIndex() >= static_cast<int>(rmatches.size()))
-              ctx.editor.SetSearchIndex(rmatches.empty() ? -1 : 0);
-          search_apply_match_regex(ctx.editor, *buf, rmatches);
-      } else {
-          auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
-          // Keep index stable unless out of range
-          if (ctx.editor.SearchIndex() >= static_cast<int>(matches.size()))
-              ctx.editor.SetSearchIndex(matches.empty() ? -1 : 0);
-          search_apply_match(ctx.editor, *buf, matches);
-      }
-  } else {
-      // For other prompts, just echo label:text in status
-      ctx.editor.SetStatus(ctx.editor.PromptLabel() + ": " + ctx.editor.PromptText());
-  }
+		if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search ||
+		    ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
+		    ctx.editor.CurrentPromptKind() == Editor::PromptKind::ReplaceFind ||
+		    ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind) {
+			ctx.editor.SetSearchQuery(ctx.editor.PromptText());
+			if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
+			    ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind) {
+				std::string err;
+				auto rmatches = search_compute_matches_regex(*buf, ctx.editor.SearchQuery(), err);
+				if (!err.empty()) {
+					ctx.editor.SetStatus(
+						std::string("Regex: ") + ctx.editor.PromptText() + "  [error: " + err +
+						"]");
+				}
+				if (ctx.editor.SearchIndex() >= static_cast<int>(rmatches.size()))
+					ctx.editor.SetSearchIndex(rmatches.empty() ? -1 : 0);
+				search_apply_match_regex(ctx.editor, *buf, rmatches);
+			} else {
+				auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
+				// Keep index stable unless out of range
+				if (ctx.editor.SearchIndex() >= static_cast<int>(matches.size()))
+					ctx.editor.SetSearchIndex(matches.empty() ? -1 : 0);
+				search_apply_match(ctx.editor, *buf, matches);
+			}
+		} else {
+			// For other prompts, just echo label:text in status
+			ctx.editor.SetStatus(ctx.editor.PromptLabel() + ": " + ctx.editor.PromptText());
+		}
 		return true;
 	}
 	// If in search mode, treat printable input as query update
@@ -1161,8 +1388,8 @@ cmd_insert_text(CommandContext &ctx)
 		std::vector<std::pair<std::size_t, std::size_t> > matches;
 		if (!q.empty()) {
 			for (std::size_t y = 0; y < rows.size(); ++y) {
-    std::string line = static_cast<std::string>(rows[y]);
-				std::size_t pos         = 0;
+				std::string line = static_cast<std::string>(rows[y]);
+				std::size_t pos  = 0;
 				while (!q.empty() && (pos = line.find(q, pos)) != std::string::npos) {
 					matches.emplace_back(y, pos);
 					pos += q.size();
@@ -1223,18 +1450,19 @@ cmd_insert_text(CommandContext &ctx)
 	return true;
 }
 
+
 // Toggle read-only state of the current buffer
 static bool
 cmd_toggle_read_only(CommandContext &ctx)
 {
-    Buffer *buf = ctx.editor.CurrentBuffer();
-    if (!buf) {
-        ctx.editor.SetStatus("No buffer");
-        return false;
-    }
-    buf->ToggleReadOnly();
-    ctx.editor.SetStatus(std::string("Read-only: ") + (buf->IsReadOnly() ? "ON" : "OFF"));
-    return true;
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf) {
+		ctx.editor.SetStatus("No buffer");
+		return false;
+	}
+	buf->ToggleReadOnly();
+	ctx.editor.SetStatus(std::string("Read-only: ") + (buf->IsReadOnly() ? "ON" : "OFF"));
+	return true;
 }
 
 
@@ -1242,183 +1470,206 @@ cmd_toggle_read_only(CommandContext &ctx)
 static bool
 cmd_show_help(CommandContext &ctx)
 {
-    const std::string help_name = "+HELP+";
-    // Try to locate existing +HELP+ buffer
-    std::vector<Buffer> &bufs = ctx.editor.Buffers();
-    std::size_t help_index = static_cast<std::size_t>(-1);
-    for (std::size_t i = 0; i < bufs.size(); ++i) {
-        if (bufs[i].Filename() == help_name && !bufs[i].IsFileBacked()) {
-            help_index = i;
-            break;
-        }
-    }
+	const std::string help_name = "+HELP+";
+	// Try to locate existing +HELP+ buffer
+	std::vector<Buffer> &bufs = ctx.editor.Buffers();
+	std::size_t help_index    = static_cast<std::size_t>(-1);
+	for (std::size_t i = 0; i < bufs.size(); ++i) {
+		if (bufs[i].Filename() == help_name && !bufs[i].IsFileBacked()) {
+			help_index = i;
+			break;
+		}
+	}
 
-    auto roff_to_text = [](const std::string &in) -> std::string {
-        std::istringstream iss(in);
-        std::ostringstream out;
-        std::string line;
-        auto unquote = [](std::string s) {
-            if (!s.empty() && (s.front() == '"' || s.front() == '\'')) s.erase(s.begin());
-            if (!s.empty() && (s.back() == '"' || s.back() == '\'')) s.pop_back();
-            return s;
-        };
-        while (std::getline(iss, line)) {
-            if (line.rfind("'", 0) == 0) {
-                continue; // comment line
-            }
-            if (line.rfind(".", 0) == 0) {
-                // Macro line
-                std::istringstream ls(line);
-                std::string dot, macro;
-                ls >> dot >> macro;
-                if (macro == "TH" || macro == "SH") {
-                    std::string title;
-                    std::getline(ls, title);
-                    // trim leading spaces
-                    while (!title.empty() && (title.front() == ' ' || title.front() == '\t')) title.erase(title.begin());
-                    title = unquote(title);
-                    out << "\n\n";
-                    for (auto &c : title) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-                    out << title << "\n";
-                } else if (macro == "PP" || macro == "P" || macro == "TP") {
-                    out << "\n";
-                } else if (macro == "B" || macro == "I" || macro == "BR" || macro == "IR") {
-                    std::string rest;
-                    std::getline(ls, rest);
-                    while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t')) rest.erase(rest.begin());
-                    out << unquote(rest) << "\n";
-                } else if (macro == "nf" || macro == "fi") {
-                    // ignore fill mode toggles for now
-                } else {
-                    // Unhandled macro: ignore
-                }
-                continue;
-            }
-            // Regular text; apply minimal escape replacements
-            for (std::size_t i = 0; i < line.size(); ++i) {
-                if (line[i] == '\\') {
-                    if (i + 1 < line.size() && line[i + 1] == '-') { out << '-'; ++i; continue; }
-                    if (i + 3 < line.size() && line[i + 1] == '(') {
-                        std::string esc = line.substr(i + 2, 2);
-                        if (esc == "em") { out << "—"; i += 3; continue; }
-                        if (esc == "en") { out << "-"; i += 3; continue; }
-                    }
-                }
-                out << line[i];
-            }
-            out << "\n";
-        }
-        return out.str();
-    };
+	auto roff_to_text = [](const std::string &in) -> std::string {
+		std::istringstream iss(in);
+		std::ostringstream out;
+		std::string line;
+		auto unquote = [](std::string s) {
+			if (!s.empty() && (s.front() == '"' || s.front() == '\''))
+				s.erase(s.begin());
+			if (!s.empty() && (s.back() == '"' || s.back() == '\''))
+				s.pop_back();
+			return s;
+		};
+		while (std::getline(iss, line)) {
+			if (line.rfind("'", 0) == 0) {
+				continue; // comment line
+			}
+			if (line.rfind(".", 0) == 0) {
+				// Macro line
+				std::istringstream ls(line);
+				std::string dot, macro;
+				ls >> dot >> macro;
+				if (macro == "TH" || macro == "SH") {
+					std::string title;
+					std::getline(ls, title);
+					// trim leading spaces
+					while (!title.empty() && (title.front() == ' ' || title.front() == '\t'))
+						title.erase(title.begin());
+					title = unquote(title);
+					out << "\n\n";
+					for (auto &c: title)
+						c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+					out << title << "\n";
+				} else if (macro == "PP" || macro == "P" || macro == "TP") {
+					out << "\n";
+				} else if (macro == "B" || macro == "I" || macro == "BR" || macro == "IR") {
+					std::string rest;
+					std::getline(ls, rest);
+					while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t'))
+						rest.erase(rest.begin());
+					out << unquote(rest) << "\n";
+				} else if (macro == "nf" || macro == "fi") {
+					// ignore fill mode toggles for now
+				} else {
+					// Unhandled macro: ignore
+				}
+				continue;
+			}
+			// Regular text; apply minimal escape replacements
+			for (std::size_t i = 0; i < line.size(); ++i) {
+				if (line[i] == '\\') {
+					if (i + 1 < line.size() && line[i + 1] == '-') {
+						out << '-';
+						++i;
+						continue;
+					}
+					if (i + 3 < line.size() && line[i + 1] == '(') {
+						std::string esc = line.substr(i + 2, 2);
+						if (esc == "em") {
+							out << "—";
+							i += 3;
+							continue;
+						}
+						if (esc == "en") {
+							out << "-";
+							i += 3;
+							continue;
+						}
+					}
+				}
+				out << line[i];
+			}
+			out << "\n";
+		}
+		return out.str();
+	};
 
-    auto load_help_text = [&](bool &used_man) -> std::string {
-        // 1) Prefer embedded/customizable help content
-        {
-            std::string embedded = HelpText::Text();
-            if (!embedded.empty()) { used_man = false; return embedded; }
-        }
+	auto load_help_text = [&](bool &used_man) -> std::string {
+		// 1) Prefer embedded/customizable help content
+		{
+			std::string embedded = HelpText::Text();
+			if (!embedded.empty()) {
+				used_man = false;
+				return embedded;
+			}
+		}
 
-        // 2) Fall back to the manpage and convert roff to plain text
-        const char *man_candidates[] = {
-            "docs/kte.1",
-            "./docs/kte.1",
-            "/usr/local/share/man/man1/kte.1",
-            "/usr/share/man/man1/kte.1"
-        };
-        for (const char *p : man_candidates) {
-            std::ifstream in(p);
-            if (in.good()) {
-                std::string s((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-                if (!s.empty()) { used_man = true; return roff_to_text(s); }
-            }
-        }
-        // Fallback minimal help text
-        used_man = false;
-        return std::string(
-            "KTE - Kyle's Text Editor\n\n"
-            "About:\n"
-            "  kte is Kyle's Text Editor and is probably ill-suited to everyone else. It was\n"
-            "  inspired by Antirez' kilo text editor by way of someone's writeup of the\n"
-            "  process of writing a text editor from scratch. It has keybindings inspired by\n"
-            "  VDE (and the Wordstar family) and emacs; its spiritual parent is mg(1).\n\n"
-            "Core keybindings:\n"
-            "  C-k h        Show this help\n"
-            "  C-k s        Save buffer\n"
-            "  C-k x        Save and quit\n"
-            "  C-k q        Quit (confirm if dirty)\n"
-            "  C-k C-q      Quit now (no confirm)\n"
-            "  C-k c        Close current buffer\n"
-            "  C-k b        Switch buffer\n"
-            "  C-k p        Next buffer\n"
-            "  C-k n        Previous buffer\n"
-            "  C-k e        Open file (prompt)\n"
-            "  C-k g        Jump to line\n"
-            "  C-k u        Undo\n"
-            "  C-k r        Redo\n"
-            "  C-k d        Kill to end of line\n"
-            "  C-k C-d      Kill entire line\n"
-            "  C-k =        Indent region\n"
-            "  C-k -        Unindent region\n"
-            "  C-k '        Toggle read-only\n"
-            "  C-k l        Reload buffer from disk\n"
-            "  C-k a        Mark all and jump to end\n"
-            "  C-k v        Toggle visual file picker (GUI)\n"
-            "  C-k w        Show working directory\n"
-            "  C-k o        Change working directory (prompt)\n\n"
-            "ESC/Alt commands:\n"
-            "  ESC q        Reflow paragraph\n"
-            "  ESC BACKSPACE Delete previous word\n"
-            "  ESC d        Delete next word\n"
-            "  Alt-w        Copy region to kill ring\n\n"
-            "Buffers:\n  +HELP+ is read-only. Press C-k ' to toggle if you need to edit; C-k h restores it.\n");
-    };
+		// 2) Fall back to the manpage and convert roff to plain text
+		const char *man_candidates[] = {
+			"docs/kte.1",
+			"./docs/kte.1",
+			"/usr/local/share/man/man1/kte.1",
+			"/usr/share/man/man1/kte.1"
+		};
+		for (const char *p: man_candidates) {
+			std::ifstream in(p);
+			if (in.good()) {
+				std::string s((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+				if (!s.empty()) {
+					used_man = true;
+					return roff_to_text(s);
+				}
+			}
+		}
+		// Fallback minimal help text
+		used_man = false;
+		return std::string(
+			"KTE - Kyle's Text Editor\n\n"
+			"About:\n"
+			"  kte is Kyle's Text Editor and is probably ill-suited to everyone else. It was\n"
+			"  inspired by Antirez' kilo text editor by way of someone's writeup of the\n"
+			"  process of writing a text editor from scratch. It has keybindings inspired by\n"
+			"  VDE (and the Wordstar family) and emacs; its spiritual parent is mg(1).\n\n"
+			"Core keybindings:\n"
+			"  C-k h        Show this help\n"
+			"  C-k s        Save buffer\n"
+			"  C-k x        Save and quit\n"
+			"  C-k q        Quit (confirm if dirty)\n"
+			"  C-k C-q      Quit now (no confirm)\n"
+			"  C-k c        Close current buffer\n"
+			"  C-k b        Switch buffer\n"
+			"  C-k p        Next buffer\n"
+			"  C-k n        Previous buffer\n"
+			"  C-k e        Open file (prompt)\n"
+			"  C-k g        Jump to line\n"
+			"  C-k u        Undo\n"
+			"  C-k r        Redo\n"
+			"  C-k d        Kill to end of line\n"
+			"  C-k C-d      Kill entire line\n"
+			"  C-k =        Indent region\n"
+			"  C-k -        Unindent region\n"
+			"  C-k '        Toggle read-only\n"
+			"  C-k l        Reload buffer from disk\n"
+			"  C-k a        Mark all and jump to end\n"
+			"  C-k v        Toggle visual file picker (GUI)\n"
+			"  C-k w        Show working directory\n"
+			"  C-k o        Change working directory (prompt)\n\n"
+			"ESC/Alt commands:\n"
+			"  ESC q        Reflow paragraph\n"
+			"  ESC BACKSPACE Delete previous word\n"
+			"  ESC d        Delete next word\n"
+			"  Alt-w        Copy region to kill ring\n\n"
+			"Buffers:\n  +HELP+ is read-only. Press C-k ' to toggle if you need to edit; C-k h restores it.\n");
+	};
 
-    auto populate_from_text = [](Buffer &b, const std::string &text) {
-        auto &rows = b.Rows();
-        rows.clear();
-        std::string line;
-        line.reserve(128);
-        for (char ch : text) {
-            if (ch == '\n') {
-                rows.emplace_back(line);
-                line.clear();
-            } else if (ch != '\r') {
-                line.push_back(ch);
-            }
-        }
-        // Add last line (even if empty)
-        rows.emplace_back(line);
-        b.SetDirty(false);
-        b.SetCursor(0, 0);
-        b.SetOffsets(0, 0);
-        b.SetRenderX(0);
-    };
+	auto populate_from_text = [](Buffer &b, const std::string &text) {
+		auto &rows = b.Rows();
+		rows.clear();
+		std::string line;
+		line.reserve(128);
+		for (char ch: text) {
+			if (ch == '\n') {
+				rows.emplace_back(line);
+				line.clear();
+			} else if (ch != '\r') {
+				line.push_back(ch);
+			}
+		}
+		// Add last line (even if empty)
+		rows.emplace_back(line);
+		b.SetDirty(false);
+		b.SetCursor(0, 0);
+		b.SetOffsets(0, 0);
+		b.SetRenderX(0);
+	};
 
-    if (help_index != static_cast<std::size_t>(-1)) {
-        Buffer &hb = bufs[help_index];
-        // If dirty, overwrite with original contents
-        if (hb.Dirty()) {
-            bool used_man = false;
-            std::string text = load_help_text(used_man);
-            populate_from_text(hb, text);
-        }
-        hb.SetReadOnly(true);
-        ctx.editor.SwitchTo(help_index);
-        ctx.editor.SetStatus("Help opened");
-        return true;
-    }
+	if (help_index != static_cast<std::size_t>(-1)) {
+		Buffer &hb = bufs[help_index];
+		// If dirty, overwrite with original contents
+		if (hb.Dirty()) {
+			bool used_man    = false;
+			std::string text = load_help_text(used_man);
+			populate_from_text(hb, text);
+		}
+		hb.SetReadOnly(true);
+		ctx.editor.SwitchTo(help_index);
+		ctx.editor.SetStatus("Help opened");
+		return true;
+	}
 
-    // Create a new help buffer
-    Buffer help;
-    help.SetVirtualName(help_name);
-    bool used_man = false;
-    std::string text = load_help_text(used_man);
-    populate_from_text(help, text);
-    help.SetReadOnly(true);
-    std::size_t idx = ctx.editor.AddBuffer(std::move(help));
-    ctx.editor.SwitchTo(idx);
-    ctx.editor.SetStatus("Help opened");
-    return true;
+	// Create a new help buffer
+	Buffer help;
+	help.SetVirtualName(help_name);
+	bool used_man    = false;
+	std::string text = load_help_text(used_man);
+	populate_from_text(help, text);
+	help.SetReadOnly(true);
+	std::size_t idx = ctx.editor.AddBuffer(std::move(help));
+	ctx.editor.SwitchTo(idx);
+	ctx.editor.SetStatus("Help opened");
+	return true;
 }
 
 
@@ -1430,6 +1681,46 @@ cmd_newline(CommandContext &ctx)
 		Editor::PromptKind kind = ctx.editor.CurrentPromptKind();
 		std::string value       = ctx.editor.PromptText();
 		ctx.editor.AcceptPrompt();
+		if (kind == Editor::PromptKind::Command) {
+			// Parse COMMAND ARG and dispatch only public commands
+			// Trim leading/trailing spaces
+			auto ltrim = [](std::string &s) {
+				s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
+					return !std::isspace(ch);
+				}));
+			};
+			auto rtrim = [](std::string &s) {
+				s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
+					return !std::isspace(ch);
+				}).base(), s.end());
+			};
+			ltrim(value);
+			rtrim(value);
+			if (value.empty()) {
+				ctx.editor.SetStatus("Canceled");
+				return true;
+			}
+			// Split first token
+			std::string cmdname;
+			std::string arg;
+			auto sp = value.find(' ');
+			if (sp == std::string::npos) {
+				cmdname = value;
+			} else {
+				cmdname = value.substr(0, sp);
+				arg     = value.substr(sp + 1);
+			}
+			const Command *cmd = CommandRegistry::FindByName(cmdname);
+			if (!cmd || !cmd->isPublic) {
+				ctx.editor.SetStatus(std::string("Unknown command: ") + cmdname);
+				return true;
+			}
+			bool ok = Execute(ctx.editor, cmdname, arg);
+			if (!ok) {
+				ctx.editor.SetStatus(std::string("Command failed: ") + cmdname);
+			}
+			return true;
+		}
 		if (kind == Editor::PromptKind::Search || kind == Editor::PromptKind::RegexSearch) {
 			// Finish search: keep cursor where it is, clear search UI prompt
 			ctx.editor.SetSearchActive(false);
@@ -1452,24 +1743,24 @@ cmd_newline(CommandContext &ctx)
 			ctx.editor.StartPrompt(Editor::PromptKind::ReplaceWith, "Replace: with", "");
 			ctx.editor.SetStatus("Replace: with: ");
 			return true;
-  } else if (kind == Editor::PromptKind::ReplaceWith) {
-            // Execute replace-all
-            Buffer *buf = ctx.editor.CurrentBuffer();
-            if (!buf)
-                return false;
-            if (buf->IsReadOnly()) {
-                ctx.editor.SetStatus("Read-only buffer");
-                // Clear search UI state
-                ctx.editor.SetSearchActive(false);
-                ctx.editor.SetSearchQuery("");
-                ctx.editor.SetSearchMatch(0, 0, 0);
-                ctx.editor.ClearSearchOrigin();
-                ctx.editor.SetSearchIndex(-1);
-                return true;
-            }
-            const std::string find = ctx.editor.ReplaceFindTmp();
-            const std::string with = value;
-            ctx.editor.SetReplaceWithTmp(with);
+		} else if (kind == Editor::PromptKind::ReplaceWith) {
+			// Execute replace-all
+			Buffer *buf = ctx.editor.CurrentBuffer();
+			if (!buf)
+				return false;
+			if (buf->IsReadOnly()) {
+				ctx.editor.SetStatus("Read-only buffer");
+				// Clear search UI state
+				ctx.editor.SetSearchActive(false);
+				ctx.editor.SetSearchQuery("");
+				ctx.editor.SetSearchMatch(0, 0, 0);
+				ctx.editor.ClearSearchOrigin();
+				ctx.editor.SetSearchIndex(-1);
+				return true;
+			}
+			const std::string find = ctx.editor.ReplaceFindTmp();
+			const std::string with = value;
+			ctx.editor.SetReplaceWithTmp(with);
 			if (find.empty()) {
 				ctx.editor.SetStatus("Replace canceled (empty find)");
 				// Clear search UI state
@@ -1744,24 +2035,24 @@ cmd_newline(CommandContext &ctx)
 			ctx.editor.StartPrompt(Editor::PromptKind::RegexReplaceWith, "Regex replace: with", "");
 			ctx.editor.SetStatus("Regex replace: with: ");
 			return true;
-  } else if (kind == Editor::PromptKind::RegexReplaceWith) {
-            // Execute regex replace-all
-            Buffer *buf = ctx.editor.CurrentBuffer();
-            if (!buf)
-                return false;
-            if (buf->IsReadOnly()) {
-                ctx.editor.SetStatus("Read-only buffer");
-                // Clear search UI state
-                ctx.editor.SetSearchActive(false);
-                ctx.editor.SetSearchQuery("");
-                ctx.editor.SetSearchMatch(0, 0, 0);
-                ctx.editor.ClearSearchOrigin();
-                ctx.editor.SetSearchIndex(-1);
-                return true;
-            }
-            const std::string patt = ctx.editor.ReplaceFindTmp();
-            const std::string repl = value;
-            ctx.editor.SetReplaceWithTmp(repl);
+		} else if (kind == Editor::PromptKind::RegexReplaceWith) {
+			// Execute regex replace-all
+			Buffer *buf = ctx.editor.CurrentBuffer();
+			if (!buf)
+				return false;
+			if (buf->IsReadOnly()) {
+				ctx.editor.SetStatus("Read-only buffer");
+				// Clear search UI state
+				ctx.editor.SetSearchActive(false);
+				ctx.editor.SetSearchQuery("");
+				ctx.editor.SetSearchMatch(0, 0, 0);
+				ctx.editor.ClearSearchOrigin();
+				ctx.editor.SetSearchIndex(-1);
+				return true;
+			}
+			const std::string patt = ctx.editor.ReplaceFindTmp();
+			const std::string repl = value;
+			ctx.editor.SetReplaceWithTmp(repl);
 			if (patt.empty()) {
 				ctx.editor.SetStatus("Regex replace canceled (empty pattern)");
 				ctx.editor.SetSearchActive(false);
@@ -1784,16 +2075,16 @@ cmd_newline(CommandContext &ctx)
 				ctx.editor.SetSearchIndex(-1);
 				return true;
 			}
-			auto &rows = buf->Rows();
+			auto &rows          = buf->Rows();
 			std::size_t changed = 0;
-   for (auto &line : rows) {
-                std::string before = static_cast<std::string>(line);
-                std::string after  = std::regex_replace(before, rx, repl);
-                if (after != before) {
-                    line = after;
-                    ++changed;
-                }
-            }
+			for (auto &line: rows) {
+				std::string before = static_cast<std::string>(line);
+				std::string after  = std::regex_replace(before, rx, repl);
+				if (after != before) {
+					line = after;
+					++changed;
+				}
+			}
 			buf->SetDirty(true);
 			ctx.editor.SetStatus("Regex replaced in " + std::to_string(changed) + " line(s)");
 			// Clear search UI state
@@ -1838,7 +2129,7 @@ cmd_newline(CommandContext &ctx)
 			tail = line.substr(x);
 			line.erase(x);
 		}
-  rows.insert(rows.begin() + static_cast<std::ptrdiff_t>(y + 1), Buffer::Line(tail));
+		rows.insert(rows.begin() + static_cast<std::ptrdiff_t>(y + 1), Buffer::Line(tail));
 		y += 1;
 		x = 0;
 	}
@@ -1860,33 +2151,33 @@ cmd_backspace(CommandContext &ctx)
 	// If a prompt is active, backspace edits the prompt text
 	if (ctx.editor.PromptActive()) {
 		ctx.editor.BackspacePromptText();
-        if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search ||
-            ctx.editor.CurrentPromptKind() == Editor::PromptKind::ReplaceFind ||
-            ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
-            ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind) {
-            Buffer *buf2 = ctx.editor.CurrentBuffer();
-            if (buf2) {
-                ctx.editor.SetSearchQuery(ctx.editor.PromptText());
-                if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
-                    ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind) {
-                    std::string err;
-                    auto rm = search_compute_matches_regex(*buf2, ctx.editor.SearchQuery(), err);
-                    if (!err.empty()) {
-                        ctx.editor.SetStatus(
-                            std::string("Regex: ") + ctx.editor.PromptText() + "  [error: "
-                            + err + "]");
-                    }
-                    search_apply_match_regex(ctx.editor, *buf2, rm);
-                } else {
-                    auto matches = search_compute_matches(*buf2, ctx.editor.SearchQuery());
-                    search_apply_match(ctx.editor, *buf2, matches);
-                }
-            }
-        } else {
-            ctx.editor.SetStatus(ctx.editor.PromptLabel() + ": " + ctx.editor.PromptText());
-        }
-        return true;
-    }
+		if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search ||
+		    ctx.editor.CurrentPromptKind() == Editor::PromptKind::ReplaceFind ||
+		    ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
+		    ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind) {
+			Buffer *buf2 = ctx.editor.CurrentBuffer();
+			if (buf2) {
+				ctx.editor.SetSearchQuery(ctx.editor.PromptText());
+				if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
+				    ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind) {
+					std::string err;
+					auto rm = search_compute_matches_regex(*buf2, ctx.editor.SearchQuery(), err);
+					if (!err.empty()) {
+						ctx.editor.SetStatus(
+							std::string("Regex: ") + ctx.editor.PromptText() + "  [error: "
+							+ err + "]");
+					}
+					search_apply_match_regex(ctx.editor, *buf2, rm);
+				} else {
+					auto matches = search_compute_matches(*buf2, ctx.editor.SearchQuery());
+					search_apply_match(ctx.editor, *buf2, matches);
+				}
+			}
+		} else {
+			ctx.editor.SetStatus(ctx.editor.PromptLabel() + ": " + ctx.editor.PromptText());
+		}
+		return true;
+	}
 	// In search mode, backspace edits the query
 	if (ctx.editor.SearchActive()) {
 		if (!ctx.editor.SearchQuery().empty()) {
@@ -2099,12 +2390,12 @@ cmd_kill_line(CommandContext &ctx)
 			break;
 		if (rows.size() == 1) {
 			// last remaining line: clear its contents
-   killed_total += static_cast<std::string>(rows[0]);
+			killed_total += static_cast<std::string>(rows[0]);
 			rows[0].Clear();
 			y = 0;
 		} else if (y < rows.size()) {
 			// erase current line; keep y pointing at the next line
-   killed_total += static_cast<std::string>(rows[y]);
+			killed_total += static_cast<std::string>(rows[y]);
 			killed_total += "\n";
 			rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(y));
 			if (y >= rows.size()) {
@@ -2829,7 +3120,7 @@ cmd_delete_word_prev(CommandContext &ctx)
 			// Then collect complete lines between y and start_y
 			for (std::size_t ly = y + 1; ly < start_y; ++ly) {
 				deleted += "\n";
-    deleted += static_cast<std::string>(rows[ly]);
+				deleted += static_cast<std::string>(rows[ly]);
 			}
 			// Finally, collect from beginning of start_y to start_x
 			if (start_y < rows.size()) {
@@ -2926,7 +3217,7 @@ cmd_delete_word_next(CommandContext &ctx)
 			// Then collect complete lines between start_y and y
 			for (std::size_t ly = start_y + 1; ly < y; ++ly) {
 				deleted += "\n";
-    deleted += static_cast<std::string>(rows[ly]);
+				deleted += static_cast<std::string>(rows[ly]);
 			}
 			// Finally, collect from beginning of y to x
 			if (y < rows.size()) {
@@ -3266,24 +3557,42 @@ InstallDefaultCommands()
 	});
 	// Undo/Redo
 	CommandRegistry::Register({CommandId::Undo, "undo", "Undo last edit", cmd_undo});
- CommandRegistry::Register({CommandId::Redo, "redo", "Redo edit", cmd_redo});
- // Region formatting
- CommandRegistry::Register({CommandId::IndentRegion, "indent-region", "Indent region", cmd_indent_region});
- CommandRegistry::Register(
-     {CommandId::UnindentRegion, "unindent-region", "Unindent region", cmd_unindent_region});
- CommandRegistry::Register({
-     CommandId::ReflowParagraph, "reflow-paragraph", "Reflow paragraph to column width", cmd_reflow_paragraph
- });
- // Read-only
- CommandRegistry::Register({CommandId::ToggleReadOnly, "toggle-read-only", "Toggle buffer read-only", cmd_toggle_read_only});
- // Buffer operations
- CommandRegistry::Register({
-     CommandId::ReloadBuffer, "reload-buffer", "Reload buffer from disk", cmd_reload_buffer
- });
- // Help
- CommandRegistry::Register({
-     CommandId::ShowHelp, "help", "+HELP+ buffer with manual text", cmd_show_help
- });
+	CommandRegistry::Register({CommandId::Redo, "redo", "Redo edit", cmd_redo});
+	// Region formatting
+	CommandRegistry::Register({CommandId::IndentRegion, "indent-region", "Indent region", cmd_indent_region});
+	CommandRegistry::Register(
+		{CommandId::UnindentRegion, "unindent-region", "Unindent region", cmd_unindent_region});
+	CommandRegistry::Register({
+		CommandId::ReflowParagraph, "reflow-paragraph", "Reflow paragraph to column width", cmd_reflow_paragraph
+	});
+	// Read-only
+	CommandRegistry::Register({
+		CommandId::ToggleReadOnly, "toggle-read-only", "Toggle buffer read-only", cmd_toggle_read_only
+	});
+	// GUI Themes
+	CommandRegistry::Register({CommandId::ThemeNext, "theme-next", "Cycle to next GUI theme", cmd_theme_next});
+	CommandRegistry::Register({CommandId::ThemePrev, "theme-prev", "Cycle to previous GUI theme", cmd_theme_prev});
+	// Theme by name (public in command prompt)
+	CommandRegistry::Register({
+		CommandId::ThemeSetByName, "theme", "Set GUI theme by name", cmd_theme_set_by_name, true
+	});
+	// Background light/dark (public)
+	CommandRegistry::Register({
+		CommandId::BackgroundSet, "background", "Set GUI background light|dark", cmd_background_set, true
+	});
+	// Generic command prompt (C-k ;)
+	CommandRegistry::Register({
+		CommandId::CommandPromptStart, "command-prompt-start", "Start generic command prompt",
+		cmd_command_prompt_start
+	});
+	// Buffer operations
+	CommandRegistry::Register({
+		CommandId::ReloadBuffer, "reload-buffer", "Reload buffer from disk", cmd_reload_buffer
+	});
+	// Help
+	CommandRegistry::Register({
+		CommandId::ShowHelp, "help", "+HELP+ buffer with manual text", cmd_show_help
+	});
 	CommandRegistry::Register({
 		CommandId::MarkAllAndJumpEnd, "mark-all-jump-end", "Set mark at beginning and jump to end",
 		cmd_mark_all_and_jump_end
@@ -3311,9 +3620,9 @@ InstallDefaultCommands()
 bool
 Execute(Editor &ed, CommandId id, const std::string &arg, int count)
 {
-    const Command *cmd = CommandRegistry::FindById(id);
-    if (!cmd)
-        return false;
+	const Command *cmd = CommandRegistry::FindById(id);
+	if (!cmd)
+		return false;
 	// If a quit confirmation was pending and the user invoked something other
 	// than the soft quit again, cancel the pending confirmation.
 	if (ed.QuitConfirmPending() && id != CommandId::Quit && id != CommandId::KPrefix) {
@@ -3324,17 +3633,17 @@ Execute(Editor &ed, CommandId id, const std::string &arg, int count)
 	    CommandId::CopyRegion && id != CommandId::DeleteWordPrev && id != CommandId::DeleteWordNext) {
 		ed.SetKillChain(false);
 	}
-    // If buffer is read-only, block mutating commands outside of prompts
-    if (!ed.PromptActive()) {
-        Buffer *b = ed.CurrentBuffer();
-        if (b && b->IsReadOnly() && is_mutating_command(id)) {
-            ed.SetStatus("Read-only buffer");
-            return true; // treated as handled, but no change
-        }
-    }
+	// If buffer is read-only, block mutating commands outside of prompts
+	if (!ed.PromptActive()) {
+		Buffer *b = ed.CurrentBuffer();
+		if (b && b->IsReadOnly() && is_mutating_command(id)) {
+			ed.SetStatus("Read-only buffer");
+			return true; // treated as handled, but no change
+		}
+	}
 
-    CommandContext ctx{ed, arg, count};
-    return cmd->handler ? cmd->handler(ctx) : false;
+	CommandContext ctx{ed, arg, count};
+	return cmd->handler ? cmd->handler(ctx) : false;
 }
 
 

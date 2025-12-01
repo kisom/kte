@@ -12,10 +12,14 @@
 
 class GUIConfig {
 public:
-	bool fullscreen = false;
-	int columns     = 80;
-	int rows        = 42;
-	float font_size = (float) KTE_FONT_SIZE;
+	bool fullscreen   = false;
+	int columns       = 80;
+	int rows          = 42;
+	float font_size   = (float) KTE_FONT_SIZE;
+	std::string theme = "nord";
+	// Background mode for themes that support light/dark variants
+	// Values: "dark" (default), "light"
+	std::string background = "dark";
 
 	// Load from default path: $HOME/.config/kte/kge.ini
 	static GUIConfig Load();

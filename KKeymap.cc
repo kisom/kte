@@ -33,10 +33,10 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 		out = CommandId::Redo; // C-k r (redo)
 		return true;
 	}
-    if (ascii_key == '\'') {
-        out = CommandId::ToggleReadOnly; // C-k ' (toggle read-only)
-        return true;
-    }
+	if (ascii_key == '\'') {
+		out = CommandId::ToggleReadOnly; // C-k ' (toggle read-only)
+		return true;
+	}
 
 	switch (k_lower) {
 	case 'a':
@@ -108,6 +108,9 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 	case '=':
 		out = CommandId::IndentRegion;
 		return true;
+	case ';':
+		out = CommandId::CommandPromptStart; // C-k ; : generic command prompt
+		return true;
 	default:
 		break;
 	}
@@ -121,7 +124,7 @@ auto
 KLookupCtrlCommand(const int ascii_key, CommandId &out) -> bool
 {
 	const int k = KLowerAscii(ascii_key);
- switch (k) {
+	switch (k) {
 	case 'w':
 		out = CommandId::KillRegion; // C-w
 		return true;
@@ -152,12 +155,12 @@ KLookupCtrlCommand(const int ascii_key, CommandId &out) -> bool
 	case 's':
 		out = CommandId::FindStart;
 		return true;
- case 'r':
-        out = CommandId::RegexFindStart; // C-r regex search
-        return true;
-    case 't':
-        out = CommandId::RegexpReplace; // C-t regex search & replace
-        return true;
+	case 'r':
+		out = CommandId::RegexFindStart; // C-r regex search
+		return true;
+	case 't':
+		out = CommandId::RegexpReplace; // C-t regex search & replace
+		return true;
 	case 'h':
 		out = CommandId::SearchReplace; // C-h: search & replace
 		return true;

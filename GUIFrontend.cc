@@ -32,8 +32,8 @@ GUIFrontend::Init(Editor &ed)
 		return false;
 	}
 
-	// Load GUI configuration (fullscreen, columns/rows, font size)
-	const auto [fullscreen, columns, rows, font_size] = GUIConfig::Load();
+	// Load GUI configuration (fullscreen, columns/rows, font size, theme, background)
+	GUIConfig cfg = GUIConfig::Load();
 
 	// GL attributes for core profile
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
@@ -47,7 +47,7 @@ GUIFrontend::Init(Editor &ed)
 	// Compute desired window size from config
 	Uint32 win_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
 
-	if (fullscreen) {
+	if (cfg.fullscreen) {
 		// "Fullscreen": fill the usable bounds of the primary display.
 		// On macOS, do NOT use true fullscreen so the menu/status bar remains visible.
 		SDL_Rect usable{};
@@ -61,8 +61,8 @@ GUIFrontend::Init(Editor &ed)
 #endif
 	} else {
 		// Windowed: width = columns * font_size, height = (rows * 2) * font_size
-		int w = static_cast<int>(columns * font_size);
-		int h = static_cast<int>((rows * 2) * font_size);
+		int w = cfg.columns * static_cast<int>(cfg.font_size);
+		int h = cfg.rows * static_cast<int>(cfg.font_size * 1.2);
 
 		// As a safety, clamp to display usable bounds if retrievable
 		SDL_Rect usable{};
@@ -86,7 +86,7 @@ GUIFrontend::Init(Editor &ed)
 	// macOS: when "fullscreen" is requested, position the window at the
 	// top-left of the usable display area to mimic fullscreen while keeping
 	// the system menu bar visible.
-	if (fullscreen) {
+	if (cfg.fullscreen) {
 		SDL_Rect usable{};
 		if (SDL_GetDisplayUsableBounds(0, &usable) == 0) {
 			SDL_SetWindowPosition(window_, usable.x, usable.y);
@@ -105,8 +105,13 @@ GUIFrontend::Init(Editor &ed)
 	ImGuiIO &io = ImGui::GetIO();
 	(void) io;
 	ImGui::StyleColorsDark();
-	// Apply a Nord-inspired theme
-	kte::ApplyNordImGuiTheme();
+
+	// Apply background mode and selected theme (default: Nord). Can be changed at runtime via commands.
+	if (cfg.background == "light")
+		kte::SetBackgroundMode(kte::BackgroundMode::Light);
+	else
+		kte::SetBackgroundMode(kte::BackgroundMode::Dark);
+	kte::ApplyThemeByName(cfg.theme);
 
 	if (!ImGui_ImplSDL2_InitForOpenGL(window_, gl_ctx_))
 		return false;
@@ -135,7 +140,7 @@ GUIFrontend::Init(Editor &ed)
 #endif
 
 	// Initialize GUI font from embedded default (use configured size or compiled default)
-	LoadGuiFont_(nullptr, (float) font_size);
+	LoadGuiFont_(nullptr, (float) cfg.font_size);
 
 	return true;
 }
@@ -214,7 +219,7 @@ GUIFrontend::Step(Editor &ed, bool &running)
 		float avail_h = std::max(0.0f, disp_h - 2.0f * pad_y - status_h);
 
 		// Visible content rows inside the scroll child
-		std::size_t content_rows = static_cast<std::size_t>(std::floor(avail_h / line_h));
+		auto content_rows = static_cast<std::size_t>(std::floor(avail_h / line_h));
 		// Editor::Rows includes the status line; add 1 back for it.
 		std::size_t rows = std::max<std::size_t>(1, content_rows + 1);
 		std::size_t cols = static_cast<std::size_t>(std::max(1.0f, std::floor(avail_w / ch_w)));
@@ -264,11 +269,11 @@ GUIFrontend::Shutdown()
 bool
 GUIFrontend::LoadGuiFont_(const char * /*path*/, float size_px)
 {
-	ImGuiIO &io = ImGui::GetIO();
+	const ImGuiIO &io = ImGui::GetIO();
 	io.Fonts->Clear();
-	ImFont *font = io.Fonts->AddFontFromMemoryCompressedTTF(
-		(void *) DefaultFontBoldCompressedData,
-		(int) DefaultFontBoldCompressedSize,
+	const ImFont *font = io.Fonts->AddFontFromMemoryCompressedTTF(
+		DefaultFontBoldCompressedData,
+		DefaultFontBoldCompressedSize,
 		size_px);
 	if (!font) {
 		font = io.Fonts->AddFontDefault();

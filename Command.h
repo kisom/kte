@@ -69,6 +69,9 @@ enum class CommandId {
 	Redo,
 	// UI/status helpers
 	UArgStatus, // update status line during universal-argument collection
+	// Themes (GUI)
+	ThemeNext,
+	ThemePrev,
 	// Region formatting
 	IndentRegion, // indent region (C-k =)
 	UnindentRegion, // unindent region (C-k -)
@@ -86,6 +89,12 @@ enum class CommandId {
 	ShowHelp, // open +HELP+ buffer with manual text (C-k h)
 	// Meta
 	UnknownKCommand, // arg: single character that was not recognized after C-k
+	// Generic command prompt
+	CommandPromptStart, // begin generic command prompt (C-k ;)
+	// Theme by name
+	ThemeSetByName,
+	// Background mode (GUI)
+	BackgroundSet,
 };
 
 
@@ -109,6 +118,8 @@ struct Command {
 	std::string name; // stable, unique name (e.g., "save", "save-as")
 	std::string help; // short help/description
 	CommandHandler handler;
+	// Public commands are exposed in the ": " prompt (C-k ;)
+	bool isPublic = false;
 };
 
 

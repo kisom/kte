@@ -41,140 +41,175 @@ TerminalRenderer::Draw(Editor &ed)
 		std::size_t coloffs = buf->Coloffs();
 
 		const int tabw = 8;
-  for (int r = 0; r < content_rows; ++r) {
-            move(r, 0);
-            std::size_t li = rowoffs + static_cast<std::size_t>(r);
-            std::size_t render_col = 0;
-            std::size_t src_i = 0;
-            // Compute matches for this line if search highlighting is active
-            bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
-            std::vector<std::pair<std::size_t, std::size_t>> ranges; // [start, end)
-            if (search_mode && li < lines.size()) {
-                std::string sline = static_cast<std::string>(lines[li]);
-                // If regex search prompt is active (RegexSearch or RegexReplaceFind), use regex to compute highlight ranges
-                if (ed.PromptActive() && (ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch || ed.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind)) {
-                    try {
-                        std::regex rx(ed.SearchQuery());
-                        for (auto it = std::sregex_iterator(sline.begin(), sline.end(), rx);
-                             it != std::sregex_iterator(); ++it) {
-                            const auto &m = *it;
-                            std::size_t sx = static_cast<std::size_t>(m.position());
-                            std::size_t ex = sx + static_cast<std::size_t>(m.length());
-                            ranges.emplace_back(sx, ex);
-                        }
-                    } catch (const std::regex_error &) {
-                        // ignore invalid patterns here; status shows error
-                    }
-                } else {
-                    const std::string &q = ed.SearchQuery();
-                    std::size_t pos      = 0;
-                    while (!q.empty() && (pos = sline.find(q, pos)) != std::string::npos) {
-                        ranges.emplace_back(pos, pos + q.size());
-                        pos += q.size();
-                    }
-                }
-            }
-            auto is_src_in_hl = [&](std::size_t si) -> bool {
-                if (ranges.empty()) return false;
-                // ranges are non-overlapping and ordered by construction
-                // linear scan is fine for now
-                for (const auto &rg : ranges) {
-                    if (si < rg.first) break;
-                    if (si >= rg.first && si < rg.second) return true;
-                }
-                return false;
-            };
-            // Track current-match to optionally emphasize
-            const bool has_current = ed.SearchActive() && ed.SearchMatchLen() > 0;
-            const std::size_t cur_mx = has_current ? ed.SearchMatchX() : 0;
-            const std::size_t cur_my = has_current ? ed.SearchMatchY() : 0;
-            const std::size_t cur_mend = has_current ? (ed.SearchMatchX() + ed.SearchMatchLen()) : 0;
-            bool hl_on = false;
-            bool cur_on = false;
-            int written = 0;
-            if (li < lines.size()) {
-                std::string line = static_cast<std::string>(lines[li]);
-                src_i                   = 0;
-                render_col              = 0;
-                while (written < cols) {
-                    char ch       = ' ';
-                    bool from_src = false;
-                    if (src_i < line.size()) {
-                        unsigned char c = static_cast<unsigned char>(line[src_i]);
-                        if (c == '\t') {
-                            std::size_t next_tab = tabw - (render_col % tabw);
-                            if (render_col + next_tab <= coloffs) {
-                                render_col += next_tab;
-                                ++src_i;
-                                continue;
-                            }
-                            // Emit spaces for tab
-                            if (render_col < coloffs) {
-                                // skip to coloffs
-                                std::size_t to_skip = std::min<std::size_t>(
-                                    next_tab, coloffs - render_col);
-                                render_col += to_skip;
-                                next_tab -= to_skip;
-                            }
-                            // Now render visible spaces
-                            while (next_tab > 0 && written < cols) {
-                                bool in_hl = search_mode && is_src_in_hl(src_i);
-                                bool in_cur = has_current && li == cur_my && src_i >= cur_mx && src_i < cur_mend;
-                                // Toggle highlight attributes
-                                int attr = 0;
-                                if (in_hl) attr |= A_STANDOUT;
-                                if (in_cur) attr |= A_BOLD;
-                                if ((attr & A_STANDOUT) && !hl_on) { attron(A_STANDOUT); hl_on = true; }
-                                if (!(attr & A_STANDOUT) && hl_on) { attroff(A_STANDOUT); hl_on = false; }
-                                if ((attr & A_BOLD) && !cur_on) { attron(A_BOLD); cur_on = true; }
-                                if (!(attr & A_BOLD) && cur_on) { attroff(A_BOLD); cur_on = false; }
-                                addch(' ');
-                                ++written;
-                                ++render_col;
-                                --next_tab;
-                            }
-                            ++src_i;
-                            continue;
-                        } else {
-                            // normal char
-                            if (render_col < coloffs) {
-                                ++render_col;
-                                ++src_i;
-                                continue;
-                            }
-                            ch       = static_cast<char>(c);
-                            from_src = true;
-                        }
-                    } else {
-                        // beyond EOL, fill spaces
-                        ch       = ' ';
-                        from_src = false;
-                    }
-                    bool in_hl = search_mode && from_src && is_src_in_hl(src_i);
-                    bool in_cur = has_current && li == cur_my && from_src && src_i >= cur_mx && src_i < cur_mend;
-                    if (in_hl && !hl_on) { attron(A_STANDOUT); hl_on = true; }
-                    if (!in_hl && hl_on) { attroff(A_STANDOUT); hl_on = false; }
-                    if (in_cur && !cur_on) { attron(A_BOLD); cur_on = true; }
-                    if (!in_cur && cur_on) { attroff(A_BOLD); cur_on = false; }
-                    addch(static_cast<unsigned char>(ch));
-                    ++written;
-                    ++render_col;
-                    if (from_src)
-                        ++src_i;
-                    if (src_i >= line.size() && written >= cols)
-                        break;
-                }
-            }
-            if (hl_on) {
-                attroff(A_STANDOUT);
-                hl_on = false;
-            }
-            if (cur_on) {
-                attroff(A_BOLD);
-                cur_on = false;
-            }
-            clrtoeol();
-        }
+		for (int r = 0; r < content_rows; ++r) {
+			move(r, 0);
+			std::size_t li         = rowoffs + static_cast<std::size_t>(r);
+			std::size_t render_col = 0;
+			std::size_t src_i      = 0;
+			// Compute matches for this line if search highlighting is active
+			bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
+			std::vector<std::pair<std::size_t, std::size_t> > ranges; // [start, end)
+			if (search_mode && li < lines.size()) {
+				std::string sline = static_cast<std::string>(lines[li]);
+				// If regex search prompt is active (RegexSearch or RegexReplaceFind), use regex to compute highlight ranges
+				if (ed.PromptActive() && (
+					    ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch || ed.
+					    CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind)) {
+					try {
+						std::regex rx(ed.SearchQuery());
+						for (auto it = std::sregex_iterator(sline.begin(), sline.end(), rx);
+						     it != std::sregex_iterator(); ++it) {
+							const auto &m  = *it;
+							std::size_t sx = static_cast<std::size_t>(m.position());
+							std::size_t ex = sx + static_cast<std::size_t>(m.length());
+							ranges.emplace_back(sx, ex);
+						}
+					} catch (const std::regex_error &) {
+						// ignore invalid patterns here; status shows error
+					}
+				} else {
+					const std::string &q = ed.SearchQuery();
+					std::size_t pos      = 0;
+					while (!q.empty() && (pos = sline.find(q, pos)) != std::string::npos) {
+						ranges.emplace_back(pos, pos + q.size());
+						pos += q.size();
+					}
+				}
+			}
+			auto is_src_in_hl = [&](std::size_t si) -> bool {
+				if (ranges.empty())
+					return false;
+				// ranges are non-overlapping and ordered by construction
+				// linear scan is fine for now
+				for (const auto &rg: ranges) {
+					if (si < rg.first)
+						break;
+					if (si >= rg.first && si < rg.second)
+						return true;
+				}
+				return false;
+			};
+			// Track current-match to optionally emphasize
+			const bool has_current     = ed.SearchActive() && ed.SearchMatchLen() > 0;
+			const std::size_t cur_mx   = has_current ? ed.SearchMatchX() : 0;
+			const std::size_t cur_my   = has_current ? ed.SearchMatchY() : 0;
+			const std::size_t cur_mend = has_current ? (ed.SearchMatchX() + ed.SearchMatchLen()) : 0;
+			bool hl_on                 = false;
+			bool cur_on                = false;
+			int written                = 0;
+			if (li < lines.size()) {
+				std::string line = static_cast<std::string>(lines[li]);
+				src_i            = 0;
+				render_col       = 0;
+				while (written < cols) {
+					char ch       = ' ';
+					bool from_src = false;
+					if (src_i < line.size()) {
+						unsigned char c = static_cast<unsigned char>(line[src_i]);
+						if (c == '\t') {
+							std::size_t next_tab = tabw - (render_col % tabw);
+							if (render_col + next_tab <= coloffs) {
+								render_col += next_tab;
+								++src_i;
+								continue;
+							}
+							// Emit spaces for tab
+							if (render_col < coloffs) {
+								// skip to coloffs
+								std::size_t to_skip = std::min<std::size_t>(
+									next_tab, coloffs - render_col);
+								render_col += to_skip;
+								next_tab -= to_skip;
+							}
+							// Now render visible spaces
+							while (next_tab > 0 && written < cols) {
+								bool in_hl  = search_mode && is_src_in_hl(src_i);
+								bool in_cur =
+									has_current && li == cur_my && src_i >= cur_mx
+									&& src_i < cur_mend;
+								// Toggle highlight attributes
+								int attr = 0;
+								if (in_hl)
+									attr |= A_STANDOUT;
+								if (in_cur)
+									attr |= A_BOLD;
+								if ((attr & A_STANDOUT) && !hl_on) {
+									attron(A_STANDOUT);
+									hl_on = true;
+								}
+								if (!(attr & A_STANDOUT) && hl_on) {
+									attroff(A_STANDOUT);
+									hl_on = false;
+								}
+								if ((attr & A_BOLD) && !cur_on) {
+									attron(A_BOLD);
+									cur_on = true;
+								}
+								if (!(attr & A_BOLD) && cur_on) {
+									attroff(A_BOLD);
+									cur_on = false;
+								}
+								addch(' ');
+								++written;
+								++render_col;
+								--next_tab;
+							}
+							++src_i;
+							continue;
+						} else {
+							// normal char
+							if (render_col < coloffs) {
+								++render_col;
+								++src_i;
+								continue;
+							}
+							ch       = static_cast<char>(c);
+							from_src = true;
+						}
+					} else {
+						// beyond EOL, fill spaces
+						ch       = ' ';
+						from_src = false;
+					}
+					bool in_hl  = search_mode && from_src && is_src_in_hl(src_i);
+					bool in_cur =
+						has_current && li == cur_my && from_src && src_i >= cur_mx && src_i <
+						cur_mend;
+					if (in_hl && !hl_on) {
+						attron(A_STANDOUT);
+						hl_on = true;
+					}
+					if (!in_hl && hl_on) {
+						attroff(A_STANDOUT);
+						hl_on = false;
+					}
+					if (in_cur && !cur_on) {
+						attron(A_BOLD);
+						cur_on = true;
+					}
+					if (!in_cur && cur_on) {
+						attroff(A_BOLD);
+						cur_on = false;
+					}
+					addch(static_cast<unsigned char>(ch));
+					++written;
+					++render_col;
+					if (from_src)
+						++src_i;
+					if (src_i >= line.size() && written >= cols)
+						break;
+				}
+			}
+			if (hl_on) {
+				attroff(A_STANDOUT);
+				hl_on = false;
+			}
+			if (cur_on) {
+				attroff(A_BOLD);
+				cur_on = false;
+			}
+			clrtoeol();
+		}
 
 		// Place terminal cursor at logical position accounting for tabs and coloffs
 		std::size_t cy = buf->Cury();
@@ -191,71 +226,74 @@ TerminalRenderer::Draw(Editor &ed)
 		mvaddstr(0, 0, "[no buffer]");
 	}
 
- // Status line (inverse)
- move(rows - 1, 0);
- attron(A_REVERSE);
+	// Status line (inverse)
+	move(rows - 1, 0);
+	attron(A_REVERSE);
 
- // Fill the status line with spaces first
- for (int i = 0; i < cols; ++i)
-     addch(' ');
+	// Fill the status line with spaces first
+	for (int i = 0; i < cols; ++i)
+		addch(' ');
 
- // If a prompt is active, replace the status bar with the full prompt text
- if (ed.PromptActive()) {
-     // Build prompt text: "Label: text" and shorten HOME path for file-related prompts
-     std::string label = ed.PromptLabel();
-     std::string ptext = ed.PromptText();
-     auto kind         = ed.CurrentPromptKind();
-     if (kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs ||
-         kind == Editor::PromptKind::Chdir) {
-         const char *home_c = std::getenv("HOME");
-         if (home_c && *home_c) {
-             std::string home(home_c);
-             // Ensure we match only at the start
-             if (ptext.rfind(home, 0) == 0) {
-                 std::string rest = ptext.substr(home.size());
-                 if (rest.empty())
-                     ptext = "~";
-                 else if (rest[0] == '/' || rest[0] == '\\')
-                     ptext = std::string("~") + rest;
-             }
-         }
-     }
-     // Prefer keeping the tail of the filename visible when it exceeds the window
-     std::string msg;
-     if (!label.empty()) {
-         msg = label + ": ";
-     }
-     // When dealing with file-related prompts, left-trim the filename text so the tail stays visible
-     if ((kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs || kind == Editor::PromptKind::Chdir) && cols > 0) {
-         int avail = cols - static_cast<int>(msg.size());
-         if (avail <= 0) {
-             // No room for label; fall back to showing the rightmost portion of the whole string
-             std::string whole = msg + ptext;
-             if ((int)whole.size() > cols)
-                 whole = whole.substr(whole.size() - cols);
-             msg = whole;
-         } else {
-             if ((int)ptext.size() > avail) {
-                 ptext = ptext.substr(ptext.size() - avail);
-             }
-             msg += ptext;
-         }
-     } else {
-         // Non-file prompts: simple concatenation and clip by terminal
-         msg += ptext;
-     }
+	// If a prompt is active, replace the status bar with the full prompt text
+	if (ed.PromptActive()) {
+		// Build prompt text: "Label: text" and shorten HOME path for file-related prompts
+		std::string label = ed.PromptLabel();
+		std::string ptext = ed.PromptText();
+		auto kind         = ed.CurrentPromptKind();
+		if (kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs ||
+		    kind == Editor::PromptKind::Chdir) {
+			const char *home_c = std::getenv("HOME");
+			if (home_c && *home_c) {
+				std::string home(home_c);
+				// Ensure we match only at the start
+				if (ptext.rfind(home, 0) == 0) {
+					std::string rest = ptext.substr(home.size());
+					if (rest.empty())
+						ptext = "~";
+					else if (rest[0] == '/' || rest[0] == '\\')
+						ptext = std::string("~") + rest;
+				}
+			}
+		}
+		// Prefer keeping the tail of the filename visible when it exceeds the window
+		std::string msg;
+		if (kind == Editor::PromptKind::Command) {
+			msg = ": ";
+		} else if (!label.empty()) {
+			msg = label + ": ";
+		}
+		// When dealing with file-related prompts, left-trim the filename text so the tail stays visible
+		if ((kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs || kind ==
+		     Editor::PromptKind::Chdir) && cols > 0) {
+			int avail = cols - static_cast<int>(msg.size());
+			if (avail <= 0) {
+				// No room for label; fall back to showing the rightmost portion of the whole string
+				std::string whole = msg + ptext;
+				if ((int) whole.size() > cols)
+					whole = whole.substr(whole.size() - cols);
+				msg = whole;
+			} else {
+				if ((int) ptext.size() > avail) {
+					ptext = ptext.substr(ptext.size() - avail);
+				}
+				msg += ptext;
+			}
+		} else {
+			// Non-file prompts: simple concatenation and clip by terminal
+			msg += ptext;
+		}
 
-     // Draw left-aligned, clipped to width
-     if (!msg.empty())
-         mvaddnstr(rows - 1, 0, msg.c_str(), std::max(0, cols));
+		// Draw left-aligned, clipped to width
+		if (!msg.empty())
+			mvaddnstr(rows - 1, 0, msg.c_str(), std::max(0, cols));
 
-     // End status rendering for prompt mode
-     attroff(A_REVERSE);
-     // Restore logical cursor position in content area
-     if (saved_cur_y >= 0 && saved_cur_x >= 0)
-         move(saved_cur_y, saved_cur_x);
-     return;
- }
+		// End status rendering for prompt mode
+		attroff(A_REVERSE);
+		// Restore logical cursor position in content area
+		if (saved_cur_y >= 0 && saved_cur_x >= 0)
+			move(saved_cur_y, saved_cur_x);
+		return;
+	}
 
 	// Build left segment
 	std::string left;
@@ -346,10 +384,10 @@ TerminalRenderer::Draw(Editor &ed)
 	if (llen > 0)
 		mvaddnstr(rows - 1, 0, left.c_str(), llen);
 
- // Draw right, flush to end
- int rstart = std::max(0, cols - rlen);
- if (rlen > 0)
-     mvaddnstr(rows - 1, rstart, right.c_str(), rlen);
+	// Draw right, flush to end
+	int rstart = std::max(0, cols - rlen);
+	if (rlen > 0)
+		mvaddnstr(rows - 1, rstart, right.c_str(), rlen);
 
 	// Middle message
 	const std::string &msg = ed.Status();
@@ -365,7 +403,7 @@ TerminalRenderer::Draw(Editor &ed)
 		}
 	}
 
- attroff(A_REVERSE);
+	attroff(A_REVERSE);
 
 	// Restore terminal cursor to the content position so a visible caret
 	// remains in the editing area (not on the status line).

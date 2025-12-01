@@ -25,7 +25,7 @@ public:
 	void Shutdown() override;
 
 private:
-	bool LoadGuiFont_(const char *path, float size_px);
+	static bool LoadGuiFont_(const char *path, float size_px);
 
 	GUIInputHandler input_{};
 	GUIRenderer renderer_{};

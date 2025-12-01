@@ -92,10 +92,14 @@ map_key(const SDL_Keycode key,
 		out = {true, CommandId::Backspace, "", 0};
 		return true;
 	case SDLK_TAB:
-		// Do not insert text on KEYDOWN; allow SDL_TEXTINPUT to deliver '\t'
-		// as printable input so that all printable characters flow via TEXTINPUT.
-		out.hasCommand = false;
-		return true;
+		// Insert a literal tab character when not interpreting a k-prefix suffix.
+		// If k-prefix is active, let the k-prefix handler below consume the key
+		// (so Tab doesn't leave k-prefix stuck).
+		if (!k_prefix) {
+			out = {true, CommandId::InsertText, std::string("\t"), 0};
+			return true;
+		}
+		break; // fall through so k-prefix handler can process
 	case SDLK_RETURN:
 	case SDLK_KP_ENTER:
 		out = {true, CommandId::Newline, "", 0};
@@ -346,6 +350,12 @@ GUIInputHandler::ProcessSDLEvent(const SDL_Event &e)
 		                   uarg_active_, uarg_collecting_, uarg_negative_, uarg_had_digits_, uarg_value_,
 		                   uarg_text_,
 		                   mi);
+
+		// If we inserted a TAB on KEYDOWN, suppress any subsequent SDL_TEXTINPUT
+		// for this keystroke to avoid double insertion on platforms that emit it.
+		if (produced && mi.hasCommand && mi.id == CommandId::InsertText && mi.arg == "\t") {
+			suppress_text_input_once_ = true;
+		}
 
 		// If we just consumed a universal-argument digit or '-' on KEYDOWN and emitted UArgStatus,
 		// suppress the subsequent SDL_TEXTINPUT for this keystroke to avoid duplicating the digit in status.

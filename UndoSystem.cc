@@ -5,79 +5,79 @@
 
 
 UndoSystem::UndoSystem(Buffer &owner, UndoTree &tree)
-    : buf_(&owner), tree_(tree) {}
+	: buf_(&owner), tree_(tree) {}
 
 
 void
 UndoSystem::Begin(UndoType type)
 {
 #ifdef KTE_UNDO_DEBUG
-    debug_log("Begin");
+	debug_log("Begin");
 #endif
-    // Reuse pending if batching conditions are met
-    const int row = static_cast<int>(buf_->Cury());
-    const int col = static_cast<int>(buf_->Curx());
-    if (tree_.pending && tree_.pending->type == type && tree_.pending->row == row) {
-        if (type == UndoType::Delete) {
-            // Support batching both forward deletes (DeleteChar) and backspace (prepend case)
-            // Forward delete: cursor stays at anchor col; keep batching when col == anchor
-            const auto anchor = static_cast<std::size_t>(tree_.pending->col);
-            if (anchor == static_cast<std::size_t>(col)) {
-                pending_prepend_ = false;
-                return; // keep batching forward delete
-            }
-            // Backspace: cursor moved left by exactly one position relative to current anchor.
-            // Extend batch by shifting anchor left and prepending the deleted byte.
-            if (static_cast<std::size_t>(col) + 1 == anchor) {
-                tree_.pending->col = col;
-                pending_prepend_   = true;
-                return;
-            }
-        } else {
-            std::size_t expected = static_cast<std::size_t>(tree_.pending->col) + tree_.pending->text.
-                                   size();
-            if (expected == static_cast<std::size_t>(col)) {
-                pending_prepend_ = false;
-                return; // keep batching
-            }
-        }
-    }
-    // Otherwise commit any existing batch and start a new node
-    commit();
-    auto *node       = new UndoNode();
-    node->type       = type;
-    node->row        = row;
-    node->col        = col;
-    node->child      = nullptr;
-    node->next       = nullptr;
-    tree_.pending    = node;
-    pending_prepend_ = false;
+	// Reuse pending if batching conditions are met
+	const int row = static_cast<int>(buf_->Cury());
+	const int col = static_cast<int>(buf_->Curx());
+	if (tree_.pending && tree_.pending->type == type && tree_.pending->row == row) {
+		if (type == UndoType::Delete) {
+			// Support batching both forward deletes (DeleteChar) and backspace (prepend case)
+			// Forward delete: cursor stays at anchor col; keep batching when col == anchor
+			const auto anchor = static_cast<std::size_t>(tree_.pending->col);
+			if (anchor == static_cast<std::size_t>(col)) {
+				pending_prepend_ = false;
+				return; // keep batching forward delete
+			}
+			// Backspace: cursor moved left by exactly one position relative to current anchor.
+			// Extend batch by shifting anchor left and prepending the deleted byte.
+			if (static_cast<std::size_t>(col) + 1 == anchor) {
+				tree_.pending->col = col;
+				pending_prepend_   = true;
+				return;
+			}
+		} else {
+			std::size_t expected = static_cast<std::size_t>(tree_.pending->col) + tree_.pending->text.
+			                       size();
+			if (expected == static_cast<std::size_t>(col)) {
+				pending_prepend_ = false;
+				return; // keep batching
+			}
+		}
+	}
+	// Otherwise commit any existing batch and start a new node
+	commit();
+	auto *node       = new UndoNode();
+	node->type       = type;
+	node->row        = row;
+	node->col        = col;
+	node->child      = nullptr;
+	node->next       = nullptr;
+	tree_.pending    = node;
+	pending_prepend_ = false;
 
 #ifdef KTE_UNDO_DEBUG
-    debug_log("Begin:new");
+	debug_log("Begin:new");
 #endif
-    // Assert pending is detached from the tree
-    assert(tree_.pending && "pending must exist after Begin");
-    assert(tree_.pending != tree_.root);
-    assert(tree_.pending != tree_.current);
-    assert(tree_.pending != tree_.saved);
-    assert(!is_descendant(tree_.root, tree_.pending));
+	// Assert pending is detached from the tree
+	assert(tree_.pending && "pending must exist after Begin");
+	assert(tree_.pending != tree_.root);
+	assert(tree_.pending != tree_.current);
+	assert(tree_.pending != tree_.saved);
+	assert(!is_descendant(tree_.root, tree_.pending));
 }
 
 
 void
 UndoSystem::Append(char ch)
 {
-    if (!tree_.pending)
-        return;
-    if (pending_prepend_ && tree_.pending->type == UndoType::Delete) {
-        // Prepend for backspace so that text is in increasing column order
-        tree_.pending->text.insert(tree_.pending->text.begin(), ch);
-    } else {
-        tree_.pending->text.push_back(ch);
-    }
+	if (!tree_.pending)
+		return;
+	if (pending_prepend_ && tree_.pending->type == UndoType::Delete) {
+		// Prepend for backspace so that text is in increasing column order
+		tree_.pending->text.insert(tree_.pending->text.begin(), ch);
+	} else {
+		tree_.pending->text.push_back(ch);
+	}
 #ifdef KTE_UNDO_DEBUG
-    debug_log("Append:ch");
+	debug_log("Append:ch");
 #endif
 }
 
@@ -85,11 +85,11 @@ UndoSystem::Append(char ch)
 void
 UndoSystem::Append(std::string_view text)
 {
-    if (!tree_.pending)
-        return;
-    tree_.pending->text.append(text.data(), text.size());
+	if (!tree_.pending)
+		return;
+	tree_.pending->text.append(text.data(), text.size());
 #ifdef KTE_UNDO_DEBUG
-    debug_log("Append:sv");
+	debug_log("Append:sv");
 #endif
 }
 
@@ -98,10 +98,10 @@ void
 UndoSystem::commit()
 {
 #ifdef KTE_UNDO_DEBUG
-    debug_log("commit:enter");
+	debug_log("commit:enter");
 #endif
-    if (!tree_.pending)
-        return;
+	if (!tree_.pending)
+		return;
 
 	// If we have redo branches from current, discard them (non-linear behavior)
 	if (tree_.current && tree_.current->child) {
@@ -127,31 +127,31 @@ UndoSystem::commit()
 		tree_.current->child = tree_.pending;
 		tree_.current        = tree_.pending;
 	}
-    tree_.pending = nullptr;
-    update_dirty_flag();
+	tree_.pending = nullptr;
+	update_dirty_flag();
 #ifdef KTE_UNDO_DEBUG
-    debug_log("commit:done");
+	debug_log("commit:done");
 #endif
-    // post-conditions
-    assert(tree_.pending == nullptr && "pending must be cleared after commit");
+	// post-conditions
+	assert(tree_.pending == nullptr && "pending must be cleared after commit");
 }
 
 
 void
 UndoSystem::undo()
 {
-    // Close any pending batch
-    commit();
-    if (!tree_.current)
-        return;
-    UndoNode *parent = find_parent(tree_.root, tree_.current);
-    UndoNode *node   = tree_.current;
-    // Apply inverse of current node
-    apply(node, -1);
-    tree_.current = parent;
-    update_dirty_flag();
+	// Close any pending batch
+	commit();
+	if (!tree_.current)
+		return;
+	UndoNode *parent = find_parent(tree_.root, tree_.current);
+	UndoNode *node   = tree_.current;
+	// Apply inverse of current node
+	apply(node, -1);
+	tree_.current = parent;
+	update_dirty_flag();
 #ifdef KTE_UNDO_DEBUG
-    debug_log("undo");
+	debug_log("undo");
 #endif
 }
 
@@ -159,24 +159,24 @@ UndoSystem::undo()
 void
 UndoSystem::redo()
 {
-    // Redo next child along current timeline
-    if (tree_.pending) {
-        // If app added pending edits, finalize them before redo chain
-        commit();
-    }
-    UndoNode *next = nullptr;
-    if (!tree_.current) {
-        next = tree_.root; // if nothing yet, try applying first node
-    } else {
-        next = tree_.current->child;
-    }
-    if (!next)
-        return;
-    apply(next, +1);
-    tree_.current = next;
-    update_dirty_flag();
+	// Redo next child along current timeline
+	if (tree_.pending) {
+		// If app added pending edits, finalize them before redo chain
+		commit();
+	}
+	UndoNode *next = nullptr;
+	if (!tree_.current) {
+		next = tree_.root; // if nothing yet, try applying first node
+	} else {
+		next = tree_.current->child;
+	}
+	if (!next)
+		return;
+	apply(next, +1);
+	tree_.current = next;
+	update_dirty_flag();
 #ifdef KTE_UNDO_DEBUG
-    debug_log("redo");
+	debug_log("redo");
 #endif
 }
 
@@ -184,10 +184,10 @@ UndoSystem::redo()
 void
 UndoSystem::mark_saved()
 {
-    tree_.saved = tree_.current;
-    update_dirty_flag();
+	tree_.saved = tree_.current;
+	update_dirty_flag();
 #ifdef KTE_UNDO_DEBUG
-    debug_log("mark_saved");
+	debug_log("mark_saved");
 #endif
 }
 
@@ -195,12 +195,12 @@ UndoSystem::mark_saved()
 void
 UndoSystem::discard_pending()
 {
-    if (tree_.pending) {
-        delete tree_.pending;
-        tree_.pending = nullptr;
-    }
+	if (tree_.pending) {
+		delete tree_.pending;
+		tree_.pending = nullptr;
+	}
 #ifdef KTE_UNDO_DEBUG
-    debug_log("discard_pending");
+	debug_log("discard_pending");
 #endif
 }
 
@@ -208,16 +208,16 @@ UndoSystem::discard_pending()
 void
 UndoSystem::clear()
 {
-    if (tree_.root) {
-        free_node(tree_.root);
-    }
-    if (tree_.pending) {
-        delete tree_.pending;
-    }
-    tree_.root = tree_.current = tree_.saved = tree_.pending = nullptr;
-    update_dirty_flag();
+	if (tree_.root) {
+		free_node(tree_.root);
+	}
+	if (tree_.pending) {
+		delete tree_.pending;
+	}
+	tree_.root = tree_.current = tree_.saved = tree_.pending = nullptr;
+	update_dirty_flag();
 #ifdef KTE_UNDO_DEBUG
-    debug_log("clear");
+	debug_log("clear");
 #endif
 }
 
@@ -326,62 +326,73 @@ UndoSystem::find_parent(UndoNode *from, UndoNode *target)
 void
 UndoSystem::update_dirty_flag()
 {
-    // dirty if current != saved
-    bool dirty = (tree_.current != tree_.saved);
-    buf_->SetDirty(dirty);
+	// dirty if current != saved
+	bool dirty = (tree_.current != tree_.saved);
+	buf_->SetDirty(dirty);
 }
 
 
 void
 UndoSystem::UpdateBufferReference(Buffer &new_buf)
 {
-    buf_ = &new_buf;
+	buf_ = &new_buf;
 }
+
 
 // ---- Debug helpers ----
 const char *
 UndoSystem::type_str(UndoType t)
 {
-    switch (t) {
-    case UndoType::Insert: return "Insert";
-    case UndoType::Delete: return "Delete";
-    case UndoType::Paste: return "Paste";
-    case UndoType::Newline: return "Newline";
-    case UndoType::DeleteRow: return "DeleteRow";
-    }
-    return "?";
+	switch (t) {
+	case UndoType::Insert:
+		return "Insert";
+	case UndoType::Delete:
+		return "Delete";
+	case UndoType::Paste:
+		return "Paste";
+	case UndoType::Newline:
+		return "Newline";
+	case UndoType::DeleteRow:
+		return "DeleteRow";
+	}
+	return "?";
 }
+
 
 bool
 UndoSystem::is_descendant(UndoNode *root, const UndoNode *target)
 {
-    if (!root || !target) return false;
-    if (root == target) return true;
-    for (UndoNode *child = root->child; child != nullptr; child = child->next) {
-        if (is_descendant(child, target)) return true;
-    }
-    return false;
+	if (!root || !target)
+		return false;
+	if (root == target)
+		return true;
+	for (UndoNode *child = root->child; child != nullptr; child = child->next) {
+		if (is_descendant(child, target))
+			return true;
+	}
+	return false;
 }
+
 
 void
 UndoSystem::debug_log(const char *op) const
 {
 #ifdef KTE_UNDO_DEBUG
-    int row = static_cast<int>(buf_->Cury());
-    int col = static_cast<int>(buf_->Curx());
-    const UndoNode *p = tree_.pending;
-    std::fprintf(stderr,
-                 "[UNDO] %s cur=(%d,%d) pending=%p t=%s r=%d c=%d nlen=%zu current=%p saved=%p\n",
-                 op,
-                 row, col,
-                 (const void*)p,
-                 p ? type_str(p->type) : "-",
-                 p ? p->row : -1,
-                 p ? p->col : -1,
-                 p ? p->text.size() : 0,
-                 (void*)tree_.current,
-                 (void*)tree_.saved);
+	int row           = static_cast<int>(buf_->Cury());
+	int col           = static_cast<int>(buf_->Curx());
+	const UndoNode *p = tree_.pending;
+	std::fprintf(stderr,
+	             "[UNDO] %s cur=(%d,%d) pending=%p t=%s r=%d c=%d nlen=%zu current=%p saved=%p\n",
+	             op,
+	             row, col,
+	             (const void *) p,
+	             p ? type_str(p->type) : "-",
+	             p ? p->row : -1,
+	             p ? p->col : -1,
+	             p ? p->text.size() : 0,
+	             (void *) tree_.current,
+	             (void *) tree_.saved);
 #else
-    (void)op;
+	(void) op;
 #endif
 }

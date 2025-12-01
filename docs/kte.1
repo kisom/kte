@@ -1,7 +1,7 @@
 .\" kte(1) — Kyle's Text Editor (terminal-first)
 .\"
 .\" Project homepage: https://github.com/wntrmute/kte
-.TH KTE 1 "2025-11-30" "kte 0.1.0" "User Commands"
+.TH KTE 1 "2025-12-01" "kte 0.1.0" "User Commands"
 .SH NAME
 kte \- Kyle's Text Editor (terminal-first)
 .SH SYNOPSIS
@@ -57,17 +57,17 @@ in the source tree for the canonical reference and notes.
 .PP
 Enter K-command mode with Ctrl-K. Exit K-command mode with ESC or Ctrl-G.
 .TP
-.B C-k BACKSPACE
-Delete from the cursor to the beginning of the line.
-.TP
-.B C-k SPACE
-Toggle the mark.
+.B C-k '
+Toggle read-only for the current buffer.
 .TP
 .B C-k -
 If the mark is set, unindent the region.
 .TP
 .B C-k =
 If the mark is set, indent the region.
+.TP
+.B C-k ;
+Open the generic command prompt (": ").
 .TP
 .B C-k a
 Set the mark at the beginning of the file, then jump to the end of the file.
@@ -85,7 +85,7 @@ Delete from the cursor to the end of the line.
 Delete the entire line.
 .TP
 .B C-k e
-Edit a new file.
+Edit (open) a new file.
 .TP
 .B C-k f
 Flush the kill ring.
@@ -93,14 +93,20 @@ Flush the kill ring.
 .B C-k g
 Go to a specific line.
 .TP
+.B C-k h
+Show the built-in help (+HELP+ buffer).
+.TP
 .B C-k j
 Jump to the mark.
 .TP
 .B C-k l
 Reload the current buffer from disk.
 .TP
-.B C-k m
-Run make(1), reporting success or failure.
+.B C-k n
+Switch to the previous buffer.
+.TP
+.B C-k o
+Change working directory (prompt).
 .TP
 .B C-k p
 Switch to the next buffer.
@@ -111,14 +117,20 @@ Exit the editor. If the file has unsaved changes, a warning will be printed; a s
 .B C-k C-q
 Immediately exit the editor.
 .TP
+.B C-k r
+Redo changes.
+.TP
 .B C-k s
 Save the file, prompting for a filename if needed.
 .TP
 .B C-k u
 Undo.
 .TP
-.B C-k r
-Redo changes.
+.B C-k v
+Toggle visual file picker (GUI).
+.TP
+.B C-k w
+Show the current working directory.
 .TP
 .B C-k x
 Save the file and exit. Also C-k C-x.
@@ -126,22 +138,75 @@ Save the file and exit. Also C-k C-x.
 .B C-k y
 Yank the kill ring.
 .TP
-.B C-k \e
-Dump core.
+.B C-k C-x
+Save the file and exit.
+
+.SH GUI APPEARANCE
+When running the GUI frontend, you can control appearance via the generic
+command prompt (type "C-k ;" then enter commands):
+.TP
+.B : theme NAME
+Set the GUI theme. Available names: "nord", "gruvbox", "plan9", "solarized", "eink".
+Compatibility aliases are also accepted: "gruvbox-dark", "gruvbox-light",
+"solarized-dark", "solarized-light", "eink-dark", "eink-light".
+.TP
+.B : background MODE
+Set background mode for supported themes. MODE is either "light" or "dark".
+Themes that respond to background: eink, gruvbox, solarized. The
+"nord" and "plan9" themes do not vary with background.
+
+.SH CONFIGURATION
+The GUI reads a simple configuration file at
+~/.config/kte/kge.ini. Recognized keys include:
+.IP "fullscreen=on|off"
+.IP "columns=NUM"
+.IP "rows=NUM"
+.IP "font_size=NUM"
+.IP "theme=NAME"
+.IP "background=light|dark"
+The theme name accepts the values listed above. The background key controls
+light/dark variants when the selected theme supports it.
 
 .SS Other keybindings
 .TP
 .B C-g
 Cancel the current operation.
 .TP
+.B C-a
+Move to the beginning of the line.
+.TP
+.B C-e
+Move to the end of the line.
+.TP
+.B C-b
+Move left.
+.TP
+.B C-f
+Move right.
+.TP
+.B C-n
+Move down.
+.TP
+.B C-p
+Move up.
+.TP
 .B C-l
 Refresh the display.
+.TP
+.B C-d
+Delete the character at the cursor.
 .TP
 .B C-r
 Regex search.
 .TP
 .B C-s
 Incremental find.
+.TP
+.B C-t
+Regex search and replace.
+.TP
+.B C-h
+Search and replace.
 .TP
 .B C-u
 Universal argument. C-u followed by numbers will repeat an operation n times.
@@ -151,6 +216,15 @@ Kill the region if the mark is set.
 .TP
 .B C-y
 Yank the kill ring.
+.TP
+.B ESC <
+Move to the beginning of the file.
+.TP
+.B ESC >
+Move to the end of the file.
+.TP
+.B ESC m
+Toggle the mark.
 .TP
 .B ESC BACKSPACE
 Delete the previous word.
