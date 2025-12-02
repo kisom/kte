@@ -12,6 +12,10 @@
 
 #include "AppendBuffer.h"
 #include "UndoSystem.h"
+#include <cstdint>
+#include <memory>
+#include "HighlighterEngine.h"
+#include "Highlight.h"
 
 
 class Buffer {
@@ -326,6 +330,12 @@ public:
 	void SetDirty(bool d)
 	{
 		dirty_ = d;
+		if (d) {
+			++version_;
+			if (highlighter_) {
+				highlighter_->InvalidateFrom(0);
+			}
+		}
 	}
 
 
@@ -364,6 +374,23 @@ public:
 
 	[[nodiscard]] std::string AsString() const;
 
+	// Syntax highlighting integration (per-buffer)
+	[[nodiscard]] std::uint64_t Version() const { return version_; }
+
+	void SetSyntaxEnabled(bool on) { syntax_enabled_ = on; }
+	[[nodiscard]] bool SyntaxEnabled() const { return syntax_enabled_; }
+
+	void SetFiletype(const std::string &ft) { filetype_ = ft; }
+	[[nodiscard]] const std::string &Filetype() const { return filetype_; }
+
+	kte::HighlighterEngine *Highlighter() { return highlighter_.get(); }
+	const kte::HighlighterEngine *Highlighter() const { return highlighter_.get(); }
+
+	void EnsureHighlighter()
+	{
+		if (!highlighter_) highlighter_ = std::make_unique<kte::HighlighterEngine>();
+	}
+
 	// Raw, low-level editing APIs used by UndoSystem apply().
 	// These must NOT trigger undo recording. They also do not move the cursor.
 	void insert_text(int row, int col, std::string_view text);
@@ -400,6 +427,12 @@ private:
 	// Per-buffer undo state
 	std::unique_ptr<struct UndoTree> undo_tree_;
 	std::unique_ptr<UndoSystem> undo_sys_;
+
+	// Syntax/highlighting state
+	std::uint64_t version_ = 0; // increment on edits
+ bool syntax_enabled_    = true;
+	std::string filetype_;
+	std::unique_ptr<kte::HighlighterEngine> highlighter_;
 };
 
 #endif // KTE_BUFFER_H

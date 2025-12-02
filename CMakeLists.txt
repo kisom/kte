@@ -67,6 +67,17 @@ set(COMMON_SOURCES
         UndoNode.cc
         UndoTree.cc
         UndoSystem.cc
+        HighlighterEngine.cc
+        CppHighlighter.cc
+        HighlighterRegistry.cc
+        NullHighlighter.cc
+        JsonHighlighter.cc
+        MarkdownHighlighter.cc
+        ShellHighlighter.cc
+        GoHighlighter.cc
+        PythonHighlighter.cc
+        RustHighlighter.cc
+        LispHighlighter.cc
 )
 
 set(COMMON_HEADERS
@@ -90,6 +101,19 @@ set(COMMON_HEADERS
         UndoNode.h
         UndoTree.h
         UndoSystem.h
+        Highlight.h
+        LanguageHighlighter.h
+        HighlighterEngine.h
+        CppHighlighter.h
+        HighlighterRegistry.h
+        NullHighlighter.h
+        JsonHighlighter.h
+        MarkdownHighlighter.h
+        ShellHighlighter.h
+        GoHighlighter.h
+        PythonHighlighter.h
+        RustHighlighter.h
+        LispHighlighter.h
 )
 
 # kte (terminal-first) executable

@@ -10,6 +10,8 @@
 #include <regex>
 
 #include "GUIRenderer.h"
+#include "Highlight.h"
+#include "GUITheme.h"
 #include "Buffer.h"
 #include "Command.h"
 #include "Editor.h"
@@ -321,21 +323,50 @@ GUIRenderer::Draw(Editor &ed)
 					ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
 				}
 			}
-			// Emit entire line (ImGui child scrolling will handle clipping)
-			for (std::size_t src = 0; src < line.size(); ++src) {
-				char c = line[src];
-				if (c == '\t') {
-					std::size_t adv = (tabw - (rx_abs_draw % tabw));
-					// Emit spaces for the tab
-					expanded.append(adv, ' ');
-					rx_abs_draw += adv;
-				} else {
-					expanded.push_back(c);
-					rx_abs_draw += 1;
-				}
-			}
+   // Emit entire line to an expanded buffer (tabs -> spaces)
+   for (std::size_t src = 0; src < line.size(); ++src) {
+       char c = line[src];
+       if (c == '\t') {
+           std::size_t adv = (tabw - (rx_abs_draw % tabw));
+           expanded.append(adv, ' ');
+           rx_abs_draw += adv;
+       } else {
+           expanded.push_back(c);
+           rx_abs_draw += 1;
+       }
+   }
 
-			ImGui::TextUnformatted(expanded.c_str());
+   // Draw syntax-colored runs (text above background highlights)
+   if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
+       const kte::LineHighlight &lh = buf->Highlighter()->GetLine(*buf, static_cast<int>(i), buf->Version());
+       // Helper to convert a src column to expanded rx position
+       auto src_to_rx_full = [&](std::size_t sidx) -> std::size_t {
+           std::size_t rx = 0;
+           for (std::size_t k = 0; k < sidx && k < line.size(); ++k) {
+               rx += (line[k] == '\t') ? (tabw - (rx % tabw)) : 1;
+           }
+           return rx;
+       };
+       for (const auto &sp: lh.spans) {
+           std::size_t rx_s = src_to_rx_full(static_cast<std::size_t>(std::max(0, sp.col_start)));
+           std::size_t rx_e = src_to_rx_full(static_cast<std::size_t>(std::max(sp.col_start, sp.col_end)));
+           if (rx_e <= coloffs_now)
+               continue;
+           std::size_t vx0 = (rx_s > coloffs_now) ? (rx_s - coloffs_now) : 0;
+           std::size_t vx1 = (rx_e > coloffs_now) ? (rx_e - coloffs_now) : 0;
+           if (vx0 >= expanded.size()) continue;
+           vx1 = std::min<std::size_t>(vx1, expanded.size());
+           if (vx1 <= vx0) continue;
+           ImU32 col = ImGui::GetColorU32(kte::SyntaxInk(sp.kind));
+           ImVec2 p = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w, line_pos.y);
+           ImGui::GetWindowDrawList()->AddText(p, col, expanded.c_str() + vx0, expanded.c_str() + vx1);
+       }
+       // We drew text via draw list (no layout advance). Manually advance the cursor to the next line.
+       ImGui::SetCursorScreenPos(ImVec2(line_pos.x, line_pos.y + line_h));
+   } else {
+       // No syntax: draw as one run
+       ImGui::TextUnformatted(expanded.c_str());
+   }
 
 			// Draw a visible cursor indicator on the current line
 			if (i == cy) {

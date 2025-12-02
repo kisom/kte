@@ -94,7 +94,10 @@ enum class CommandId {
 	// Theme by name
 	ThemeSetByName,
 	// Background mode (GUI)
-	BackgroundSet,
+    BackgroundSet,
+    // Syntax highlighting
+    Syntax,        // ":syntax on|off|reload"
+    SetOption,     // generic ":set key=value" (v1: filetype=<lang>)
 };
 
 

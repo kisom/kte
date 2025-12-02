@@ -7,10 +7,15 @@
 #include <cctype>
 
 #include "Command.h"
+#include "HighlighterRegistry.h"
+#include "NullHighlighter.h"
 #include "Editor.h"
 #include "Buffer.h"
 #include "UndoSystem.h"
 #include "HelpText.h"
+#include "LanguageHighlighter.h"
+#include "HighlighterEngine.h"
+#include "CppHighlighter.h"
 #ifdef KTE_BUILD_GUI
 #include "GUITheme.h"
 #endif
@@ -755,6 +760,124 @@ cmd_unknown_kcommand(CommandContext &ctx)
 	std::snprintf(buf, sizeof(buf), "unknown k-command %c", ch);
 	ctx.editor.SetStatus(buf);
 	return true;
+}
+
+// --- Syntax highlighting commands ---
+static void apply_filetype(Buffer &buf, const std::string &ft)
+{
+    buf.EnsureHighlighter();
+    auto *eng = buf.Highlighter();
+    if (!eng) return;
+    std::string val = ft;
+    // trim + lower
+    auto trim = [](const std::string &s){
+        std::string r = s;
+        auto notsp = [](int ch){ return !std::isspace(ch); };
+        r.erase(r.begin(), std::find_if(r.begin(), r.end(), notsp));
+        r.erase(std::find_if(r.rbegin(), r.rend(), notsp).base(), r.end());
+        return r;
+    };
+    val = trim(val);
+    for (auto &ch: val) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    if (val == "off") {
+        eng->SetHighlighter(nullptr);
+        buf.SetFiletype("");
+        buf.SetSyntaxEnabled(false);
+        return;
+    }
+    if (val.empty()) {
+        // Empty means unknown/unspecified -> use NullHighlighter but keep syntax enabled
+        buf.SetFiletype("");
+        buf.SetSyntaxEnabled(true);
+        eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
+        eng->InvalidateFrom(0);
+        return;
+    }
+    // Normalize and create via registry
+    std::string norm = kte::HighlighterRegistry::Normalize(val);
+    auto hl = kte::HighlighterRegistry::CreateFor(norm);
+    if (hl) {
+        eng->SetHighlighter(std::move(hl));
+        buf.SetFiletype(norm);
+        buf.SetSyntaxEnabled(true);
+        eng->InvalidateFrom(0);
+    } else {
+        // Unknown -> install NullHighlighter and keep syntax enabled
+        eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
+        buf.SetFiletype(val); // record what user asked even if unsupported
+        buf.SetSyntaxEnabled(true);
+        eng->InvalidateFrom(0);
+    }
+}
+
+static bool cmd_syntax(CommandContext &ctx)
+{
+    Buffer *b = ctx.editor.CurrentBuffer();
+    if (!b) {
+        ctx.editor.SetStatus("No buffer");
+        return true;
+    }
+    std::string arg = ctx.arg;
+    // trim
+    auto trim = [](std::string &s){
+        auto notsp = [](int ch){ return !std::isspace(ch); };
+        s.erase(s.begin(), std::find_if(s.begin(), s.end(), notsp));
+        s.erase(std::find_if(s.rbegin(), s.rend(), notsp).base(), s.end());
+    };
+    trim(arg);
+    if (arg == "on") {
+        b->SetSyntaxEnabled(true);
+        // If no highlighter but filetype is cpp by extension, set it
+        if (!b->Highlighter() || !b->Highlighter()->HasHighlighter()) {
+            apply_filetype(*b, b->Filetype().empty() ? std::string("cpp") : b->Filetype());
+        }
+        ctx.editor.SetStatus("syntax: on");
+    } else if (arg == "off") {
+        b->SetSyntaxEnabled(false);
+        ctx.editor.SetStatus("syntax: off");
+    } else if (arg == "reload") {
+        if (auto *eng = b->Highlighter()) eng->InvalidateFrom(0);
+        ctx.editor.SetStatus("syntax: reloaded");
+    } else {
+        ctx.editor.SetStatus("usage: :syntax on|off|reload");
+    }
+    return true;
+}
+
+static bool cmd_set_option(CommandContext &ctx)
+{
+    Buffer *b = ctx.editor.CurrentBuffer();
+    if (!b) {
+        ctx.editor.SetStatus("No buffer");
+        return true;
+    }
+    // Expect key=value
+    auto eq = ctx.arg.find('=');
+    if (eq == std::string::npos) {
+        ctx.editor.SetStatus("usage: :set key=value");
+        return true;
+    }
+    std::string key = ctx.arg.substr(0, eq);
+    std::string val = ctx.arg.substr(eq + 1);
+    // trim
+    auto trim = [](std::string &s){
+        auto notsp = [](int ch){ return !std::isspace(ch); };
+        s.erase(s.begin(), std::find_if(s.begin(), s.end(), notsp));
+        s.erase(std::find_if(s.rbegin(), s.rend(), notsp).base(), s.end());
+    };
+    trim(key); trim(val);
+    // lower-case value for filetype
+    for (auto &ch: val) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    if (key == "filetype") {
+        apply_filetype(*b, val);
+        if (b->SyntaxEnabled())
+            ctx.editor.SetStatus(std::string("filetype: ") + (b->Filetype().empty()?"off":b->Filetype()));
+        else
+            ctx.editor.SetStatus("filetype: off");
+        return true;
+    }
+    ctx.editor.SetStatus("unknown option: " + key);
+    return true;
 }
 
 
@@ -3611,9 +3734,12 @@ InstallDefaultCommands()
 		CommandId::ChangeWorkingDirectory, "change-working-directory", "Change current working directory",
 		cmd_change_working_directory_start
 	});
-	// UI helpers
-	CommandRegistry::Register(
-		{CommandId::UArgStatus, "uarg-status", "Update universal-arg status", cmd_uarg_status});
+    // UI helpers
+    CommandRegistry::Register(
+        {CommandId::UArgStatus, "uarg-status", "Update universal-arg status", cmd_uarg_status});
+    // Syntax highlighting (public commands)
+    CommandRegistry::Register({CommandId::Syntax, "syntax", "Syntax: on|off|reload", cmd_syntax, true});
+    CommandRegistry::Register({CommandId::SetOption, "set", "Set option: key=value", cmd_set_option, true});
 }
 
 
