@@ -13,6 +13,7 @@
 #include "Editor.h"
 #include "Command.h"
 #include "GUIFrontend.h"
+#include <filesystem>
 #include "Font.h" // embedded default font (DefaultFontRegular)
 #include "GUIConfig.h"
 #include "GUITheme.h"
@@ -105,7 +106,25 @@ GUIFrontend::Init(Editor &ed)
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGuiIO &io = ImGui::GetIO();
-	(void) io;
+
+	// Set custom ini filename path to ~/.config/kte/imgui.ini
+	if (const char *home = std::getenv("HOME")) {
+		namespace fs = std::filesystem;
+		fs::path config_dir = fs::path(home) / ".config" / "kte";
+
+		std::error_code ec;
+		if (!fs::exists(config_dir)) {
+			fs::create_directories(config_dir, ec);
+		}
+
+		if (fs::exists(config_dir)) {
+			static std::string ini_path = (config_dir / "imgui.ini").string();
+			io.IniFilename              = ini_path.c_str();
+		}
+	}
+
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
 	ImGui::StyleColorsDark();
 
 	// Apply background mode and selected theme (default: Nord). Can be changed at runtime via commands.

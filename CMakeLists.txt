@@ -222,6 +222,17 @@ if (BUILD_TESTS)
 endif ()
 
 if (${BUILD_GUI})
+    # ImGui::CreateContext();
+    # ImGuiIO& io = ImGui::GetIO();
+
+    # // Set custom ini filename path to ~/.config/kte/imgui.ini
+    # if (const char* home = std::getenv("HOME")) {
+    #     static std::string ini_path = std::string(home) + "/.config/kte/imgui.ini";
+    #     io.IniFilename = ini_path.c_str();
+    # }
+
+    # io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    # io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     target_sources(kte PRIVATE
             Font.h
             GUIConfig.cc
