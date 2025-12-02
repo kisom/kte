@@ -3,9 +3,22 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <vector>
+#include <cctype>
 
 // Forward declare simple highlighters implemented in this project
 namespace kte {
+
+// Registration storage
+struct RegEntry {
+    std::string ft; // normalized
+    HighlighterRegistry::Factory factory;
+};
+
+static std::vector<RegEntry> &registry() {
+    static std::vector<RegEntry> reg;
+    return reg;
+}
 class JSONHighlighter; class MarkdownHighlighter; class ShellHighlighter;
 class GoHighlighter; class PythonHighlighter; class RustHighlighter; class LispHighlighter;
 }
@@ -45,6 +58,10 @@ std::string HighlighterRegistry::Normalize(std::string_view ft)
 std::unique_ptr<LanguageHighlighter> HighlighterRegistry::CreateFor(std::string_view filetype)
 {
     std::string ft = Normalize(filetype);
+    // Prefer externally registered factories
+    for (const auto &e : registry()) {
+        if (e.ft == ft && e.factory) return e.factory();
+    }
     if (ft == "cpp") return std::make_unique<CppHighlighter>();
     if (ft == "json") return std::make_unique<JSONHighlighter>();
     if (ft == "markdown") return std::make_unique<MarkdownHighlighter>();
@@ -89,5 +106,52 @@ std::string HighlighterRegistry::DetectForPath(std::string_view path, std::strin
     std::string ft = shebang_to_ft(first_line);
     return ft;
 }
+
+} // namespace kte
+
+// Extensibility API implementations
+namespace kte {
+
+void HighlighterRegistry::Register(std::string_view filetype, Factory factory, bool override_existing)
+{
+    std::string ft = Normalize(filetype);
+    for (auto &e : registry()) {
+        if (e.ft == ft) {
+            if (override_existing) e.factory = std::move(factory);
+            return;
+        }
+    }
+    registry().push_back(RegEntry{ft, std::move(factory)});
+}
+
+bool HighlighterRegistry::IsRegistered(std::string_view filetype)
+{
+    std::string ft = Normalize(filetype);
+    for (const auto &e : registry()) if (e.ft == ft) return true;
+    return false;
+}
+
+std::vector<std::string> HighlighterRegistry::RegisteredFiletypes()
+{
+    std::vector<std::string> out;
+    out.reserve(registry().size());
+    for (const auto &e : registry()) out.push_back(e.ft);
+    return out;
+}
+
+#ifdef KTE_ENABLE_TREESITTER
+// Forward declare adapter factory
+std::unique_ptr<LanguageHighlighter> CreateTreeSitterHighlighter(const char* filetype,
+                                                                 const void* (*get_lang)());
+
+void HighlighterRegistry::RegisterTreeSitter(std::string_view filetype,
+                                             const TSLanguage* (*get_language)())
+{
+    std::string ft = Normalize(filetype);
+    Register(ft, [ft, get_language]() {
+        return CreateTreeSitterHighlighter(ft.c_str(), reinterpret_cast<const void* (*)()>(get_language));
+    }, /*override_existing=*/true);
+}
+#endif
 
 } // namespace kte

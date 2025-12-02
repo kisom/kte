@@ -13,6 +13,7 @@ set(BUILD_TESTS OFF CACHE BOOL "Enable building test programs.")
 option(KTE_USE_PIECE_TABLE "Use PieceTable instead of GapBuffer implementation" ON)
 set(KTE_FONT_SIZE "18.0" CACHE STRING "Default font size for GUI")
 option(KTE_UNDO_DEBUG "Enable undo instrumentation logs" OFF)
+option(KTE_ENABLE_TREESITTER "Enable optional Tree-sitter highlighter adapter" OFF)
 
 if (CMAKE_HOST_UNIX)
     message(STATUS "Build system is POSIX.")
@@ -37,6 +38,9 @@ else ()
 endif ()
 add_compile_definitions(KGE_PLATFORM=${CMAKE_HOST_SYSTEM_NAME})
 add_compile_definitions(KTE_VERSION_STR="v${KTE_VERSION}")
+if (KTE_ENABLE_TREESITTER)
+    add_compile_definitions(KTE_ENABLE_TREESITTER)
+endif ()
 
 message(STATUS "Build system: ${CMAKE_HOST_SYSTEM_NAME}")
 
@@ -80,6 +84,11 @@ set(COMMON_SOURCES
         LispHighlighter.cc
 )
 
+if (KTE_ENABLE_TREESITTER)
+    list(APPEND COMMON_SOURCES
+            TreeSitterHighlighter.cc)
+endif ()
+
 set(COMMON_HEADERS
         GapBuffer.h
         PieceTable.h
@@ -116,6 +125,11 @@ set(COMMON_HEADERS
         LispHighlighter.h
 )
 
+if (KTE_ENABLE_TREESITTER)
+    list(APPEND COMMON_HEADERS
+            TreeSitterHighlighter.h)
+endif ()
+
 # kte (terminal-first) executable
 add_executable(kte
         main.cc
@@ -131,6 +145,18 @@ if (KTE_UNDO_DEBUG)
 endif ()
 
 target_link_libraries(kte ${CURSES_LIBRARIES})
+
+if (KTE_ENABLE_TREESITTER)
+    # Users can provide their own tree-sitter include/lib via cache variables
+    set(TREESITTER_INCLUDE_DIR "" CACHE PATH "Path to tree-sitter include directory")
+    set(TREESITTER_LIBRARY "" CACHE FILEPATH "Path to tree-sitter library (.a/.dylib)")
+    if (TREESITTER_INCLUDE_DIR)
+        target_include_directories(kte PRIVATE ${TREESITTER_INCLUDE_DIR})
+    endif ()
+    if (TREESITTER_LIBRARY)
+        target_link_libraries(kte ${TREESITTER_LIBRARY})
+    endif ()
+endif ()
 
 install(TARGETS kte
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -157,6 +183,14 @@ if (BUILD_TESTS)
 
 
     target_link_libraries(test_undo ${CURSES_LIBRARIES})
+    if (KTE_ENABLE_TREESITTER)
+        if (TREESITTER_INCLUDE_DIR)
+            target_include_directories(test_undo PRIVATE ${TREESITTER_INCLUDE_DIR})
+        endif ()
+        if (TREESITTER_LIBRARY)
+            target_link_libraries(test_undo ${TREESITTER_LIBRARY})
+        endif ()
+    endif ()
 endif ()
 
 if (${BUILD_GUI})

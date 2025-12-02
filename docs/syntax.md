@@ -50,3 +50,21 @@ Renderer integration
 
 - Terminal and GUI renderers request line spans via `Highlighter()->GetLine(buf, row, buf.Version())`.
 - Search highlight and cursor overlays take precedence over syntax colors.
+
+Extensibility (Phase 4)
+-----------------------
+
+- Public registration API: external code can register custom highlighters by filetype.
+  - Use `HighlighterRegistry::Register("mylang", []{ return std::make_unique<MyHighlighter>(); });`
+  - Registered factories are preferred over built-ins for the same filetype key.
+  - Filetype keys are normalized via `HighlighterRegistry::Normalize()`.
+- Optional Tree-sitter adapter: disabled by default to keep dependencies minimal.
+  - Enable with CMake option `-DKTE_ENABLE_TREESITTER=ON` and provide
+    `-DTREESITTER_INCLUDE_DIR=...` and `-DTREESITTER_LIBRARY=...` if needed.
+  - Register a Tree-sitter-backed highlighter for a language (example assumes you link a grammar):
+    ```c++
+    extern "C" const TSLanguage* tree_sitter_c();
+    kte::HighlighterRegistry::RegisterTreeSitter("c", &tree_sitter_c);
+    ```
+  - Current adapter is a stub scaffold; it compiles and integrates cleanly when enabled, but
+    intentionally emits no spans until Tree-sitter node-to-token mapping is implemented.

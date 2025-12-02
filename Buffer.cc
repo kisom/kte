@@ -6,6 +6,9 @@
 #include "Buffer.h"
 #include "UndoSystem.h"
 #include "UndoTree.h"
+// For reconstructing highlighter state on copies
+#include "HighlighterRegistry.h"
+#include "NullHighlighter.h"
 
 
 Buffer::Buffer()
@@ -40,9 +43,32 @@ Buffer::Buffer(const Buffer &other)
 	mark_set_       = other.mark_set_;
 	mark_curx_      = other.mark_curx_;
 	mark_cury_      = other.mark_cury_;
+	// Copy syntax/highlighting flags
+	version_        = other.version_;
+	syntax_enabled_ = other.syntax_enabled_;
+	filetype_       = other.filetype_;
 	// Fresh undo system for the copy
 	undo_tree_ = std::make_unique<UndoTree>();
 	undo_sys_  = std::make_unique<UndoSystem>(*this, *undo_tree_);
+
+	// Recreate a highlighter engine for this copy based on filetype/syntax state
+	if (syntax_enabled_) {
+		// Allocate engine and install an appropriate highlighter
+		highlighter_ = std::make_unique<kte::HighlighterEngine>();
+		if (!filetype_.empty()) {
+			auto hl = kte::HighlighterRegistry::CreateFor(filetype_);
+			if (hl) {
+				highlighter_->SetHighlighter(std::move(hl));
+			} else {
+				// Unsupported filetype -> NullHighlighter keeps syntax pipeline active
+				highlighter_->SetHighlighter(std::make_unique<kte::NullHighlighter>());
+			}
+		} else {
+			// No filetype -> keep syntax enabled but use NullHighlighter
+			highlighter_->SetHighlighter(std::make_unique<kte::NullHighlighter>());
+		}
+		// Fresh engine has empty caches; nothing to invalidate
+	}
 }
 
 
@@ -65,9 +91,28 @@ Buffer::operator=(const Buffer &other)
 	mark_set_       = other.mark_set_;
 	mark_curx_      = other.mark_curx_;
 	mark_cury_      = other.mark_cury_;
+	version_        = other.version_;
+	syntax_enabled_ = other.syntax_enabled_;
+	filetype_       = other.filetype_;
 	// Recreate undo system for this instance
 	undo_tree_ = std::make_unique<UndoTree>();
 	undo_sys_  = std::make_unique<UndoSystem>(*this, *undo_tree_);
+
+	// Recreate highlighter engine consistent with syntax settings
+	highlighter_.reset();
+	if (syntax_enabled_) {
+		highlighter_ = std::make_unique<kte::HighlighterEngine>();
+		if (!filetype_.empty()) {
+			auto hl = kte::HighlighterRegistry::CreateFor(filetype_);
+			if (hl) {
+				highlighter_->SetHighlighter(std::move(hl));
+			} else {
+				highlighter_->SetHighlighter(std::make_unique<kte::NullHighlighter>());
+			}
+		} else {
+			highlighter_->SetHighlighter(std::make_unique<kte::NullHighlighter>());
+		}
+	}
 	return *this;
 }
 
@@ -91,6 +136,11 @@ Buffer::Buffer(Buffer &&other) noexcept
 	  undo_tree_(std::move(other.undo_tree_)),
 	  undo_sys_(std::move(other.undo_sys_))
 {
+	// Move syntax/highlighting state
+	version_        = other.version_;
+	syntax_enabled_ = other.syntax_enabled_;
+	filetype_       = std::move(other.filetype_);
+	highlighter_    = std::move(other.highlighter_);
 	// Update UndoSystem's buffer reference to point to this object
 	if (undo_sys_) {
 		undo_sys_->UpdateBufferReference(*this);
@@ -121,6 +171,12 @@ Buffer::operator=(Buffer &&other) noexcept
 	mark_cury_      = other.mark_cury_;
 	undo_tree_      = std::move(other.undo_tree_);
 	undo_sys_       = std::move(other.undo_sys_);
+
+	// Move syntax/highlighting state
+	version_        = other.version_;
+	syntax_enabled_ = other.syntax_enabled_;
+	filetype_       = std::move(other.filetype_);
+	highlighter_    = std::move(other.highlighter_);
 
 	// Update UndoSystem's buffer reference to point to this object
 	if (undo_sys_) {

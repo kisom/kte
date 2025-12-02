@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <utility>
 #include <filesystem>
+#include "HighlighterRegistry.h"
+#include "NullHighlighter.h"
 
 #include "Editor.h"
 #include "HighlighterRegistry.h"
@@ -218,11 +220,32 @@ Editor::OpenFile(const std::string &path, std::string &err)
 bool
 Editor::SwitchTo(std::size_t index)
 {
-	if (index >= buffers_.size()) {
-		return false;
-	}
-	curbuf_ = index;
-	return true;
+    if (index >= buffers_.size()) {
+        return false;
+    }
+    curbuf_ = index;
+    // Robustness: ensure a valid highlighter is installed when switching buffers
+    Buffer &b = buffers_[curbuf_];
+    if (b.SyntaxEnabled()) {
+        b.EnsureHighlighter();
+        if (auto *eng = b.Highlighter()) {
+            if (!eng->HasHighlighter()) {
+                // Try to set based on existing filetype; fall back to NullHighlighter
+                if (!b.Filetype().empty()) {
+                    auto hl = kte::HighlighterRegistry::CreateFor(b.Filetype());
+                    if (hl) {
+                        eng->SetHighlighter(std::move(hl));
+                    } else {
+                        eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
+                    }
+                } else {
+                    eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
+                }
+                eng->InvalidateFrom(0);
+            }
+        }
+    }
+    return true;
 }
 
 
