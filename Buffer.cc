@@ -9,6 +9,7 @@
 // For reconstructing highlighter state on copies
 #include "HighlighterRegistry.h"
 #include "NullHighlighter.h"
+#include "lsp/BufferChangeTracker.h"
 
 
 Buffer::Buffer()
@@ -17,6 +18,9 @@ Buffer::Buffer()
 	undo_tree_ = std::make_unique<UndoTree>();
 	undo_sys_  = std::make_unique<UndoSystem>(*this, *undo_tree_);
 }
+
+
+Buffer::~Buffer() = default;
 
 
 Buffer::Buffer(const std::string &path)
@@ -394,6 +398,30 @@ Buffer::AsString() const
 }
 
 
+std::string
+Buffer::FullText() const
+{
+	std::string out;
+	// Precompute size for fewer reallocations
+	std::size_t total = 0;
+	for (std::size_t i = 0; i < rows_.size(); ++i) {
+		total += rows_[i].Size();
+		if (i + 1 < rows_.size())
+			total += 1; // for '\n'
+	}
+	out.reserve(total);
+	for (std::size_t i = 0; i < rows_.size(); ++i) {
+		const char *d = rows_[i].Data();
+		std::size_t n = rows_[i].Size();
+		if (d && n)
+			out.append(d, n);
+		if (i + 1 < rows_.size())
+			out.push_back('\n');
+	}
+	return out;
+}
+
+
 // --- Raw editing APIs (no undo recording, cursor untouched) ---
 void
 Buffer::insert_text(int row, int col, std::string_view text)
@@ -432,6 +460,9 @@ Buffer::insert_text(int row, int col, std::string_view text)
 		remain.erase(0, pos + 1);
 	}
 	// Do not set dirty here; UndoSystem will manage state/dirty externally
+	if (change_tracker_) {
+		change_tracker_->recordInsertion(row, col, std::string(text));
+	}
 }
 
 
@@ -469,6 +500,9 @@ Buffer::delete_text(int row, int col, std::size_t len)
 		} else {
 			break;
 		}
+	}
+	if (change_tracker_) {
+		change_tracker_->recordDeletion(row, col, len);
 	}
 }
 
@@ -542,4 +576,18 @@ const UndoSystem *
 Buffer::Undo() const
 {
 	return undo_sys_.get();
+}
+
+
+void
+Buffer::SetChangeTracker(std::unique_ptr<kte::lsp::BufferChangeTracker> tracker)
+{
+	change_tracker_ = std::move(tracker);
+}
+
+
+kte::lsp::BufferChangeTracker *
+Buffer::GetChangeTracker()
+{
+	return change_tracker_.get();
 }

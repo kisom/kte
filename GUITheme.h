@@ -10,16 +10,17 @@
 #include <cctype>
 
 // Small helper to convert packed RGB (0xRRGGBB) + optional alpha to ImVec4
-static inline ImVec4 RGBA(unsigned int rgb, float a = 1.0f)
+static inline ImVec4
+RGBA(unsigned int rgb, float a = 1.0f)
 {
-    const float r = static_cast<float>((rgb >> 16) & 0xFF) / 255.0f;
-    const float g = static_cast<float>((rgb >> 8) & 0xFF) / 255.0f;
-    const float b = static_cast<float>(rgb & 0xFF) / 255.0f;
-    return ImVec4(r, g, b, a);
+	const float r = static_cast<float>((rgb >> 16) & 0xFF) / 255.0f;
+	const float g = static_cast<float>((rgb >> 8) & 0xFF) / 255.0f;
+	const float b = static_cast<float>(rgb & 0xFF) / 255.0f;
+	return ImVec4(r, g, b, a);
 }
 
-namespace kte {
 
+namespace kte {
 // Background mode selection for light/dark palettes
 enum class BackgroundMode { Light, Dark };
 
@@ -28,20 +29,21 @@ static inline BackgroundMode gBackgroundMode = BackgroundMode::Dark;
 
 // Basic theme identifier (kept minimal; some ids are aliases)
 enum class ThemeId {
-    EInk = 0,
-    GruvboxDarkMedium = 1,
-    GruvboxLightMedium = 1, // alias to unified gruvbox index
-    Nord = 2,
-    Plan9 = 3,
-    Solarized = 4,
+	EInk = 0,
+	GruvboxDarkMedium = 1,
+	GruvboxLightMedium = 1, // alias to unified gruvbox index
+	Nord = 2,
+	Plan9 = 3,
+	Solarized = 4,
 };
 
 // Current theme tracking
-static inline ThemeId gCurrentTheme = ThemeId::Nord;
+static inline ThemeId gCurrentTheme          = ThemeId::Nord;
 static inline std::size_t gCurrentThemeIndex = 0;
 
 // Forward declarations for helpers used below
 static inline size_t ThemeIndexFromId(ThemeId id);
+
 static inline ThemeId ThemeIdFromIndex(size_t idx);
 
 // Helpers to set/query background mode
@@ -1098,18 +1100,18 @@ CurrentThemeName()
 static inline size_t
 ThemeIndexFromId(ThemeId id)
 {
- switch (id) {
- case ThemeId::EInk:
-     return 0;
- case ThemeId::GruvboxDarkMedium:
-     return 1;
- case ThemeId::Nord:
-     return 2;
- case ThemeId::Plan9:
-     return 3;
- case ThemeId::Solarized:
-     return 4;
- }
+	switch (id) {
+	case ThemeId::EInk:
+		return 0;
+	case ThemeId::GruvboxDarkMedium:
+		return 1;
+	case ThemeId::Nord:
+		return 2;
+	case ThemeId::Plan9:
+		return 3;
+	case ThemeId::Solarized:
+		return 4;
+	}
 	return 0;
 }
 
@@ -1132,29 +1134,46 @@ ThemeIdFromIndex(size_t idx)
 	}
 }
 
+
 // --- Syntax palette (v1): map TokenKind to ink color per current theme/background ---
-static inline ImVec4 SyntaxInk(TokenKind k)
+static inline ImVec4
+SyntaxInk(TokenKind k)
 {
-    // Basic palettes for dark/light backgrounds; tuned for Nord-ish defaults
-    const bool dark = (GetBackgroundMode() == BackgroundMode::Dark);
-    // Base text
-    ImVec4 def = dark ? RGBA(0xD8DEE9) : RGBA(0x2E3440);
-    switch (k) {
-        case TokenKind::Keyword:      return dark ? RGBA(0x81A1C1) : RGBA(0x5E81AC);
-        case TokenKind::Type:         return dark ? RGBA(0x8FBCBB) : RGBA(0x4C566A);
-        case TokenKind::String:       return dark ? RGBA(0xA3BE8C) : RGBA(0x6C8E5E);
-        case TokenKind::Char:         return dark ? RGBA(0xA3BE8C) : RGBA(0x6C8E5E);
-        case TokenKind::Comment:      return dark ? RGBA(0x616E88) : RGBA(0x7A869A);
-        case TokenKind::Number:       return dark ? RGBA(0xEBCB8B) : RGBA(0xB58900);
-        case TokenKind::Preproc:      return dark ? RGBA(0xD08770) : RGBA(0xAF3A03);
-        case TokenKind::Constant:     return dark ? RGBA(0xB48EAD) : RGBA(0x7B4B7F);
-        case TokenKind::Function:     return dark ? RGBA(0x88C0D0) : RGBA(0x3465A4);
-        case TokenKind::Operator:     return dark ? RGBA(0xECEFF4) : RGBA(0x2E3440);
-        case TokenKind::Punctuation:  return dark ? RGBA(0xECEFF4) : RGBA(0x2E3440);
-        case TokenKind::Identifier:   return def;
-        case TokenKind::Whitespace:   return def;
-        case TokenKind::Error:        return dark ? RGBA(0xBF616A) : RGBA(0xCC0000);
-        case TokenKind::Default:      default: return def;
-    }
+	// Basic palettes for dark/light backgrounds; tuned for Nord-ish defaults
+	const bool dark = (GetBackgroundMode() == BackgroundMode::Dark);
+	// Base text
+	ImVec4 def = dark ? RGBA(0xD8DEE9) : RGBA(0x2E3440);
+	switch (k) {
+	case TokenKind::Keyword:
+		return dark ? RGBA(0x81A1C1) : RGBA(0x5E81AC);
+	case TokenKind::Type:
+		return dark ? RGBA(0x8FBCBB) : RGBA(0x4C566A);
+	case TokenKind::String:
+		return dark ? RGBA(0xA3BE8C) : RGBA(0x6C8E5E);
+	case TokenKind::Char:
+		return dark ? RGBA(0xA3BE8C) : RGBA(0x6C8E5E);
+	case TokenKind::Comment:
+		return dark ? RGBA(0x616E88) : RGBA(0x7A869A);
+	case TokenKind::Number:
+		return dark ? RGBA(0xEBCB8B) : RGBA(0xB58900);
+	case TokenKind::Preproc:
+		return dark ? RGBA(0xD08770) : RGBA(0xAF3A03);
+	case TokenKind::Constant:
+		return dark ? RGBA(0xB48EAD) : RGBA(0x7B4B7F);
+	case TokenKind::Function:
+		return dark ? RGBA(0x88C0D0) : RGBA(0x3465A4);
+	case TokenKind::Operator:
+		return dark ? RGBA(0xECEFF4) : RGBA(0x2E3440);
+	case TokenKind::Punctuation:
+		return dark ? RGBA(0xECEFF4) : RGBA(0x2E3440);
+	case TokenKind::Identifier:
+		return def;
+	case TokenKind::Whitespace:
+		return def;
+	case TokenKind::Error:
+		return dark ? RGBA(0xBF616A) : RGBA(0xCC0000);
+	case TokenKind::Default: default:
+		return def;
+	}
 }
 } // namespace kte

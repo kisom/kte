@@ -148,104 +148,107 @@ Editor::OpenFile(const std::string &path, std::string &err)
 {
 	// If there is exactly one unnamed, empty, clean buffer, reuse it instead
 	// of creating a new one.
- if (buffers_.size() == 1) {
-        Buffer &cur                  = buffers_[curbuf_];
-        const bool unnamed           = cur.Filename().empty() && !cur.IsFileBacked();
-        const bool clean             = !cur.Dirty();
-        const auto &rows             = cur.Rows();
-        const bool rows_empty        = rows.empty();
-        const bool single_empty_line = (!rows.empty() && rows.size() == 1 && rows[0].size() == 0);
-        if (unnamed && clean && (rows_empty || single_empty_line)) {
-            bool ok = cur.OpenFromFile(path, err);
-            if (!ok) return false;
-            // Setup highlighting using registry (extension + shebang)
-            cur.EnsureHighlighter();
-            std::string first = "";
-            const auto &rows = cur.Rows();
-            if (!rows.empty()) first = static_cast<std::string>(rows[0]);
-            std::string ft = kte::HighlighterRegistry::DetectForPath(path, first);
-            if (!ft.empty()) {
-                cur.SetFiletype(ft);
-                cur.SetSyntaxEnabled(true);
-                if (auto *eng = cur.Highlighter()) {
-                    eng->SetHighlighter(kte::HighlighterRegistry::CreateFor(ft));
-                    eng->InvalidateFrom(0);
-                }
-            } else {
-                cur.SetFiletype("");
-                cur.SetSyntaxEnabled(true);
-                if (auto *eng = cur.Highlighter()) {
-                    eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-                    eng->InvalidateFrom(0);
-                }
-            }
-            return true;
-        }
-    }
+	if (buffers_.size() == 1) {
+		Buffer &cur                  = buffers_[curbuf_];
+		const bool unnamed           = cur.Filename().empty() && !cur.IsFileBacked();
+		const bool clean             = !cur.Dirty();
+		const auto &rows             = cur.Rows();
+		const bool rows_empty        = rows.empty();
+		const bool single_empty_line = (!rows.empty() && rows.size() == 1 && rows[0].size() == 0);
+		if (unnamed && clean && (rows_empty || single_empty_line)) {
+			bool ok = cur.OpenFromFile(path, err);
+			if (!ok)
+				return false;
+			// Setup highlighting using registry (extension + shebang)
+			cur.EnsureHighlighter();
+			std::string first = "";
+			const auto &rows  = cur.Rows();
+			if (!rows.empty())
+				first = static_cast<std::string>(rows[0]);
+			std::string ft = kte::HighlighterRegistry::DetectForPath(path, first);
+			if (!ft.empty()) {
+				cur.SetFiletype(ft);
+				cur.SetSyntaxEnabled(true);
+				if (auto *eng = cur.Highlighter()) {
+					eng->SetHighlighter(kte::HighlighterRegistry::CreateFor(ft));
+					eng->InvalidateFrom(0);
+				}
+			} else {
+				cur.SetFiletype("");
+				cur.SetSyntaxEnabled(true);
+				if (auto *eng = cur.Highlighter()) {
+					eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
+					eng->InvalidateFrom(0);
+				}
+			}
+			return true;
+		}
+	}
 
-    Buffer b;
-    if (!b.OpenFromFile(path, err)) {
-        return false;
-    }
-    // Initialize syntax highlighting by extension + shebang via registry (v2)
-    b.EnsureHighlighter();
-    std::string first = "";
-    {
-        const auto &rows = b.Rows();
-        if (!rows.empty()) first = static_cast<std::string>(rows[0]);
-    }
-    std::string ft = kte::HighlighterRegistry::DetectForPath(path, first);
-    if (!ft.empty()) {
-        b.SetFiletype(ft);
-        b.SetSyntaxEnabled(true);
-        if (auto *eng = b.Highlighter()) {
-            eng->SetHighlighter(kte::HighlighterRegistry::CreateFor(ft));
-            eng->InvalidateFrom(0);
-        }
-    } else {
-        b.SetFiletype("");
-        b.SetSyntaxEnabled(true);
-        if (auto *eng = b.Highlighter()) {
-            eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-            eng->InvalidateFrom(0);
-        }
-    }
-    // Add as a new buffer and switch to it
-    std::size_t idx = AddBuffer(std::move(b));
-    SwitchTo(idx);
-    return true;
+	Buffer b;
+	if (!b.OpenFromFile(path, err)) {
+		return false;
+	}
+	// Initialize syntax highlighting by extension + shebang via registry (v2)
+	b.EnsureHighlighter();
+	std::string first = "";
+	{
+		const auto &rows = b.Rows();
+		if (!rows.empty())
+			first = static_cast<std::string>(rows[0]);
+	}
+	std::string ft = kte::HighlighterRegistry::DetectForPath(path, first);
+	if (!ft.empty()) {
+		b.SetFiletype(ft);
+		b.SetSyntaxEnabled(true);
+		if (auto *eng = b.Highlighter()) {
+			eng->SetHighlighter(kte::HighlighterRegistry::CreateFor(ft));
+			eng->InvalidateFrom(0);
+		}
+	} else {
+		b.SetFiletype("");
+		b.SetSyntaxEnabled(true);
+		if (auto *eng = b.Highlighter()) {
+			eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
+			eng->InvalidateFrom(0);
+		}
+	}
+	// Add as a new buffer and switch to it
+	std::size_t idx = AddBuffer(std::move(b));
+	SwitchTo(idx);
+	return true;
 }
 
 
 bool
 Editor::SwitchTo(std::size_t index)
 {
-    if (index >= buffers_.size()) {
-        return false;
-    }
-    curbuf_ = index;
-    // Robustness: ensure a valid highlighter is installed when switching buffers
-    Buffer &b = buffers_[curbuf_];
-    if (b.SyntaxEnabled()) {
-        b.EnsureHighlighter();
-        if (auto *eng = b.Highlighter()) {
-            if (!eng->HasHighlighter()) {
-                // Try to set based on existing filetype; fall back to NullHighlighter
-                if (!b.Filetype().empty()) {
-                    auto hl = kte::HighlighterRegistry::CreateFor(b.Filetype());
-                    if (hl) {
-                        eng->SetHighlighter(std::move(hl));
-                    } else {
-                        eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-                    }
-                } else {
-                    eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-                }
-                eng->InvalidateFrom(0);
-            }
-        }
-    }
-    return true;
+	if (index >= buffers_.size()) {
+		return false;
+	}
+	curbuf_ = index;
+	// Robustness: ensure a valid highlighter is installed when switching buffers
+	Buffer &b = buffers_[curbuf_];
+	if (b.SyntaxEnabled()) {
+		b.EnsureHighlighter();
+		if (auto *eng = b.Highlighter()) {
+			if (!eng->HasHighlighter()) {
+				// Try to set based on existing filetype; fall back to NullHighlighter
+				if (!b.Filetype().empty()) {
+					auto hl = kte::HighlighterRegistry::CreateFor(b.Filetype());
+					if (hl) {
+						eng->SetHighlighter(std::move(hl));
+					} else {
+						eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
+					}
+				} else {
+					eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
+				}
+				eng->InvalidateFrom(0);
+			}
+		}
+	}
+	return true;
 }
 
 

@@ -108,42 +108,44 @@ GUIFrontend::Init(Editor &ed)
 	(void) io;
 	ImGui::StyleColorsDark();
 
- // Apply background mode and selected theme (default: Nord). Can be changed at runtime via commands.
- if (cfg.background == "light")
-     kte::SetBackgroundMode(kte::BackgroundMode::Light);
- else
-     kte::SetBackgroundMode(kte::BackgroundMode::Dark);
- kte::ApplyThemeByName(cfg.theme);
+	// Apply background mode and selected theme (default: Nord). Can be changed at runtime via commands.
+	if (cfg.background == "light")
+		kte::SetBackgroundMode(kte::BackgroundMode::Light);
+	else
+		kte::SetBackgroundMode(kte::BackgroundMode::Dark);
+	kte::ApplyThemeByName(cfg.theme);
 
- // Apply default syntax highlighting preference from GUI config to the current buffer
- if (Buffer *b = ed.CurrentBuffer()) {
-     if (cfg.syntax) {
-         b->SetSyntaxEnabled(true);
-         // Ensure a highlighter is available if possible
-         b->EnsureHighlighter();
-         if (auto *eng = b->Highlighter()) {
-             if (!eng->HasHighlighter()) {
-                 // Try detect from filename and first line; fall back to cpp or existing filetype
-                 std::string first_line;
-                 const auto &rows = b->Rows();
-                 if (!rows.empty()) first_line = static_cast<std::string>(rows[0]);
-                 std::string ft = kte::HighlighterRegistry::DetectForPath(b->Filename(), first_line);
-                 if (!ft.empty()) {
-                     eng->SetHighlighter(kte::HighlighterRegistry::CreateFor(ft));
-                     b->SetFiletype(ft);
-                     eng->InvalidateFrom(0);
-                 } else {
-                     // Unknown/unsupported -> install a null highlighter to keep syntax enabled
-                     eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-                     b->SetFiletype("");
-                     eng->InvalidateFrom(0);
-                 }
-             }
-         }
-     } else {
-         b->SetSyntaxEnabled(false);
-     }
- }
+	// Apply default syntax highlighting preference from GUI config to the current buffer
+	if (Buffer *b = ed.CurrentBuffer()) {
+		if (cfg.syntax) {
+			b->SetSyntaxEnabled(true);
+			// Ensure a highlighter is available if possible
+			b->EnsureHighlighter();
+			if (auto *eng = b->Highlighter()) {
+				if (!eng->HasHighlighter()) {
+					// Try detect from filename and first line; fall back to cpp or existing filetype
+					std::string first_line;
+					const auto &rows = b->Rows();
+					if (!rows.empty())
+						first_line = static_cast<std::string>(rows[0]);
+					std::string ft = kte::HighlighterRegistry::DetectForPath(
+						b->Filename(), first_line);
+					if (!ft.empty()) {
+						eng->SetHighlighter(kte::HighlighterRegistry::CreateFor(ft));
+						b->SetFiletype(ft);
+						eng->InvalidateFrom(0);
+					} else {
+						// Unknown/unsupported -> install a null highlighter to keep syntax enabled
+						eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
+						b->SetFiletype("");
+						eng->InvalidateFrom(0);
+					}
+				}
+			}
+		} else {
+			b->SetSyntaxEnabled(false);
+		}
+	}
 
 	if (!ImGui_ImplSDL2_InitForOpenGL(window_, gl_ctx_))
 		return false;

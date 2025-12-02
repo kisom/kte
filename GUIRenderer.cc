@@ -139,29 +139,29 @@ GUIRenderer::Draw(Editor &ed)
 				vis_rows = 1;
 			long last_row = first_row + vis_rows - 1;
 
-            if (!forced_scroll) {
-                long cyr = static_cast<long>(cy);
-                if (cyr < first_row || cyr > last_row) {
-                    float target = (static_cast<float>(cyr) - std::max(0L, vis_rows / 2)) * row_h;
-                    float max_y  = ImGui::GetScrollMaxY();
-                    if (target < 0.f)
-                        target = 0.f;
-                    if (max_y >= 0.f && target > max_y)
-                        target = max_y;
-                    ImGui::SetScrollY(target);
-                    // refresh local variables
-                    scroll_y  = ImGui::GetScrollY();
-                    first_row = static_cast<long>(scroll_y / row_h);
-                    last_row  = first_row + vis_rows - 1;
-                }
-            }
-            // Phase 3: prefetch visible viewport highlights and warm around in background
-            if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
-                int fr = static_cast<int>(std::max(0L, first_row));
-                int rc = static_cast<int>(std::max(1L, vis_rows));
-                buf->Highlighter()->PrefetchViewport(*buf, fr, rc, buf->Version());
-            }
-        }
+			if (!forced_scroll) {
+				long cyr = static_cast<long>(cy);
+				if (cyr < first_row || cyr > last_row) {
+					float target = (static_cast<float>(cyr) - std::max(0L, vis_rows / 2)) * row_h;
+					float max_y  = ImGui::GetScrollMaxY();
+					if (target < 0.f)
+						target = 0.f;
+					if (max_y >= 0.f && target > max_y)
+						target = max_y;
+					ImGui::SetScrollY(target);
+					// refresh local variables
+					scroll_y  = ImGui::GetScrollY();
+					first_row = static_cast<long>(scroll_y / row_h);
+					last_row  = first_row + vis_rows - 1;
+				}
+			}
+			// Phase 3: prefetch visible viewport highlights and warm around in background
+			if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
+				int fr = static_cast<int>(std::max(0L, first_row));
+				int rc = static_cast<int>(std::max(1L, vis_rows));
+				buf->Highlighter()->PrefetchViewport(*buf, fr, rc, buf->Version());
+			}
+		}
 		// Handle mouse click before rendering to avoid dependent on drawn items
 		if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
 			ImVec2 mp = ImGui::GetIO().MousePos;
@@ -329,50 +329,56 @@ GUIRenderer::Draw(Editor &ed)
 					ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
 				}
 			}
-   // Emit entire line to an expanded buffer (tabs -> spaces)
-   for (std::size_t src = 0; src < line.size(); ++src) {
-       char c = line[src];
-       if (c == '\t') {
-           std::size_t adv = (tabw - (rx_abs_draw % tabw));
-           expanded.append(adv, ' ');
-           rx_abs_draw += adv;
-       } else {
-           expanded.push_back(c);
-           rx_abs_draw += 1;
-       }
-   }
+			// Emit entire line to an expanded buffer (tabs -> spaces)
+			for (std::size_t src = 0; src < line.size(); ++src) {
+				char c = line[src];
+				if (c == '\t') {
+					std::size_t adv = (tabw - (rx_abs_draw % tabw));
+					expanded.append(adv, ' ');
+					rx_abs_draw += adv;
+				} else {
+					expanded.push_back(c);
+					rx_abs_draw += 1;
+				}
+			}
 
-   // Draw syntax-colored runs (text above background highlights)
-   if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
-       const kte::LineHighlight &lh = buf->Highlighter()->GetLine(*buf, static_cast<int>(i), buf->Version());
-       // Helper to convert a src column to expanded rx position
-       auto src_to_rx_full = [&](std::size_t sidx) -> std::size_t {
-           std::size_t rx = 0;
-           for (std::size_t k = 0; k < sidx && k < line.size(); ++k) {
-               rx += (line[k] == '\t') ? (tabw - (rx % tabw)) : 1;
-           }
-           return rx;
-       };
-       for (const auto &sp: lh.spans) {
-           std::size_t rx_s = src_to_rx_full(static_cast<std::size_t>(std::max(0, sp.col_start)));
-           std::size_t rx_e = src_to_rx_full(static_cast<std::size_t>(std::max(sp.col_start, sp.col_end)));
-           if (rx_e <= coloffs_now)
-               continue;
-           std::size_t vx0 = (rx_s > coloffs_now) ? (rx_s - coloffs_now) : 0;
-           std::size_t vx1 = (rx_e > coloffs_now) ? (rx_e - coloffs_now) : 0;
-           if (vx0 >= expanded.size()) continue;
-           vx1 = std::min<std::size_t>(vx1, expanded.size());
-           if (vx1 <= vx0) continue;
-           ImU32 col = ImGui::GetColorU32(kte::SyntaxInk(sp.kind));
-           ImVec2 p = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w, line_pos.y);
-           ImGui::GetWindowDrawList()->AddText(p, col, expanded.c_str() + vx0, expanded.c_str() + vx1);
-       }
-       // We drew text via draw list (no layout advance). Manually advance the cursor to the next line.
-       ImGui::SetCursorScreenPos(ImVec2(line_pos.x, line_pos.y + line_h));
-   } else {
-       // No syntax: draw as one run
-       ImGui::TextUnformatted(expanded.c_str());
-   }
+			// Draw syntax-colored runs (text above background highlights)
+			if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
+				const kte::LineHighlight &lh = buf->Highlighter()->GetLine(
+					*buf, static_cast<int>(i), buf->Version());
+				// Helper to convert a src column to expanded rx position
+				auto src_to_rx_full = [&](std::size_t sidx) -> std::size_t {
+					std::size_t rx = 0;
+					for (std::size_t k = 0; k < sidx && k < line.size(); ++k) {
+						rx += (line[k] == '\t') ? (tabw - (rx % tabw)) : 1;
+					}
+					return rx;
+				};
+				for (const auto &sp: lh.spans) {
+					std::size_t rx_s = src_to_rx_full(
+						static_cast<std::size_t>(std::max(0, sp.col_start)));
+					std::size_t rx_e = src_to_rx_full(
+						static_cast<std::size_t>(std::max(sp.col_start, sp.col_end)));
+					if (rx_e <= coloffs_now)
+						continue;
+					std::size_t vx0 = (rx_s > coloffs_now) ? (rx_s - coloffs_now) : 0;
+					std::size_t vx1 = (rx_e > coloffs_now) ? (rx_e - coloffs_now) : 0;
+					if (vx0 >= expanded.size())
+						continue;
+					vx1 = std::min<std::size_t>(vx1, expanded.size());
+					if (vx1 <= vx0)
+						continue;
+					ImU32 col = ImGui::GetColorU32(kte::SyntaxInk(sp.kind));
+					ImVec2 p  = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w, line_pos.y);
+					ImGui::GetWindowDrawList()->AddText(
+						p, col, expanded.c_str() + vx0, expanded.c_str() + vx1);
+				}
+				// We drew text via draw list (no layout advance). Manually advance the cursor to the next line.
+				ImGui::SetCursorScreenPos(ImVec2(line_pos.x, line_pos.y + line_h));
+			} else {
+				// No syntax: draw as one run
+				ImGui::TextUnformatted(expanded.c_str());
+			}
 
 			// Draw a visible cursor indicator on the current line
 			if (i == cy) {

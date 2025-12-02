@@ -42,18 +42,18 @@ TerminalRenderer::Draw(Editor &ed)
 		std::size_t coloffs = buf->Coloffs();
 
 		const int tabw = 8;
-  // Phase 3: prefetch visible viewport highlights (current terminal area)
-        if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
-            int fr = static_cast<int>(rowoffs);
-            int rc = std::max(0, content_rows);
-            buf->Highlighter()->PrefetchViewport(*buf, fr, rc, buf->Version());
-        }
+		// Phase 3: prefetch visible viewport highlights (current terminal area)
+		if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
+			int fr = static_cast<int>(rowoffs);
+			int rc = std::max(0, content_rows);
+			buf->Highlighter()->PrefetchViewport(*buf, fr, rc, buf->Version());
+		}
 
-        for (int r = 0; r < content_rows; ++r) {
-            move(r, 0);
-            std::size_t li         = rowoffs + static_cast<std::size_t>(r);
-            std::size_t render_col = 0;
-            std::size_t src_i      = 0;
+		for (int r = 0; r < content_rows; ++r) {
+			move(r, 0);
+			std::size_t li         = rowoffs + static_cast<std::size_t>(r);
+			std::size_t render_col = 0;
+			std::size_t src_i      = 0;
 			// Compute matches for this line if search highlighting is active
 			bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
 			std::vector<std::pair<std::size_t, std::size_t> > ranges; // [start, end)
@@ -105,49 +105,53 @@ TerminalRenderer::Draw(Editor &ed)
 			bool hl_on                 = false;
 			bool cur_on                = false;
 			int written                = 0;
-   if (li < lines.size()) {
-                std::string line = static_cast<std::string>(lines[li]);
-                src_i            = 0;
-                render_col       = 0;
-                // Syntax highlighting: fetch per-line spans
-                const kte::LineHighlight *lh_ptr = nullptr;
-                if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
-                    lh_ptr = &buf->Highlighter()->GetLine(*buf, static_cast<int>(li), buf->Version());
-                }
-                auto token_at = [&](std::size_t src_index) -> kte::TokenKind {
-                    if (!lh_ptr) return kte::TokenKind::Default;
-                    for (const auto &sp: lh_ptr->spans) {
-                        if (static_cast<int>(src_index) >= sp.col_start && static_cast<int>(src_index) < sp.col_end)
-                            return sp.kind;
-                    }
-                    return kte::TokenKind::Default;
-                };
-                auto apply_token_attr = [&](kte::TokenKind k) {
-                    // Map to simple attributes; search highlight uses A_STANDOUT which takes precedence below
-                    attrset(A_NORMAL);
-                    switch (k) {
-                        case kte::TokenKind::Keyword:
-                        case kte::TokenKind::Type:
-                        case kte::TokenKind::Constant:
-                        case kte::TokenKind::Function:
-                            attron(A_BOLD);
-                            break;
-                        case kte::TokenKind::Comment:
-                            attron(A_DIM);
-                            break;
-                        case kte::TokenKind::String:
-                        case kte::TokenKind::Char:
-                        case kte::TokenKind::Number:
-                            // standout a bit using A_UNDERLINE if available
-                            attron(A_UNDERLINE);
-                            break;
-                        default:
-                            break;
-                    }
-                };
-                while (written < cols) {
-                    char ch       = ' ';
-                    bool from_src = false;
+			if (li < lines.size()) {
+				std::string line = static_cast<std::string>(lines[li]);
+				src_i            = 0;
+				render_col       = 0;
+				// Syntax highlighting: fetch per-line spans
+				const kte::LineHighlight *lh_ptr = nullptr;
+				if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->
+				    HasHighlighter()) {
+					lh_ptr = &buf->Highlighter()->GetLine(
+						*buf, static_cast<int>(li), buf->Version());
+				}
+				auto token_at = [&](std::size_t src_index) -> kte::TokenKind {
+					if (!lh_ptr)
+						return kte::TokenKind::Default;
+					for (const auto &sp: lh_ptr->spans) {
+						if (static_cast<int>(src_index) >= sp.col_start && static_cast<int>(
+							    src_index) < sp.col_end)
+							return sp.kind;
+					}
+					return kte::TokenKind::Default;
+				};
+				auto apply_token_attr = [&](kte::TokenKind k) {
+					// Map to simple attributes; search highlight uses A_STANDOUT which takes precedence below
+					attrset(A_NORMAL);
+					switch (k) {
+					case kte::TokenKind::Keyword:
+					case kte::TokenKind::Type:
+					case kte::TokenKind::Constant:
+					case kte::TokenKind::Function:
+						attron(A_BOLD);
+						break;
+					case kte::TokenKind::Comment:
+						attron(A_DIM);
+						break;
+					case kte::TokenKind::String:
+					case kte::TokenKind::Char:
+					case kte::TokenKind::Number:
+						// standout a bit using A_UNDERLINE if available
+						attron(A_UNDERLINE);
+						break;
+					default:
+						break;
+					}
+				};
+				while (written < cols) {
+					char ch       = ' ';
+					bool from_src = false;
 					if (src_i < line.size()) {
 						unsigned char c = static_cast<unsigned char>(line[src_i]);
 						if (c == '\t') {
@@ -166,45 +170,45 @@ TerminalRenderer::Draw(Editor &ed)
 								next_tab -= to_skip;
 							}
 							// Now render visible spaces
-       while (next_tab > 0 && written < cols) {
-                                bool in_hl  = search_mode && is_src_in_hl(src_i);
-                                bool in_cur =
-                                    has_current && li == cur_my && src_i >= cur_mx
-                                    && src_i < cur_mend;
-                                // Toggle highlight attributes
-                                int attr = 0;
-                                if (in_hl)
-                                    attr |= A_STANDOUT;
-                                if (in_cur)
-                                    attr |= A_BOLD;
-                                if ((attr & A_STANDOUT) && !hl_on) {
-                                    attron(A_STANDOUT);
-                                    hl_on = true;
-                                }
-                                if (!(attr & A_STANDOUT) && hl_on) {
-                                    attroff(A_STANDOUT);
-                                    hl_on = false;
-                                }
-                                if ((attr & A_BOLD) && !cur_on) {
-                                    attron(A_BOLD);
-                                    cur_on = true;
-                                }
-                                if (!(attr & A_BOLD) && cur_on) {
-                                    attroff(A_BOLD);
-                                    cur_on = false;
-                                }
-                                // Apply syntax attribute only if not in search highlight
-                                if (!in_hl) {
-                                    apply_token_attr(token_at(src_i));
-                                }
-                                addch(' ');
-                                ++written;
-                                ++render_col;
-                                --next_tab;
-                            }
-                            ++src_i;
-                            continue;
-                        } else {
+							while (next_tab > 0 && written < cols) {
+								bool in_hl  = search_mode && is_src_in_hl(src_i);
+								bool in_cur =
+									has_current && li == cur_my && src_i >= cur_mx
+									&& src_i < cur_mend;
+								// Toggle highlight attributes
+								int attr = 0;
+								if (in_hl)
+									attr |= A_STANDOUT;
+								if (in_cur)
+									attr |= A_BOLD;
+								if ((attr & A_STANDOUT) && !hl_on) {
+									attron(A_STANDOUT);
+									hl_on = true;
+								}
+								if (!(attr & A_STANDOUT) && hl_on) {
+									attroff(A_STANDOUT);
+									hl_on = false;
+								}
+								if ((attr & A_BOLD) && !cur_on) {
+									attron(A_BOLD);
+									cur_on = true;
+								}
+								if (!(attr & A_BOLD) && cur_on) {
+									attroff(A_BOLD);
+									cur_on = false;
+								}
+								// Apply syntax attribute only if not in search highlight
+								if (!in_hl) {
+									apply_token_attr(token_at(src_i));
+								}
+								addch(' ');
+								++written;
+								++render_col;
+								--next_tab;
+							}
+							++src_i;
+							continue;
+						} else {
 							// normal char
 							if (render_col < coloffs) {
 								++render_col;
@@ -219,49 +223,49 @@ TerminalRenderer::Draw(Editor &ed)
 						ch       = ' ';
 						from_src = false;
 					}
-     bool in_hl  = search_mode && from_src && is_src_in_hl(src_i);
-     bool in_cur =
-         has_current && li == cur_my && from_src && src_i >= cur_mx && src_i <
-         cur_mend;
-     if (in_hl && !hl_on) {
-         attron(A_STANDOUT);
-         hl_on = true;
-     }
-     if (!in_hl && hl_on) {
-         attroff(A_STANDOUT);
-         hl_on = false;
-     }
-     if (in_cur && !cur_on) {
-         attron(A_BOLD);
-         cur_on = true;
-     }
-     if (!in_cur && cur_on) {
-         attroff(A_BOLD);
-         cur_on = false;
-     }
-     if (!in_hl && from_src) {
-         apply_token_attr(token_at(src_i));
-     }
-     addch(static_cast<unsigned char>(ch));
-     ++written;
-     ++render_col;
-     if (from_src)
-         ++src_i;
+					bool in_hl  = search_mode && from_src && is_src_in_hl(src_i);
+					bool in_cur =
+						has_current && li == cur_my && from_src && src_i >= cur_mx && src_i <
+						cur_mend;
+					if (in_hl && !hl_on) {
+						attron(A_STANDOUT);
+						hl_on = true;
+					}
+					if (!in_hl && hl_on) {
+						attroff(A_STANDOUT);
+						hl_on = false;
+					}
+					if (in_cur && !cur_on) {
+						attron(A_BOLD);
+						cur_on = true;
+					}
+					if (!in_cur && cur_on) {
+						attroff(A_BOLD);
+						cur_on = false;
+					}
+					if (!in_hl && from_src) {
+						apply_token_attr(token_at(src_i));
+					}
+					addch(static_cast<unsigned char>(ch));
+					++written;
+					++render_col;
+					if (from_src)
+						++src_i;
 					if (src_i >= line.size() && written >= cols)
 						break;
 				}
 			}
-            if (hl_on) {
-                attroff(A_STANDOUT);
-                hl_on = false;
-            }
-            if (cur_on) {
-                attroff(A_BOLD);
-                cur_on = false;
-            }
-            attrset(A_NORMAL);
-            clrtoeol();
-        }
+			if (hl_on) {
+				attroff(A_STANDOUT);
+				hl_on = false;
+			}
+			if (cur_on) {
+				attroff(A_BOLD);
+				cur_on = false;
+			}
+			attrset(A_NORMAL);
+			clrtoeol();
+		}
 
 		// Place terminal cursor at logical position accounting for tabs and coloffs
 		std::size_t cy = buf->Cury();
