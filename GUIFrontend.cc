@@ -329,8 +329,8 @@ GUIFrontend::LoadGuiFont_(const char * /*path*/, float size_px)
 	const ImGuiIO &io = ImGui::GetIO();
 	io.Fonts->Clear();
 	const ImFont *font = io.Fonts->AddFontFromMemoryCompressedTTF(
-		DefaultFontBoldCompressedData,
-		DefaultFontBoldCompressedSize,
+		kte::Fonts::DefaultFontRegularCompressedData,
+		kte::Fonts::DefaultFontRegularCompressedSize,
 		size_px);
 	if (!font) {
 		font = io.Fonts->AddFontDefault();

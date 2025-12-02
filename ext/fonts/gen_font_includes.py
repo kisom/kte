@@ -5,13 +5,25 @@ import re
 import sys
 import subprocess
 
-DEFAULT_FONTS = ['B612_Mono', 'BrassMono']
+DEFAULT_FONTS = [
+    'B612_Mono',
+    'BrassMono',
+    'BrassMonoCode',
+    'FiraCode',
+    'Go',
+    'IBMPlexMono',
+    'Inconsolata',
+    'InconsolataExpanded',
+    'ShareTech',
+    'Syne',
+]
 
 def generate_font(header_file, path):
     symbol_name=os.path.splitext(os.path.basename(path))[0]
     symbol_name=symbol_name.replace('-', '_')
+    symbol_name=symbol_name.split('_')[1]
     output = subprocess.check_output(
-            f'binary_to_compressed_c "{path}" {symbol_name}',
+            f'binary_to_compressed_c "{path}" DefaultFont{symbol_name}',
             shell=True)
     header_file.write('\n\n')
     header_file.write(output.decode('utf-8'))
@@ -24,22 +36,26 @@ def generate_header(header, guard, files):
     except:
         raise
     with open(header, 'wt') as header_file:
-        header_file.write(f"""#ifndef {guard}
-#define {guard}
-
+        header_file.write(f"""#pragma once
+namespace kte::Fonts {{
 """)
         for file in files:
             generate_font(header_file, file)
 
-        header_file.write('\n\n#endif\n')
+        header_file.write('}}');
+
+    subprocess.call("sed -i '' -e 's/_compressed_size/CompressedSize/' "+
+                    f"{header_file.name}", shell=True)
+    subprocess.call("sed -i '' -e 's/_compressed_data/CompressedData/' " + 
+                    f"{header_file.name}", shell=True)
 
 def generate_dir(path):
     filelist = [os.path.join(path, file) for file in os.listdir(path)
                 if file.endswith('ttf')]
-    guard = f'KGE_FONTS_{path.upper()}_H'
+    namespace = f'kte::{path}'
 
-    header = f"{path.lower().replace('-', '_')}.h"
-    generate_header(header, guard, filelist)
+    header = f"{path.replace('-', '_')}.h"
+    generate_header(header, namespace, filelist)
 
 def main(fonts=None):
     if fonts is None:

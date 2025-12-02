@@ -21,6 +21,17 @@ else ()
     message(STATUS "Build system is NOT POSIX.")
 endif ()
 
+add_compile_options(
+        "-static"
+        "-Wall"
+        "-Wextra"
+        "-Werror"
+        "-Wno-unused-function"
+        "-Wno-unused-parameter"
+        "-g"
+        "$<$<CONFIG:RELEASE>:-O2>"
+)
+
 if (MSVC)
     add_compile_options("/W4" "$<$<CONFIG:RELEASE>:/O2>")
 else ()
