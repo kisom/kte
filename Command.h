@@ -58,6 +58,8 @@ enum class CommandId {
 	MoveEnd,
 	PageUp,
 	PageDown,
+	ScrollUp, // scroll viewport up (towards beginning) without moving cursor
+	ScrollDown, // scroll viewport down (towards end) without moving cursor
 	WordPrev,
 	WordNext,
 	DeleteWordPrev, // delete previous word (ESC BACKSPACE)

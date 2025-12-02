@@ -35,16 +35,16 @@ map_key_to_command(const int ch,
 	case KEY_MOUSE: {
 		MEVENT ev{};
 		if (getmouse(&ev) == OK) {
-			// Mouse wheel → map to MoveUp/MoveDown one line per wheel notch
+			// Mouse wheel → scroll viewport without moving cursor
 #ifdef BUTTON4_PRESSED
 			if (ev.bstate & (BUTTON4_PRESSED | BUTTON4_RELEASED | BUTTON4_CLICKED)) {
-				out = {true, CommandId::MoveUp, "", 0};
+				out = {true, CommandId::ScrollUp, "", 0};
 				return true;
 			}
 #endif
 #ifdef BUTTON5_PRESSED
 			if (ev.bstate & (BUTTON5_PRESSED | BUTTON5_RELEASED | BUTTON5_CLICKED)) {
-				out = {true, CommandId::MoveDown, "", 0};
+				out = {true, CommandId::ScrollDown, "", 0};
 				return true;
 			}
 #endif

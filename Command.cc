@@ -3067,6 +3067,74 @@ cmd_page_down(CommandContext &ctx)
 }
 
 
+static bool
+cmd_scroll_up(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	ensure_at_least_one_line(*buf);
+	const auto &rows         = buf->Rows();
+	std::size_t content_rows = std::max<std::size_t>(1, ctx.editor.ContentRows());
+	std::size_t rowoffs      = buf->Rowoffs();
+
+	// Scroll up by 3 lines (or count if specified), without moving cursor
+	int scroll_amount = ctx.count > 0 ? ctx.count : 3;
+	if (rowoffs >= static_cast<std::size_t>(scroll_amount))
+		rowoffs -= static_cast<std::size_t>(scroll_amount);
+	else
+		rowoffs = 0;
+
+	buf->SetOffsets(rowoffs, buf->Coloffs());
+
+	// If cursor is now below the visible area, move it to the last visible line
+	std::size_t cury = buf->Cury();
+	if (cury >= rowoffs + content_rows) {
+		std::size_t new_y = rowoffs + content_rows - 1;
+		if (new_y >= rows.size() && !rows.empty())
+			new_y = rows.size() - 1;
+		buf->SetCursor(buf->Curx(), new_y);
+	}
+
+	return true;
+}
+
+
+static bool
+cmd_scroll_down(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	ensure_at_least_one_line(*buf);
+	const auto &rows         = buf->Rows();
+	std::size_t content_rows = std::max<std::size_t>(1, ctx.editor.ContentRows());
+	std::size_t rowoffs      = buf->Rowoffs();
+
+	// Scroll down by 3 lines (or count if specified), without moving cursor
+	int scroll_amount = ctx.count > 0 ? ctx.count : 3;
+
+	// Compute maximum top offset
+	std::size_t max_top = 0;
+	if (!rows.empty() && rows.size() > content_rows)
+		max_top = rows.size() - content_rows;
+
+	rowoffs += static_cast<std::size_t>(scroll_amount);
+	if (rowoffs > max_top)
+		rowoffs = max_top;
+
+	buf->SetOffsets(rowoffs, buf->Coloffs());
+
+	// If cursor is now above the visible area, move it to the first visible line
+	std::size_t cury = buf->Cury();
+	if (cury < rowoffs) {
+		buf->SetCursor(buf->Curx(), rowoffs);
+	}
+
+	return true;
+}
+
+
 static inline bool
 is_word_char(unsigned char c)
 {
@@ -3675,6 +3743,8 @@ InstallDefaultCommands()
 	CommandRegistry::Register({CommandId::MoveEnd, "end", "Move to end of line", cmd_move_end});
 	CommandRegistry::Register({CommandId::PageUp, "page-up", "Page up", cmd_page_up});
 	CommandRegistry::Register({CommandId::PageDown, "page-down", "Page down", cmd_page_down});
+	CommandRegistry::Register({CommandId::ScrollUp, "scroll-up", "Scroll viewport up", cmd_scroll_up});
+	CommandRegistry::Register({CommandId::ScrollDown, "scroll-down", "Scroll viewport down", cmd_scroll_down});
 	CommandRegistry::Register({CommandId::WordPrev, "word-prev", "Move to previous word", cmd_word_prev});
 	CommandRegistry::Register({CommandId::WordNext, "word-next", "Move to next word", cmd_word_next});
 	CommandRegistry::Register({

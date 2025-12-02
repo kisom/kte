@@ -285,15 +285,11 @@ GUIInputHandler::ProcessSDLEvent(const SDL_Event &e)
 	bool produced = false;
 	switch (e.type) {
 	case SDL_MOUSEWHEEL: {
-		// If ImGui wants to capture the mouse (e.g., hovering the File Picker list),
-		// don't translate wheel events into editor scrolling.
-		// This prevents background buffer scroll while using GUI widgets.
-		ImGuiIO &io = ImGui::GetIO();
-		if (io.WantCaptureMouse) {
-			return true; // consumed by GUI
-		}
-
-		// Map vertical wheel to line-wise cursor movement (MoveUp/MoveDown)
+		// Map vertical wheel to viewport scrolling (ScrollUp/ScrollDown)
+		// Note: We don't check WantCaptureMouse here because ImGui sets it to true
+		// whenever the mouse is over any ImGui window (including our editor content area).
+		// The NoScrollWithMouse flag on the child window prevents ImGui from handling
+		// scroll internally, so we can safely process wheel events ourselves.
 		int dy = e.wheel.y;
 #ifdef SDL_MOUSEWHEEL_FLIPPED
 		if (e.wheel.direction == SDL_MOUSEWHEEL_FLIPPED)
@@ -301,7 +297,7 @@ GUIInputHandler::ProcessSDLEvent(const SDL_Event &e)
 #endif
 		if (dy != 0) {
 			int repeat   = dy > 0 ? dy : -dy;
-			CommandId id = dy > 0 ? CommandId::MoveUp : CommandId::MoveDown;
+			CommandId id = dy > 0 ? CommandId::ScrollUp : CommandId::ScrollDown;
 			std::lock_guard<std::mutex> lk(mu_);
 			for (int i = 0; i < repeat; ++i) {
 				q_.push(MappedInput{true, id, std::string(), 0});
@@ -372,7 +368,7 @@ GUIInputHandler::ProcessSDLEvent(const SDL_Event &e)
 			// Digits without shift, or a plain '-'
 			const bool is_digit_key = (key >= SDLK_0 && key <= SDLK_9) && !(mods & KMOD_SHIFT);
 			const bool is_minus_key = (key == SDLK_MINUS);
-			if (uarg_active_ && uarg_collecting_ && (is_digit_key || is_minus_key)) {
+			if (uarg_active_ && uarg_collecting_ &&(is_digit_key || is_minus_key)) {
 				suppress_text_input_once_ = true;
 			}
 		}
@@ -564,7 +560,12 @@ GUIInputHandler::ProcessSDLEvent(const SDL_Event &e)
 
 	if (produced && mi.hasCommand) {
 		// Attach universal-argument count if present, then clear the state
-		if (uarg_active_ && mi.id != CommandId::UArgStatus) {
+		if (uarg_active_ &&mi
+		
+		.
+		id != CommandId::UArgStatus
+		)
+		{
 			int count = 0;
 			if (!uarg_had_digits_ && !uarg_negative_) {
 				count = (uarg_value_ > 0) ? uarg_value_ : 4;
