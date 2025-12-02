@@ -139,23 +139,29 @@ GUIRenderer::Draw(Editor &ed)
 				vis_rows = 1;
 			long last_row = first_row + vis_rows - 1;
 
-			if (!forced_scroll) {
-				long cyr = static_cast<long>(cy);
-				if (cyr < first_row || cyr > last_row) {
-					float target = (static_cast<float>(cyr) - std::max(0L, vis_rows / 2)) * row_h;
-					float max_y  = ImGui::GetScrollMaxY();
-					if (target < 0.f)
-						target = 0.f;
-					if (max_y >= 0.f && target > max_y)
-						target = max_y;
-					ImGui::SetScrollY(target);
-					// refresh local variables
-					scroll_y  = ImGui::GetScrollY();
-					first_row = static_cast<long>(scroll_y / row_h);
-					last_row  = first_row + vis_rows - 1;
-				}
-			}
-		}
+            if (!forced_scroll) {
+                long cyr = static_cast<long>(cy);
+                if (cyr < first_row || cyr > last_row) {
+                    float target = (static_cast<float>(cyr) - std::max(0L, vis_rows / 2)) * row_h;
+                    float max_y  = ImGui::GetScrollMaxY();
+                    if (target < 0.f)
+                        target = 0.f;
+                    if (max_y >= 0.f && target > max_y)
+                        target = max_y;
+                    ImGui::SetScrollY(target);
+                    // refresh local variables
+                    scroll_y  = ImGui::GetScrollY();
+                    first_row = static_cast<long>(scroll_y / row_h);
+                    last_row  = first_row + vis_rows - 1;
+                }
+            }
+            // Phase 3: prefetch visible viewport highlights and warm around in background
+            if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
+                int fr = static_cast<int>(std::max(0L, first_row));
+                int rc = static_cast<int>(std::max(1L, vis_rows));
+                buf->Highlighter()->PrefetchViewport(*buf, fr, rc, buf->Version());
+            }
+        }
 		// Handle mouse click before rendering to avoid dependent on drawn items
 		if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
 			ImVec2 mp = ImGui::GetIO().MousePos;

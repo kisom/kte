@@ -42,11 +42,18 @@ TerminalRenderer::Draw(Editor &ed)
 		std::size_t coloffs = buf->Coloffs();
 
 		const int tabw = 8;
-		for (int r = 0; r < content_rows; ++r) {
-			move(r, 0);
-			std::size_t li         = rowoffs + static_cast<std::size_t>(r);
-			std::size_t render_col = 0;
-			std::size_t src_i      = 0;
+  // Phase 3: prefetch visible viewport highlights (current terminal area)
+        if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
+            int fr = static_cast<int>(rowoffs);
+            int rc = std::max(0, content_rows);
+            buf->Highlighter()->PrefetchViewport(*buf, fr, rc, buf->Version());
+        }
+
+        for (int r = 0; r < content_rows; ++r) {
+            move(r, 0);
+            std::size_t li         = rowoffs + static_cast<std::size_t>(r);
+            std::size_t render_col = 0;
+            std::size_t src_i      = 0;
 			// Compute matches for this line if search highlighting is active
 			bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
 			std::vector<std::pair<std::size_t, std::size_t> > ranges; // [start, end)

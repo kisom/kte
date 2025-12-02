@@ -3,6 +3,7 @@
 #include <ncurses.h>
 
 #include <SDL.h>
+#include <imgui.h>
 
 #include "GUIInputHandler.h"
 #include "KKeymap.h"
@@ -284,6 +285,14 @@ GUIInputHandler::ProcessSDLEvent(const SDL_Event &e)
 	bool produced = false;
 	switch (e.type) {
 	case SDL_MOUSEWHEEL: {
+		// If ImGui wants to capture the mouse (e.g., hovering the File Picker list),
+		// don't translate wheel events into editor scrolling.
+		// This prevents background buffer scroll while using GUI widgets.
+		ImGuiIO &io = ImGui::GetIO();
+		if (io.WantCaptureMouse) {
+			return true; // consumed by GUI
+		}
+
 		// Map vertical wheel to line-wise cursor movement (MoveUp/MoveDown)
 		int dy = e.wheel.y;
 #ifdef SDL_MOUSEWHEEL_FLIPPED
