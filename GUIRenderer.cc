@@ -44,6 +44,8 @@ GUIRenderer::Draw(Editor &ed)
 	ImGui::SetNextWindowSize(main_sz);
 
 	ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar
+	                         | ImGuiWindowFlags_NoScrollbar
+	                         | ImGuiWindowFlags_NoScrollWithMouse
 	                         | ImGuiWindowFlags_NoResize
 	                         | ImGuiWindowFlags_NoMove
 	                         | ImGuiWindowFlags_NoCollapse
