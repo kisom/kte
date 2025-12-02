@@ -34,6 +34,8 @@ TerminalRenderer::Draw(Editor &ed)
 
 	const Buffer *buf = ed.CurrentBuffer();
 	int content_rows  = rows - 1; // last line is status
+	if (content_rows < 1)
+		content_rows = 1;
 
 	int saved_cur_y = -1, saved_cur_x = -1; // logical cursor position within content area
 	if (buf) {

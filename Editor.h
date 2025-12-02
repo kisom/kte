@@ -32,6 +32,16 @@ public:
 	}
 
 
+	[[nodiscard]] std::size_t ContentRows() const
+	{
+		// Always compute from current rows_ to avoid stale values.
+		// Reserve 1 row for status line.
+		if (rows_ == 0)
+			return 1;
+		return std::max<std::size_t>(1, rows_ - 1);
+	}
+
+
 	// Mode and flags (mirroring legacy fields)
 	void SetMode(int m)
 	{

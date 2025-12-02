@@ -42,12 +42,11 @@ compute_render_x(const std::string &line, const std::size_t curx, const std::siz
 static void
 ensure_cursor_visible(const Editor &ed, Buffer &buf)
 {
-	const std::size_t rows = ed.Rows();
 	const std::size_t cols = ed.Cols();
-	if (rows == 0 || cols == 0)
+	if (cols == 0)
 		return;
 
-	const std::size_t content_rows = rows > 0 ? rows - 1 : 0; // last row = status
+	const std::size_t content_rows = ed.ContentRows();
 	const std::size_t cury         = buf.Cury();
 	const std::size_t curx         = buf.Curx();
 	std::size_t rowoffs            = buf.Rowoffs();
@@ -3004,9 +3003,7 @@ cmd_page_up(CommandContext &ctx)
 	ensure_at_least_one_line(*buf);
 	auto &rows               = buf->Rows();
 	int repeat               = ctx.count > 0 ? ctx.count : 1;
-	std::size_t content_rows = ctx.editor.Rows() > 0 ? ctx.editor.Rows() - 1 : 0;
-	if (content_rows == 0)
-		content_rows = 1;
+	std::size_t content_rows = std::max<std::size_t>(1, ctx.editor.ContentRows());
 
 	// Base on current top-of-screen (row offset)
 	std::size_t rowoffs = buf->Rowoffs();
@@ -3030,7 +3027,6 @@ cmd_page_up(CommandContext &ctx)
 		y = rows.empty() ? 0 : rows.size() - 1;
 	buf->SetOffsets(rowoffs, 0);
 	buf->SetCursor(0, y);
-	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
 }
 
@@ -3046,9 +3042,7 @@ cmd_page_down(CommandContext &ctx)
 	ensure_at_least_one_line(*buf);
 	auto &rows               = buf->Rows();
 	int repeat               = ctx.count > 0 ? ctx.count : 1;
-	std::size_t content_rows = ctx.editor.Rows() > 0 ? ctx.editor.Rows() - 1 : 0;
-	if (content_rows == 0)
-		content_rows = 1;
+	std::size_t content_rows = std::max<std::size_t>(1, ctx.editor.ContentRows());
 
 	std::size_t rowoffs = buf->Rowoffs();
 	// Compute maximum top offset
@@ -3069,7 +3063,6 @@ cmd_page_down(CommandContext &ctx)
 	std::size_t y = std::min<std::size_t>(rowoffs, rows.empty() ? 0 : rows.size() - 1);
 	buf->SetOffsets(rowoffs, 0);
 	buf->SetCursor(0, y);
-	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
 }
 

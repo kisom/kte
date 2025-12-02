@@ -66,55 +66,66 @@ GUIRenderer::Draw(Editor &ed)
 	if (!buf) {
 		ImGui::TextUnformatted("[no buffer]");
 	} else {
-		const auto &lines = buf->Rows();
-		// Reserve space for status bar at bottom
-		ImGui::BeginChild("scroll", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), false,
-		                  ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-		// Detect click-to-move inside this scroll region
-		ImVec2 list_origin  = ImGui::GetCursorScreenPos();
-		float scroll_y      = ImGui::GetScrollY();
-		float scroll_x      = ImGui::GetScrollX();
-		std::size_t rowoffs = 0; // we render from the first line; scrolling is handled by ImGui
+		const auto &lines   = buf->Rows();
 		std::size_t cy      = buf->Cury();
 		std::size_t cx      = buf->Curx();
 		const float line_h  = ImGui::GetTextLineHeight();
 		const float row_h   = ImGui::GetTextLineHeightWithSpacing();
 		const float space_w = ImGui::CalcTextSize(" ").x;
+
 		// Two-way sync between Buffer::Rowoffs and ImGui scroll position:
 		// - If command layer changed Buffer::Rowoffs since last frame, drive ImGui scroll from it.
 		// - Otherwise, propagate ImGui scroll to Buffer::Rowoffs so command layer has an up-to-date view.
-		// This prevents clicks/wheel from being immediately overridden by stale offsets.
+		static long prev_buf_rowoffs = -1; // previous frame's Buffer::Rowoffs
+		static long prev_buf_coloffs = -1; // previous frame's Buffer::Coloffs
+
+		const long buf_rowoffs = static_cast<long>(buf->Rowoffs());
+		const long buf_coloffs = static_cast<long>(buf->Coloffs());
+
+		// Detect programmatic change (e.g., page_down command changed rowoffs)
+		// Use SetNextWindowScroll BEFORE BeginChild to set initial scroll position
+		if (prev_buf_rowoffs >= 0 && buf_rowoffs != prev_buf_rowoffs) {
+			float target_y = static_cast<float>(buf_rowoffs) * row_h;
+			ImGui::SetNextWindowScroll(ImVec2(-1.0f, target_y));
+		}
+		if (prev_buf_coloffs >= 0 && buf_coloffs != prev_buf_coloffs) {
+			float target_x = static_cast<float>(buf_coloffs) * space_w;
+			float target_y = static_cast<float>(buf_rowoffs) * row_h;
+			ImGui::SetNextWindowScroll(ImVec2(target_x, target_y));
+		}
+
+		// Reserve space for status bar at bottom
+		ImGui::BeginChild("scroll", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), false,
+		                  ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+		// Get child window position and scroll for click handling
+		ImVec2 child_window_pos = ImGui::GetWindowPos();
+		float scroll_y          = ImGui::GetScrollY();
+		float scroll_x          = ImGui::GetScrollX();
+		std::size_t rowoffs     = 0; // we render from the first line; scrolling is handled by ImGui
+
+		// Synchronize buffer offsets from ImGui scroll if user scrolled manually
 		bool forced_scroll = false;
 		{
-			static long prev_buf_rowoffs = -1; // previous frame's Buffer::Rowoffs
-			static long prev_buf_coloffs = -1; // previous frame's Buffer::Coloffs
-			static float prev_scroll_y   = -1.0f; // previous frame's ImGui scroll Y in pixels
-			static float prev_scroll_x   = -1.0f; // previous frame's ImGui scroll X in pixels
+			static float prev_scroll_y = -1.0f; // previous frame's ImGui scroll Y in pixels
+			static float prev_scroll_x = -1.0f; // previous frame's ImGui scroll X in pixels
 
-			const long buf_rowoffs = static_cast<long>(buf->Rowoffs());
-			const long buf_coloffs = static_cast<long>(buf->Coloffs());
 			const long scroll_top  = static_cast<long>(scroll_y / row_h);
 			const long scroll_left = static_cast<long>(scroll_x / space_w);
 
-			// Detect programmatic change (e.g., keyboard navigation ensured visibility)
+			// Check if rowoffs was programmatically changed this frame
 			if (prev_buf_rowoffs >= 0 && buf_rowoffs != prev_buf_rowoffs) {
-				ImGui::SetScrollY(static_cast<float>(buf_rowoffs) * row_h);
-				scroll_y      = ImGui::GetScrollY();
 				forced_scroll = true;
 			}
-			if (prev_buf_coloffs >= 0 && buf_coloffs != prev_buf_coloffs) {
-				ImGui::SetScrollX(static_cast<float>(buf_coloffs) * space_w);
-				scroll_x      = ImGui::GetScrollX();
-				forced_scroll = true;
-			}
-			// If user scrolled, update buffer offsets accordingly
-			if (prev_scroll_y >= 0.0f && scroll_y != prev_scroll_y) {
+
+			// If user scrolled (not programmatic), update buffer offsets accordingly
+			if (prev_scroll_y >= 0.0f && scroll_y != prev_scroll_y && !forced_scroll) {
 				if (Buffer *mbuf = const_cast<Buffer *>(buf)) {
 					mbuf->SetOffsets(static_cast<std::size_t>(std::max(0L, scroll_top)),
 					                 mbuf->Coloffs());
 				}
 			}
-			if (prev_scroll_x >= 0.0f && scroll_x != prev_scroll_x) {
+			if (prev_scroll_x >= 0.0f && scroll_x != prev_scroll_x && !forced_scroll) {
 				if (Buffer *mbuf = const_cast<Buffer *>(buf)) {
 					mbuf->SetOffsets(mbuf->Rowoffs(),
 					                 static_cast<std::size_t>(std::max(0L, scroll_left)));
@@ -122,11 +133,12 @@ GUIRenderer::Draw(Editor &ed)
 			}
 
 			// Update trackers for next frame
-			prev_buf_rowoffs = static_cast<long>(buf->Rowoffs());
-			prev_buf_coloffs = static_cast<long>(buf->Coloffs());
-			prev_scroll_y    = ImGui::GetScrollY();
-			prev_scroll_x    = ImGui::GetScrollX();
+			prev_scroll_y = scroll_y;
+			prev_scroll_x = scroll_x;
 		}
+		prev_buf_rowoffs = buf_rowoffs;
+		prev_buf_coloffs = buf_coloffs;
+
 		// Synchronize cursor and scrolling.
 		// Ensure the cursor is visible even on the first frame or when it didn't move,
 		// unless we already forced scrolling from Buffer::Rowoffs this frame.
@@ -165,24 +177,16 @@ GUIRenderer::Draw(Editor &ed)
 		// Handle mouse click before rendering to avoid dependent on drawn items
 		if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
 			ImVec2 mp = ImGui::GetIO().MousePos;
-			// Compute viewport-relative row so (0) is top row of the visible area
-			float vy_f = (mp.y - list_origin.y - scroll_y) / row_h;
-			long vy    = static_cast<long>(vy_f);
-			if (vy < 0)
-				vy = 0;
+			// Compute content-relative position accounting for scroll
+			// mp.y - child_window_pos.y gives us pixels from top of child window
+			// Adding scroll_y gives us pixels from top of content (buffer row 0)
+			float content_y = (mp.y - child_window_pos.y) + scroll_y;
+			long by_l       = static_cast<long>(content_y / row_h);
+			if (by_l < 0)
+				by_l = 0;
 
-			// Clamp vy within visible content height to avoid huge jumps
-			ImVec2 cr_min = ImGui::GetWindowContentRegionMin();
-			ImVec2 cr_max = ImGui::GetWindowContentRegionMax();
-			float child_h = (cr_max.y - cr_min.y);
-			long vis_rows = static_cast<long>(child_h / row_h);
-			if (vis_rows < 1)
-				vis_rows = 1;
-			if (vy >= vis_rows)
-				vy = vis_rows - 1;
-
-			// Translate viewport row to buffer row using Buffer::Rowoffs
-			std::size_t by = buf->Rowoffs() + static_cast<std::size_t>(vy);
+			// Convert to buffer row
+			std::size_t by = static_cast<std::size_t>(by_l);
 			if (by >= lines.size()) {
 				if (!lines.empty())
 					by = lines.size() - 1;
@@ -190,58 +194,43 @@ GUIRenderer::Draw(Editor &ed)
 					by = 0;
 			}
 
-			// Compute desired pixel X inside the viewport content (subtract horizontal scroll)
-			float px = (mp.x - list_origin.x - scroll_x);
-			if (px < 0.0f)
-				px = 0.0f;
+			// Compute content-relative X position accounting for scroll
+			// mp.x - child_window_pos.x gives us pixels from left edge of child window
+			// Adding scroll_x gives us pixels from left edge of content (column 0)
+			float content_x = (mp.x - child_window_pos.x) + scroll_x;
+			if (content_x < 0.0f)
+				content_x = 0.0f;
 
 			// Empty buffer guard: if there are no lines yet, just move to 0:0
 			if (lines.empty()) {
 				Execute(ed, CommandId::MoveCursorTo, std::string("0:0"));
 			} else {
-				// Convert pixel X to a render-column target including horizontal col offset
-				// Use our own tab expansion of width 8 to match command layer logic.
+				// Convert pixel X to source column accounting for tabs
 				std::string line_clicked = static_cast<std::string>(lines[by]);
 				const std::size_t tabw   = 8;
-				// We iterate source columns computing absolute rendered column (rx_abs) from 0,
-				// then translate to viewport-space by subtracting Coloffs.
-				std::size_t coloffs = buf->Coloffs();
-				std::size_t rx_abs  = 0; // absolute rendered column
-				std::size_t i       = 0; // source column iterator
 
-				// Fast-forward i until rx_abs >= coloffs to align with leftmost visible column
-				if (!line_clicked.empty() && coloffs > 0) {
-					while (i < line_clicked.size() && rx_abs < coloffs) {
-						if (line_clicked[i] == '\t') {
-							rx_abs += (tabw - (rx_abs % tabw));
-						} else {
-							rx_abs += 1;
-						}
-						++i;
-					}
-				}
-
-				// Now search for closest source column to clicked px within/after viewport
-				std::size_t best_col = i; // default to first visible column
+				// Iterate through source columns, computing rendered position, to find closest match
+				std::size_t rx       = 0; // rendered column position
+				std::size_t best_col = 0;
 				float best_dist      = std::numeric_limits<float>::infinity();
-				while (true) {
-					// For i in [current..size], evaluate candidate including the implicit end position
-					std::size_t rx_view = (rx_abs >= coloffs) ? (rx_abs - coloffs) : 0;
-					float rx_px         = static_cast<float>(rx_view) * space_w;
-					float dist          = std::fabs(px - rx_px);
-					if (dist <= best_dist) {
+
+				for (std::size_t i = 0; i <= line_clicked.size(); ++i) {
+					// Check current position
+					float rx_px = static_cast<float>(rx) * space_w;
+					float dist  = std::fabs(content_x - rx_px);
+					if (dist < best_dist) {
 						best_dist = dist;
 						best_col  = i;
 					}
-					if (i == line_clicked.size())
-						break;
-					// advance to next source column
-					if (line_clicked[i] == '\t') {
-						rx_abs += (tabw - (rx_abs % tabw));
-					} else {
-						rx_abs += 1;
+
+					// Advance to next position if not at end
+					if (i < line_clicked.size()) {
+						if (line_clicked[i] == '\t') {
+							rx += (tabw - (rx % tabw));
+						} else {
+							rx += 1;
+						}
 					}
-					++i;
 				}
 
 				// Dispatch absolute buffer coordinates (row:col)
@@ -374,7 +363,8 @@ GUIRenderer::Draw(Editor &ed)
 						p, col, expanded.c_str() + vx0, expanded.c_str() + vx1);
 				}
 				// We drew text via draw list (no layout advance). Manually advance the cursor to the next line.
-				ImGui::SetCursorScreenPos(ImVec2(line_pos.x, line_pos.y + line_h));
+				// Use row_h (with spacing) to match click calculation and ensure consistent line positions.
+				ImGui::SetCursorScreenPos(ImVec2(line_pos.x, line_pos.y + row_h));
 			} else {
 				// No syntax: draw as one run
 				ImGui::TextUnformatted(expanded.c_str());

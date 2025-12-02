@@ -203,28 +203,7 @@ GUIFrontend::Step(Editor &ed, bool &running)
 		input_.ProcessSDLEvent(e);
 	}
 
-	// Execute pending mapped inputs (drain queue)
-	for (;;) {
-		MappedInput mi;
-		if (!input_.Poll(mi))
-			break;
-		if (mi.hasCommand) {
-			// Track kill ring before and after to sync GUI clipboard when it changes
-			const std::string before = ed.KillRingHead();
-			Execute(ed, mi.id, mi.arg, mi.count);
-			const std::string after = ed.KillRingHead();
-			if (after != before && !after.empty()) {
-				// Update the system clipboard to mirror the kill ring head in GUI
-				SDL_SetClipboardText(after.c_str());
-			}
-		}
-	}
-
-	if (ed.QuitRequested()) {
-		running = false;
-	}
-
-	// Start a new ImGui frame
+	// Start a new ImGui frame BEFORE processing commands so dimensions are correct
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplSDL2_NewFrame(window_);
 	ImGui::NewFrame();
@@ -262,6 +241,27 @@ GUIFrontend::Step(Editor &ed, bool &running)
 		if (rows != ed.Rows() || cols != ed.Cols()) {
 			ed.SetDimensions(rows, cols);
 		}
+	}
+
+	// Execute pending mapped inputs (drain queue) AFTER dimensions are updated
+	for (;;) {
+		MappedInput mi;
+		if (!input_.Poll(mi))
+			break;
+		if (mi.hasCommand) {
+			// Track kill ring before and after to sync GUI clipboard when it changes
+			const std::string before = ed.KillRingHead();
+			Execute(ed, mi.id, mi.arg, mi.count);
+			const std::string after = ed.KillRingHead();
+			if (after != before && !after.empty()) {
+				// Update the system clipboard to mirror the kill ring head in GUI
+				SDL_SetClipboardText(after.c_str());
+			}
+		}
+	}
+
+	if (ed.QuitRequested()) {
+		running = false;
 	}
 
 	// No runtime font UI; always use embedded font.
