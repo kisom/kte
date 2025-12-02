@@ -14,7 +14,7 @@
 #include "UndoSystem.h"
 #include <cstdint>
 #include <memory>
-#include "HighlighterEngine.h"
+#include "syntax/HighlighterEngine.h"
 #include "Highlight.h"
 
 
@@ -375,21 +375,54 @@ public:
 	[[nodiscard]] std::string AsString() const;
 
 	// Syntax highlighting integration (per-buffer)
-	[[nodiscard]] std::uint64_t Version() const { return version_; }
+	[[nodiscard]] std::uint64_t Version() const
+	{
+		return version_;
+	}
 
-	void SetSyntaxEnabled(bool on) { syntax_enabled_ = on; }
-	[[nodiscard]] bool SyntaxEnabled() const { return syntax_enabled_; }
 
-	void SetFiletype(const std::string &ft) { filetype_ = ft; }
-	[[nodiscard]] const std::string &Filetype() const { return filetype_; }
+	void SetSyntaxEnabled(bool on)
+	{
+		syntax_enabled_ = on;
+	}
 
-	kte::HighlighterEngine *Highlighter() { return highlighter_.get(); }
-	const kte::HighlighterEngine *Highlighter() const { return highlighter_.get(); }
+
+	[[nodiscard]] bool SyntaxEnabled() const
+	{
+		return syntax_enabled_;
+	}
+
+
+	void SetFiletype(const std::string &ft)
+	{
+		filetype_ = ft;
+	}
+
+
+	[[nodiscard]] const std::string &Filetype() const
+	{
+		return filetype_;
+	}
+
+
+	kte::HighlighterEngine *Highlighter()
+	{
+		return highlighter_.get();
+	}
+
+
+	const kte::HighlighterEngine *Highlighter() const
+	{
+		return highlighter_.get();
+	}
+
 
 	void EnsureHighlighter()
 	{
-		if (!highlighter_) highlighter_ = std::make_unique<kte::HighlighterEngine>();
+		if (!highlighter_)
+			highlighter_ = std::make_unique<kte::HighlighterEngine>();
 	}
+
 
 	// Raw, low-level editing APIs used by UndoSystem apply().
 	// These must NOT trigger undo recording. They also do not move the cursor.
@@ -430,7 +463,7 @@ private:
 
 	// Syntax/highlighting state
 	std::uint64_t version_ = 0; // increment on edits
- bool syntax_enabled_    = true;
+	bool syntax_enabled_   = true;
 	std::string filetype_;
 	std::unique_ptr<kte::HighlighterEngine> highlighter_;
 };

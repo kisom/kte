@@ -7,8 +7,8 @@
 #include "UndoSystem.h"
 #include "UndoTree.h"
 // For reconstructing highlighter state on copies
-#include "HighlighterRegistry.h"
-#include "NullHighlighter.h"
+#include "syntax/HighlighterRegistry.h"
+#include "syntax/NullHighlighter.h"
 
 
 Buffer::Buffer()

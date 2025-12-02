@@ -4,10 +4,8 @@
 #include "LanguageHighlighter.h"
 
 namespace kte {
-
 class ShellHighlighter final : public LanguageHighlighter {
 public:
-    void HighlightLine(const Buffer &buf, int row, std::vector<HighlightSpan> &out) const override;
+	void HighlightLine(const Buffer &buf, int row, std::vector<HighlightSpan> &out) const override;
 };
-
 } // namespace kte
