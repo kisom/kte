@@ -371,7 +371,27 @@ LspManager::requestHover(Buffer *buffer, Position pos, HoverCallback callback)
 			lsp_debug_file("hover pos convert: L%d C%d -> L%d C%d", pos.line, pos.character, p16.line,
 			               p16.character);
 		}
-		client->hover(uri, p16, std::move(callback));
+		// Wrap the callback to convert any returned range from UTF-16 (wire) -> UTF-8 (editor)
+		HoverCallback wrapped = [this, uri, provider, cb = std::move(callback)](const HoverResult &res16,
+			const std::string &err) {
+			if (!cb)
+				return;
+			if (!res16.range.has_value()) {
+				cb(res16, err);
+				return;
+			}
+			HoverResult res8 = res16;
+			res8.range       = toUtf8(uri, *res16.range, provider);
+			if (debug_) {
+				const auto &r16 = *res16.range;
+				const auto &r8  = *res8.range;
+				lsp_debug_file("hover range convert: L%d %d-%d -> L%d %d-%d",
+				               r16.start.line, r16.start.character, r16.end.character,
+				               r8.start.line, r8.start.character, r8.end.character);
+			}
+			cb(res8, err);
+		};
+		client->hover(uri, p16, std::move(wrapped));
 	}
 }
 
@@ -396,7 +416,29 @@ LspManager::requestDefinition(Buffer *buffer, Position pos, LocationCallback cal
 			lsp_debug_file("definition pos convert: L%d C%d -> L%d C%d", pos.line, pos.character, p16.line,
 			               p16.character);
 		}
-		client->definition(uri, p16, std::move(callback));
+		// Wrap callback to convert Location ranges from UTF-16 (wire) -> UTF-8 (editor)
+		LocationCallback wrapped = [this, uri, provider, cb = std::move(callback)](
+			const std::vector<Location> &locs16,
+			const std::string &err) {
+			if (!cb)
+				return;
+			std::vector<Location> locs8;
+			locs8.reserve(locs16.size());
+			for (const auto &l: locs16) {
+				Location x = l;
+				x.range    = toUtf8(uri, l.range, provider);
+				if (debug_) {
+					lsp_debug_file("definition range convert: L%d %d-%d -> L%d %d-%d",
+					               l.range.start.line, l.range.start.character,
+					               l.range.end.character,
+					               x.range.start.line, x.range.start.character,
+					               x.range.end.character);
+				}
+				locs8.push_back(std::move(x));
+			}
+			cb(locs8, err);
+		};
+		client->definition(uri, p16, std::move(wrapped));
 	}
 }
 

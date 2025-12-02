@@ -14,10 +14,11 @@
 #include "Diagnostic.h"
 
 namespace kte::lsp {
-// Callback types (stubs for future phases)
-using CompletionCallback = std::function<void()>;
-using HoverCallback      = std::function<void()>;
-using LocationCallback   = std::function<void()>;
+// Callback types for initial language features
+// If error is non-empty, the result may be default-constructed/empty
+using CompletionCallback = std::function<void(const CompletionList & result, const std::string & error)>;
+using HoverCallback      = std::function<void(const HoverResult & result, const std::string & error)>;
+using LocationCallback   = std::function<void(const std::vector<Location> & result, const std::string & error)>;
 
 class LspClient {
 public:
@@ -39,7 +40,7 @@ public:
 
 	virtual void didSave(const std::string &uri) = 0;
 
-	// Language Features (not yet implemented)
+	// Language Features (initial)
 	virtual void completion(const std::string &, Position,
 	                        CompletionCallback) {}
 

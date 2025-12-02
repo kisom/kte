@@ -47,7 +47,6 @@ GUIRenderer::Draw(Editor &ed)
 
 	ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar
 	                         | ImGuiWindowFlags_NoScrollbar
-	                         | ImGuiWindowFlags_NoScrollWithMouse
 	                         | ImGuiWindowFlags_NoResize
 	                         | ImGuiWindowFlags_NoMove
 	                         | ImGuiWindowFlags_NoCollapse
@@ -60,7 +59,7 @@ GUIRenderer::Draw(Editor &ed)
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6.f, 6.f));
 
-	ImGui::Begin("kte", nullptr, flags);
+	ImGui::Begin("kte", nullptr, flags | ImGuiWindowFlags_NoScrollWithMouse);
 
 	const Buffer *buf = ed.CurrentBuffer();
 	if (!buf) {
@@ -69,7 +68,7 @@ GUIRenderer::Draw(Editor &ed)
 		const auto &lines = buf->Rows();
 		// Reserve space for status bar at bottom
 		ImGui::BeginChild("scroll", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), false,
-		                  ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+		                  ImGuiWindowFlags_HorizontalScrollbar);
 		// Detect click-to-move inside this scroll region
 		ImVec2 list_origin  = ImGui::GetCursorScreenPos();
 		float scroll_y      = ImGui::GetScrollY();
@@ -109,13 +108,13 @@ GUIRenderer::Draw(Editor &ed)
 			}
 			// If user scrolled, update buffer offsets accordingly
 			if (prev_scroll_y >= 0.0f && scroll_y != prev_scroll_y) {
-				if (Buffer *mbuf = const_cast<Buffer *>(buf)) {
+				if (auto mbuf = const_cast<Buffer *>(buf)) {
 					mbuf->SetOffsets(static_cast<std::size_t>(std::max(0L, scroll_top)),
 					                 mbuf->Coloffs());
 				}
 			}
 			if (prev_scroll_x >= 0.0f && scroll_x != prev_scroll_x) {
-				if (Buffer *mbuf = const_cast<Buffer *>(buf)) {
+				if (auto mbuf = const_cast<Buffer *>(buf)) {
 					mbuf->SetOffsets(mbuf->Rowoffs(),
 					                 static_cast<std::size_t>(std::max(0L, scroll_left)));
 				}
@@ -162,11 +161,13 @@ GUIRenderer::Draw(Editor &ed)
 				buf->Highlighter()->PrefetchViewport(*buf, fr, rc, buf->Version());
 			}
 		}
-		// Handle mouse click before rendering to avoid dependent on drawn items
+		// Handle mouse click before rendering to avoid dependency on drawn items
 		if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
 			ImVec2 mp = ImGui::GetIO().MousePos;
 			// Compute viewport-relative row so (0) is top row of the visible area
-			float vy_f = (mp.y - list_origin.y - scroll_y) / row_h;
+			// Note: list_origin is already in the scrolled space of the child window,
+			// so we must NOT subtract scroll_y again (would double-apply).
+			float vy_f = (mp.y - list_origin.y) / row_h;
 			long vy    = static_cast<long>(vy_f);
 			if (vy < 0)
 				vy = 0;
@@ -190,8 +191,9 @@ GUIRenderer::Draw(Editor &ed)
 					by = 0;
 			}
 
-			// Compute desired pixel X inside the viewport content (subtract horizontal scroll)
-			float px = (mp.x - list_origin.x - scroll_x);
+			// Compute desired pixel X inside the viewport content.
+			// list_origin is already scrolled; do not subtract scroll_x here.
+			float px = (mp.x - list_origin.x);
 			if (px < 0.0f)
 				px = 0.0f;
 
@@ -254,11 +256,11 @@ GUIRenderer::Draw(Editor &ed)
 		const std::size_t coloffs_now = buf->Coloffs();
 		for (std::size_t i = rowoffs; i < lines.size(); ++i) {
 			// Capture the screen position before drawing the line
-			ImVec2 line_pos  = ImGui::GetCursorScreenPos();
-			std::string line = static_cast<std::string>(lines[i]);
+			ImVec2 line_pos = ImGui::GetCursorScreenPos();
+			auto line       = static_cast<std::string>(lines[i]);
 
 			// Expand tabs to spaces with width=8 and apply horizontal scroll offset
-			const std::size_t tabw = 8;
+			constexpr std::size_t tabw = 8;
 			std::string expanded;
 			expanded.reserve(line.size() + 16);
 			std::size_t rx_abs_draw = 0; // rendered column for drawing
@@ -275,7 +277,7 @@ GUIRenderer::Draw(Editor &ed)
 						for (auto it = std::sregex_iterator(line.begin(), line.end(), rx);
 						     it != std::sregex_iterator(); ++it) {
 							const auto &m  = *it;
-							std::size_t sx = static_cast<std::size_t>(m.position());
+							auto sx        = static_cast<std::size_t>(m.position());
 							std::size_t ex = sx + static_cast<std::size_t>(m.length());
 							hl_src_ranges.emplace_back(sx, ex);
 						}
@@ -318,9 +320,9 @@ GUIRenderer::Draw(Editor &ed)
 						continue; // fully left of view
 					std::size_t vx0 = (rx_start > coloffs_now) ? (rx_start - coloffs_now) : 0;
 					std::size_t vx1 = rx_end - coloffs_now;
-					ImVec2 p0 = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w, line_pos.y);
-					ImVec2 p1 = ImVec2(line_pos.x + static_cast<float>(vx1) * space_w,
-					                   line_pos.y + line_h);
+					auto p0 = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w, line_pos.y);
+					auto p1 = ImVec2(line_pos.x + static_cast<float>(vx1) * space_w,
+					                 line_pos.y + line_h);
 					// Choose color: current match stronger
 					bool is_current = has_current && sx == cur_x && ex == cur_end;
 					ImU32 col       = is_current
@@ -347,7 +349,7 @@ GUIRenderer::Draw(Editor &ed)
 				const kte::LineHighlight &lh = buf->Highlighter()->GetLine(
 					*buf, static_cast<int>(i), buf->Version());
 				// Helper to convert a src column to expanded rx position
-				auto src_to_rx_full = [&](std::size_t sidx) -> std::size_t {
+				auto src_to_rx_full = [&](const std::size_t sidx) -> std::size_t {
 					std::size_t rx = 0;
 					for (std::size_t k = 0; k < sidx && k < line.size(); ++k) {
 						rx += (line[k] == '\t') ? (tabw - (rx % tabw)) : 1;
@@ -369,12 +371,14 @@ GUIRenderer::Draw(Editor &ed)
 					if (vx1 <= vx0)
 						continue;
 					ImU32 col = ImGui::GetColorU32(kte::SyntaxInk(sp.kind));
-					ImVec2 p  = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w, line_pos.y);
+					auto p    = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w, line_pos.y);
 					ImGui::GetWindowDrawList()->AddText(
 						p, col, expanded.c_str() + vx0, expanded.c_str() + vx1);
 				}
-				// We drew text via draw list (no layout advance). Manually advance the cursor to the next line.
-				ImGui::SetCursorScreenPos(ImVec2(line_pos.x, line_pos.y + line_h));
+				// We drew text via draw list (no layout advance). Advance by the same amount
+				// ImGui uses between lines (line height + spacing) so hit-testing (which
+				// divides by row_h) aligns with drawing.
+				ImGui::SetCursorScreenPos(ImVec2(line_pos.x, line_pos.y + row_h));
 			} else {
 				// No syntax: draw as one run
 				ImGui::TextUnformatted(expanded.c_str());
@@ -417,9 +421,9 @@ GUIRenderer::Draw(Editor &ed)
 		ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, bg_col);
 		// If a prompt is active, replace the entire status bar with the prompt text
 		if (ed.PromptActive()) {
-			std::string label = ed.PromptLabel();
-			std::string ptext = ed.PromptText();
-			auto kind         = ed.CurrentPromptKind();
+			const std::string &label = ed.PromptLabel();
+			std::string ptext        = ed.PromptText();
+			auto kind                = ed.CurrentPromptKind();
 			if (kind == Editor::PromptKind::OpenFile || kind == Editor::PromptKind::SaveAs ||
 			    kind == Editor::PromptKind::Chdir) {
 				const char *home_c = std::getenv("HOME");
@@ -466,8 +470,8 @@ GUIRenderer::Draw(Editor &ed)
 						float ratio = tail_sz.x / avail_px;
 						size_t skip = ratio > 1.5f
 							              ? std::min(tail.size() - start,
-								              (size_t) std::max<size_t>(
-									              1, (size_t) (tail.size() / 4)))
+								              static_cast<size_t>(std::max<size_t>(
+									              1, tail.size() / 4)))
 							              : 1;
 						start += skip;
 						std::string candidate = tail.substr(start);
@@ -524,8 +528,7 @@ GUIRenderer::Draw(Editor &ed)
 			left += "  ";
 			// Insert buffer position prefix "[x/N] " before filename
 			{
-				std::size_t total = ed.BufferCount();
-				if (total > 0) {
+				if (std::size_t total = ed.BufferCount(); total > 0) {
 					std::size_t idx1 = ed.CurrentBufferIndex() + 1; // 1-based for display
 					left += "[";
 					left += std::to_string(static_cast<unsigned long long>(idx1));
@@ -539,7 +542,7 @@ GUIRenderer::Draw(Editor &ed)
 				left += " *";
 			// Append total line count as "<n>L"
 			{
-				unsigned long lcount = static_cast<unsigned long>(buf->Rows().size());
+				auto lcount = buf->Rows().size();
 				left += " ";
 				left += std::to_string(lcount);
 				left += "L";
@@ -625,9 +628,9 @@ GUIRenderer::Draw(Editor &ed)
 		ImGuiViewport *vp2 = ImGui::GetMainViewport();
 
 		// Desired size, min size, and margins
-		const ImVec2 want(800.0f, 500.0f);
-		const ImVec2 min_sz(240.0f, 160.0f);
-		const float margin = 20.0f; // space from viewport edges
+		constexpr ImVec2 want(800.0f, 500.0f);
+		constexpr ImVec2 min_sz(240.0f, 160.0f);
+		constexpr float margin = 20.0f; // space from viewport edges
 
 		// Compute the maximum allowed size (viewport minus margins) and make sure it's not negative
 		ImVec2 max_sz(std::max(32.0f, vp2->Size.x - 2.0f * margin),

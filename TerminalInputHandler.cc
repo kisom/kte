@@ -38,18 +38,48 @@ map_key_to_command(const int ch,
 		MEVENT ev{};
 		if (getmouse(&ev) == OK) {
 			// Mouse wheel → map to MoveUp/MoveDown one line per wheel notch
+			unsigned long wheel_up_mask = 0;
+			unsigned long wheel_dn_mask = 0;
 #ifdef BUTTON4_PRESSED
-			if (ev.bstate & (BUTTON4_PRESSED | BUTTON4_RELEASED | BUTTON4_CLICKED)) {
-				out = {true, CommandId::MoveUp, "", 0};
-				return true;
-			}
+			wheel_up_mask |= BUTTON4_PRESSED;
+#endif
+#ifdef BUTTON4_RELEASED
+			wheel_up_mask |= BUTTON4_RELEASED;
+#endif
+#ifdef BUTTON4_CLICKED
+			wheel_up_mask |= BUTTON4_CLICKED;
+#endif
+#ifdef BUTTON4_DOUBLE_CLICKED
+			wheel_up_mask |= BUTTON4_DOUBLE_CLICKED;
+#endif
+#ifdef BUTTON4_TRIPLE_CLICKED
+			wheel_up_mask |= BUTTON4_TRIPLE_CLICKED;
 #endif
 #ifdef BUTTON5_PRESSED
-			if (ev.bstate & (BUTTON5_PRESSED | BUTTON5_RELEASED | BUTTON5_CLICKED)) {
-				out = {true, CommandId::MoveDown, "", 0};
+			wheel_dn_mask |= BUTTON5_PRESSED;
+#endif
+#ifdef BUTTON5_RELEASED
+			wheel_dn_mask |= BUTTON5_RELEASED;
+#endif
+#ifdef BUTTON5_CLICKED
+			wheel_dn_mask |= BUTTON5_CLICKED;
+#endif
+#ifdef BUTTON5_DOUBLE_CLICKED
+			wheel_dn_mask |= BUTTON5_DOUBLE_CLICKED;
+#endif
+#ifdef BUTTON5_TRIPLE_CLICKED
+			wheel_dn_mask |= BUTTON5_TRIPLE_CLICKED;
+#endif
+			if (wheel_up_mask && (ev.bstate & wheel_up_mask)) {
+				// Prefer viewport scrolling for wheel: page up
+				out = {true, CommandId::PageUp, "", 0};
 				return true;
 			}
-#endif
+			if (wheel_dn_mask && (ev.bstate & wheel_dn_mask)) {
+				// Prefer viewport scrolling for wheel: page down
+				out = {true, CommandId::PageDown, "", 0};
+				return true;
+			}
 			// React to left button click/press
 			if (ev.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED | BUTTON1_RELEASED)) {
 				char buf[64];

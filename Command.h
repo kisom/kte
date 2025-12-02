@@ -98,6 +98,9 @@ enum class CommandId {
 	// Syntax highlighting
 	Syntax, // ":syntax on|off|reload"
 	SetOption, // generic ":set key=value" (v1: filetype=<lang>)
+	// LSP
+	LspHover,
+	LspGotoDefinition,
 };
 
 

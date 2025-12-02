@@ -28,6 +28,28 @@ struct TextDocumentContentChangeEvent {
 	std::optional<Range> range; // if not set, represents full document change
 	std::string text; // new text for the given range
 };
+
+// Minimal feature result types for phase 1
+struct CompletionItem {
+	std::string label;
+	std::optional<std::string> detail; // optional extra info
+	std::optional<std::string> insertText; // if present, use instead of label
+};
+
+struct CompletionList {
+	bool isIncomplete = false;
+	std::vector<CompletionItem> items;
+};
+
+struct HoverResult {
+	std::string contents; // concatenated plaintext/markdown for now
+	std::optional<Range> range; // optional range
+};
+
+struct Location {
+	std::string uri;
+	Range range;
+};
 } // namespace kte::lsp
 
 #endif // KTE_LSP_TYPES_H

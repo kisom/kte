@@ -482,6 +482,8 @@ LspProcessClient::handleIncoming(const std::string &json)
 		if (method == "window/showMessage") {
 			const auto itParams = j.find("params");
 			if (debug_ &&itParams
+
+
 			
 			!=
 			j.end() && itParams->is_object()
@@ -662,9 +664,46 @@ LspProcessClient::completion(const std::string &uri, Position pos, CompletionCal
 	params["position"]["line"]      = pos.line;
 	params["position"]["character"] = pos.character;
 	sendRequest("textDocument/completion", params,
-	            [cb = std::move(cb)](const nlohmann::json &/*result*/, const nlohmann::json * /*error*/) {
+	            [cb = std::move(cb)](const nlohmann::json &result, const nlohmann::json *error) {
+		            CompletionList out{};
+		            std::string err;
+		            if (error) {
+			            if (auto itMsg = error->find("message");
+				            itMsg != error->end() && itMsg->is_string())
+				            err = itMsg->get<std::string>();
+			            else
+				            err = "LSP error";
+		            } else {
+			            auto parseItem = [](const nlohmann::json &j) -> CompletionItem {
+				            CompletionItem it{};
+				            if (auto il = j.find("label"); il != j.end() && il->is_string())
+					            it.label = il->get<std::string>();
+				            if (auto idt = j.find("detail"); idt != j.end() && idt->is_string())
+					            it.detail = idt->get<std::string>();
+				            if (auto ins = j.find("insertText"); ins != j.end() && ins->is_string())
+					            it.insertText = ins->get<std::string>();
+				            return it;
+			            };
+			            if (result.is_array()) {
+				            for (const auto &ji: result) {
+					            if (ji.is_object())
+						            out.items.push_back(parseItem(ji));
+				            }
+			            } else if (result.is_object()) {
+				            if (auto ii = result.find("isIncomplete");
+					            ii != result.end() && ii->is_boolean())
+					            out.isIncomplete = ii->get<bool>();
+				            if (auto itms = result.find("items");
+					            itms != result.end() && itms->is_array()) {
+					            for (const auto &ji: *itms) {
+						            if (ji.is_object())
+							            out.items.push_back(parseItem(ji));
+					            }
+				            }
+			            }
+		            }
 		            if (cb)
-			            cb();
+			            cb(out, err);
 	            });
 }
 
@@ -677,9 +716,67 @@ LspProcessClient::hover(const std::string &uri, Position pos, HoverCallback cb)
 	params["position"]["line"]      = pos.line;
 	params["position"]["character"] = pos.character;
 	sendRequest("textDocument/hover", params,
-	            [cb = std::move(cb)](const nlohmann::json &/*result*/, const nlohmann::json * /*error*/) {
+	            [cb = std::move(cb)](const nlohmann::json &result, const nlohmann::json *error) {
+		            HoverResult out{};
+		            std::string err;
+		            if (error) {
+			            if (auto itMsg = error->find("message");
+				            itMsg != error->end() && itMsg->is_string())
+				            err = itMsg->get<std::string>();
+			            else
+				            err = "LSP error";
+		            } else if (!result.is_null()) {
+			            auto appendText = [&](const std::string &s) {
+				            if (!out.contents.empty())
+					            out.contents.push_back('\n');
+				            out.contents += s;
+			            };
+			            if (result.is_object()) {
+				            if (auto itC = result.find("contents"); itC != result.end()) {
+					            if (itC->is_string()) {
+						            appendText(itC->get<std::string>());
+					            } else if (itC->is_object()) {
+						            if (auto itV = itC->find("value");
+							            itV != itC->end() && itV->is_string())
+							            appendText(itV->get<std::string>());
+					            } else if (itC->is_array()) {
+						            for (const auto &el: *itC) {
+							            if (el.is_string())
+								            appendText(el.get<std::string>());
+							            else if (el.is_object()) {
+								            if (auto itV = el.find("value");
+									            itV != el.end() && itV->is_string())
+									            appendText(itV->get<std::string>());
+							            }
+						            }
+					            }
+				            }
+				            if (auto itR = result.find("range");
+					            itR != result.end() && itR->is_object()) {
+					            Range r{};
+					            if (auto s = itR->find("start");
+						            s != itR->end() && s->is_object()) {
+						            if (auto il = s->find("line");
+							            il != s->end() && il->is_number_integer())
+							            r.start.line = *il;
+						            if (auto ic = s->find("character");
+							            ic != s->end() && ic->is_number_integer())
+							            r.start.character = *ic;
+					            }
+					            if (auto e = itR->find("end"); e != itR->end() && e->is_object()) {
+						            if (auto il = e->find("line");
+							            il != e->end() && il->is_number_integer())
+							            r.end.line = *il;
+						            if (auto ic = e->find("character");
+							            ic != e->end() && ic->is_number_integer())
+							            r.end.character = *ic;
+					            }
+					            out.range = r;
+				            }
+			            }
+		            }
 		            if (cb)
-			            cb();
+			            cb(out, err);
 	            });
 }
 
@@ -692,9 +789,77 @@ LspProcessClient::definition(const std::string &uri, Position pos, LocationCallb
 	params["position"]["line"]      = pos.line;
 	params["position"]["character"] = pos.character;
 	sendRequest("textDocument/definition", params,
-	            [cb = std::move(cb)](const nlohmann::json &/*result*/, const nlohmann::json * /*error*/) {
+	            [cb = std::move(cb)](const nlohmann::json &result, const nlohmann::json *error) {
+		            std::vector<Location> out;
+		            std::string err;
+		            auto parseRange = [](const nlohmann::json &jr) -> Range {
+			            Range r{};
+			            if (!jr.is_object())
+				            return r;
+			            if (auto s = jr.find("start"); s != jr.end() && s->is_object()) {
+				            if (auto il = s->find("line"); il != s->end() && il->is_number_integer())
+					            r.start.line = *il;
+				            if (auto ic = s->find("character");
+					            ic != s->end() && ic->is_number_integer())
+					            r.start.character = *ic;
+			            }
+			            if (auto e = jr.find("end"); e != jr.end() && e->is_object()) {
+				            if (auto il = e->find("line"); il != e->end() && il->is_number_integer())
+					            r.end.line = *il;
+				            if (auto ic = e->find("character");
+					            ic != e->end() && e->is_number_integer())
+					            r.end.character = *ic;
+			            }
+			            return r;
+		            };
+		            auto pushLocObj = [&](const nlohmann::json &jo) {
+			            Location loc{};
+			            if (auto iu     = jo.find("uri"); iu != jo.end() && iu->is_string())
+				            loc.uri = iu->get<std::string>();
+			            if (auto ir       = jo.find("range"); ir != jo.end())
+				            loc.range = parseRange(*ir);
+			            out.push_back(std::move(loc));
+		            };
+		            if (error) {
+			            if (auto itMsg = error->find("message");
+				            itMsg != error->end() && itMsg->is_string())
+				            err = itMsg->get<std::string>();
+			            else
+				            err = "LSP error";
+		            } else if (!result.is_null()) {
+			            if (result.is_object()) {
+				            if (result.contains("uri") && result.contains("range")) {
+					            pushLocObj(result);
+				            } else if (result.contains("targetUri")) {
+					            Location loc{};
+					            if (auto tu = result.find("targetUri");
+						            tu != result.end() && tu->is_string())
+						            loc.uri = tu->get<std::string>();
+					            if (auto tr       = result.find("targetRange"); tr != result.end())
+						            loc.range = parseRange(*tr);
+					            out.push_back(std::move(loc));
+				            }
+			            } else if (result.is_array()) {
+				            for (const auto &el: result) {
+					            if (el.is_object()) {
+						            if (el.contains("uri")) {
+							            pushLocObj(el);
+						            } else if (el.contains("targetUri")) {
+							            Location loc{};
+							            if (auto tu = el.find("targetUri");
+								            tu != el.end() && tu->is_string())
+								            loc.uri = tu->get<std::string>();
+							            if (auto tr = el.find("targetRange");
+								            tr != el.end())
+								            loc.range = parseRange(*tr);
+							            out.push_back(std::move(loc));
+						            }
+					            }
+				            }
+			            }
+		            }
 		            if (cb)
-			            cb();
+			            cb(out, err);
 	            });
 }
 

@@ -30,6 +30,7 @@ PrintUsage(const char *prog)
 	std::cerr << "Usage: " << prog << " [OPTIONS] [files]\n"
 		<< "Options:\n"
 		<< "  -c, --chdir DIR  Change working directory before opening files\n"
+		<< "  -d, --debug      Enable LSP debug logging\n"
 		<< "  -g, --gui        Use GUI frontend (if built)\n"
 		<< "  -t, --term       Use terminal (ncurses) frontend [default]\n"
 		<< "  -h, --help       Show this help and exit\n"
@@ -43,11 +44,6 @@ main(const int argc, const char *argv[])
 	Editor editor;
 	// Wire up LSP manager (no diagnostic UI yet; frontends may provide later)
 	kte::lsp::LspManager lspMgr(&editor, nullptr);
-	// Enable LSP debug logging if KTE_LSP_DEBUG is set
-	if (const char *dbg = std::getenv("KTE_LSP_DEBUG"); dbg && *dbg) {
-		lspMgr.setDebugLogging(true);
-		std::fprintf(stderr, "[kte][lsp] debug logging enabled via KTE_LSP_DEBUG\n");
-	}
 	editor.SetLspManager(&lspMgr);
 
 	// CLI parsing using getopt_long
@@ -55,11 +51,13 @@ main(const int argc, const char *argv[])
 	bool req_term     = false;
 	bool show_help    = false;
 	bool show_version = false;
+	bool lsp_debug    = false;
 
 	std::string nwd;
 
 	static struct option long_opts[] = {
 		{"chdir", required_argument, nullptr, 'c'},
+		{"debug", no_argument, nullptr, 'd'},
 		{"gui", no_argument, nullptr, 'g'},
 		{"term", no_argument, nullptr, 't'},
 		{"help", no_argument, nullptr, 'h'},
@@ -69,10 +67,13 @@ main(const int argc, const char *argv[])
 
 	int opt;
 	int long_index = 0;
-	while ((opt = getopt_long(argc, const_cast<char *const *>(argv), "c:gthV", long_opts, &long_index)) != -1) {
+	while ((opt = getopt_long(argc, const_cast<char *const *>(argv), "c:dgthV", long_opts, &long_index)) != -1) {
 		switch (opt) {
 		case 'c':
 			nwd = optarg;
+			break;
+		case 'd':
+			lsp_debug = true;
 			break;
 		case 'g':
 			req_gui = true;
@@ -106,6 +107,16 @@ main(const int argc, const char *argv[])
 	(void) req_term; // suppress unused warning when GUI is not compiled in
 #endif
 
+	// Apply LSP debug setting strictly based on -d flag
+	lspMgr.setDebugLogging(lsp_debug);
+	if (lsp_debug) {
+		// Ensure LSP subprocess client picks up debug via environment
+		::setenv("KTE_LSP_DEBUG", "1", 1);
+	} else {
+		// Prevent environment from enabling debug implicitly
+		::unsetenv("KTE_LSP_DEBUG");
+	}
+
 	// Determine frontend
 #if !defined(KTE_BUILD_GUI)
 	if (req_gui) {
@@ -120,6 +131,7 @@ main(const int argc, const char *argv[])
 	} else if (req_term) {
 		use_gui = false;
 	} else {
+
 
 
 	// Default depends on build target: kge defaults to GUI, kte to terminal

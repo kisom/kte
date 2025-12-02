@@ -450,6 +450,12 @@ public:
 	}
 
 
+	// LSP helpers: trigger hover/definition at current cursor in current buffer
+	bool LspHoverAtCursor();
+
+	bool LspGotoDefinitionAtCursor();
+
+
 	// LSP: notify buffer saved (used by commands)
 	void NotifyBufferSaved(Buffer *buf);
 
