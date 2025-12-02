@@ -1074,11 +1074,10 @@ ApplyThemeByName(const std::string &name)
 	} else if (n == "eink-dark") {
 		SetBackgroundMode(BackgroundMode::Dark);
 		n = "eink";
-	} else
-		if (n == "eink-light") {
-			SetBackgroundMode(BackgroundMode::Light);
-			n = "eink";
-		}
+	} else if (n == "eink-light") {
+		SetBackgroundMode(BackgroundMode::Light);
+		n = "eink";
+	}
 	// plan9 is a single theme; no light/dark aliases
 
 	const auto &reg = ThemeRegistry();
