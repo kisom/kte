@@ -1,6 +1,12 @@
 #include <ncurses.h>
+#include <clocale>
 #include <termios.h>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <xlocale.h>
+#endif
+#include <langinfo.h>
+#include <cctype>
 
 #include "TerminalFrontend.h"
 #include "Command.h"
@@ -10,6 +16,35 @@
 bool
 TerminalFrontend::Init(Editor &ed)
 {
+	// Enable UTF-8 locale so ncurses and the terminal handle multibyte correctly
+	// This relies on the user's environment (e.g., LANG/LC_ALL) being set to a UTF-8 locale.
+	// If not set, try a couple of common UTF-8 fallbacks.
+	const char *loc      = std::setlocale(LC_ALL, "");
+	auto is_utf8_codeset = []() -> bool {
+		const char *cs = nl_langinfo(CODESET);
+		if (!cs)
+			return false;
+		std::string s(cs);
+		for (auto &ch: s)
+			ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+		return (s.find("UTF-8") != std::string::npos) || (s.find("UTF8") != std::string::npos);
+	};
+	bool utf8_ok = (MB_CUR_MAX > 1) && is_utf8_codeset();
+	if (!utf8_ok) {
+		// Try common UTF-8 locales
+		loc     = std::setlocale(LC_CTYPE, "C.UTF-8");
+		utf8_ok = (loc != nullptr) && (MB_CUR_MAX > 1) && is_utf8_codeset();
+		if (!utf8_ok) {
+			loc     = std::setlocale(LC_CTYPE, "en_US.UTF-8");
+			utf8_ok = (loc != nullptr) && (MB_CUR_MAX > 1) && is_utf8_codeset();
+		}
+		if (!utf8_ok) {
+			// macOS often uses plain "UTF-8" locale identifier
+			loc     = std::setlocale(LC_CTYPE, "UTF-8");
+			utf8_ok = (loc != nullptr) && (MB_CUR_MAX > 1) && is_utf8_codeset();
+		}
+	}
+
 	// Ensure Control keys reach the app: disable XON/XOFF and dsusp/susp bindings (e.g., ^S/^Q, ^Y on macOS)
 	{
 		struct termios tio{};
@@ -55,6 +90,9 @@ TerminalFrontend::Init(Editor &ed)
 	prev_r_ = r;
 	prev_c_ = c;
 	ed.SetDimensions(static_cast<std::size_t>(r), static_cast<std::size_t>(c));
+	// Inform renderer of UTF-8 capability so it can choose proper output path
+	renderer_.SetUtf8Enabled(utf8_ok);
+	input_.SetUtf8Enabled(utf8_ok);
 	return true;
 }
 

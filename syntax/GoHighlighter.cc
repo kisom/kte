@@ -1,5 +1,5 @@
 #include "GoHighlighter.h"
-#include "Buffer.h"
+#include "../Buffer.h"
 #include <cctype>
 
 namespace kte {

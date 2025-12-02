@@ -6,4 +6,4 @@ then
 	fmt_args="-fmt 3"
 fi
 
-ls -1 *.cc *.h | grep -v '^Font.h$' | xargs cloc ${fmt_args}
+ls -1 *.cc *.h lsp/*.{cc,h} | grep -v '^Font.h$' | xargs cloc ${fmt_args}

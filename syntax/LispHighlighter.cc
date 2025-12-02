@@ -1,5 +1,5 @@
 #include "LispHighlighter.h"
-#include "Buffer.h"
+#include "../Buffer.h"
 #include <cctype>
 
 namespace kte {

@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <ncurses.h>
 #include <regex>
+#include <cwchar>
 #include <string>
 
 #include "TerminalRenderer.h"
@@ -150,8 +151,10 @@ TerminalRenderer::Draw(Editor &ed)
 					}
 				};
 				while (written < cols) {
-					char ch       = ' ';
-					bool from_src = false;
+					// Default to space when beyond EOL
+					bool from_src             = false;
+					int wcw                   = 1; // display width
+					std::size_t advance_bytes = 0;
 					if (src_i < line.size()) {
 						unsigned char c = static_cast<unsigned char>(line[src_i]);
 						if (c == '\t') {
@@ -209,18 +212,46 @@ TerminalRenderer::Draw(Editor &ed)
 							++src_i;
 							continue;
 						} else {
-							// normal char
-							if (render_col < coloffs) {
-								++render_col;
-								++src_i;
-								continue;
+							if (!Utf8Enabled()) {
+								// ASCII fallback: treat each byte as single width
+								if (render_col + 1 <= coloffs) {
+									++render_col;
+									++src_i;
+									continue;
+								}
+								wcw           = 1;
+								advance_bytes = 1;
+								from_src      = true;
+							} else {
+								// Decode one UTF-8 codepoint
+								mbstate_t st{};
+								const char *p   = line.data() + src_i;
+								std::size_t rem = line.size() - src_i;
+								wchar_t tmp_wc  = 0;
+								std::size_t n   = mbrtowc(&tmp_wc, p, rem, &st);
+								if (n == static_cast<std::size_t>(-1) || n ==
+								    static_cast<std::size_t>(-2) || n == 0) {
+									// Invalid/incomplete -> treat as single-byte placeholder
+									tmp_wc = L'?';
+									n      = 1;
+								}
+								int w = wcwidth(tmp_wc);
+								if (w < 0)
+									w = 1;
+								// If this codepoint is scrolled off to the left, skip it
+								if (render_col + static_cast<std::size_t>(w) <=
+								    coloffs) {
+									render_col += static_cast<std::size_t>(w);
+									src_i += n;
+									continue;
+								}
+								wcw           = w;
+								advance_bytes = n;
+								from_src      = true;
 							}
-							ch       = static_cast<char>(c);
-							from_src = true;
 						}
 					} else {
 						// beyond EOL, fill spaces
-						ch       = ' ';
 						from_src = false;
 					}
 					bool in_hl  = search_mode && from_src && is_src_in_hl(src_i);
@@ -246,11 +277,20 @@ TerminalRenderer::Draw(Editor &ed)
 					if (!in_hl && from_src) {
 						apply_token_attr(token_at(src_i));
 					}
-					addch(static_cast<unsigned char>(ch));
-					++written;
-					++render_col;
-					if (from_src)
-						++src_i;
+					if (written + wcw > cols) {
+						break;
+					}
+					if (from_src) {
+						// Output original bytes for this unit (UTF-8 codepoint or ASCII byte)
+						const char *cp = line.data() + (src_i);
+						int out_n      = Utf8Enabled() ? static_cast<int>(advance_bytes) : 1;
+						addnstr(cp, out_n);
+						src_i += static_cast<std::size_t>(out_n);
+					} else {
+						addch(' ');
+					}
+					written += wcw;
+					render_col += wcw;
 					if (src_i >= line.size() && written >= cols)
 						break;
 				}
@@ -422,6 +462,10 @@ TerminalRenderer::Draw(Editor &ed)
 		else
 			std::snprintf(rbuf, sizeof(rbuf), "%d,%d | M: not set", row1, col1);
 		right = rbuf;
+		// If UTF-8 is not enabled (ASCII fallback), append a short hint
+		if (!Utf8Enabled()) {
+			right += " | ASCII";
+		}
 	}
 
 	// Compute placements with truncation rules: prioritize left and right; middle gets remaining

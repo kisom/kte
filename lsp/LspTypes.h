@@ -10,6 +10,10 @@
 #include <vector>
 
 namespace kte::lsp {
+// NOTE on coordinates:
+// - Internal editor coordinates use UTF-8 columns counted by Unicode scalars.
+// - LSP wire protocol uses UTF-16 code units for the `character` field.
+//   Conversions are performed in higher layers via `lsp/UtfCodec.h` helpers.
 struct Position {
 	int line      = 0;
 	int character = 0;

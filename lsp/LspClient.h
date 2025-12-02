@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "LspTypes.h"
+#include "Diagnostic.h"
 
 namespace kte::lsp {
 // Callback types (stubs for future phases)
@@ -55,6 +56,18 @@ public:
 	virtual bool isRunning() const = 0;
 
 	virtual std::string getServerName() const = 0;
+
+	// Handlers (optional; set by manager)
+	using DiagnosticsHandler = std::function<void(const std::string & uri,
+	const std::vector<Diagnostic> &diagnostics
+	)
+	>;
+
+
+	virtual void setDiagnosticsHandler(DiagnosticsHandler h)
+	{
+		(void) h;
+	}
 };
 } // namespace kte::lsp
 

@@ -54,6 +54,35 @@ set(CURSES_NEED_WIDE)
 find_package(Curses REQUIRED)
 include_directories(${CURSES_INCLUDE_DIR})
 
+# Detect availability of get_wch (wide-char input) in the curses headers
+include(CheckSymbolExists)
+set(CMAKE_REQUIRED_INCLUDES ${CURSES_INCLUDE_DIR})
+check_symbol_exists(get_wch "ncurses.h" KTE_HAVE_GET_WCH_IN_NCURSES)
+if (NOT KTE_HAVE_GET_WCH_IN_NCURSES)
+	# Some systems expose curses headers as <curses.h>
+	check_symbol_exists(get_wch "curses.h" KTE_HAVE_GET_WCH_IN_CURSES)
+endif ()
+if (KTE_HAVE_GET_WCH_IN_NCURSES OR KTE_HAVE_GET_WCH_IN_CURSES)
+	add_compile_definitions(KTE_HAVE_GET_WCH)
+endif ()
+
+set(SYNTAX_SOURCES
+	syntax/HighlighterEngine.cc
+	syntax/CppHighlighter.cc
+	syntax/HighlighterRegistry.cc
+	syntax/NullHighlighter.cc
+	syntax/JsonHighlighter.cc
+	syntax/MarkdownHighlighter.cc
+	syntax/ShellHighlighter.cc
+	syntax/GoHighlighter.cc
+	syntax/PythonHighlighter.cc
+	syntax/RustHighlighter.cc
+	syntax/LispHighlighter.cc
+	syntax/SqlHighlighter.cc
+	syntax/ErlangHighlighter.cc
+	syntax/ForthHighlighter.cc
+)
+
 set(COMMON_SOURCES
 	GapBuffer.cc
 	PieceTable.cc
@@ -71,28 +100,49 @@ set(COMMON_SOURCES
 	UndoNode.cc
 	UndoTree.cc
 	UndoSystem.cc
-	HighlighterEngine.cc
-	CppHighlighter.cc
-	HighlighterRegistry.cc
-	NullHighlighter.cc
-	JsonHighlighter.cc
-	MarkdownHighlighter.cc
-	ShellHighlighter.cc
-	GoHighlighter.cc
-	PythonHighlighter.cc
-	RustHighlighter.cc
-	LispHighlighter.cc
+	lsp/UtfCodec.cc
 	lsp/BufferChangeTracker.cc
 	lsp/JsonRpcTransport.cc
 	lsp/LspProcessClient.cc
 	lsp/DiagnosticStore.cc
 	lsp/TerminalDiagnosticDisplay.cc
 	lsp/LspManager.cc
+
+	${SYNTAX_SOURCES}
 )
 
 if (KTE_ENABLE_TREESITTER)
-	list(APPEND COMMON_SOURCES
-		TreeSitterHighlighter.cc)
+	list(APPEND SYNTAX_SOURCES
+		syntax/TreeSitterHighlighter.cc)
+endif ()
+
+set(THEME_HEADERS
+	themes/EInk.h
+	themes/Gruvbox.h
+	themes/Nord.h
+	themes/Plan9.h
+	themes/Solarized.h
+	themes/ThemeHelpers.h
+)
+
+set(SYNTAX_HEADERS
+	syntax/LanguageHighlighter.h
+	syntax/HighlighterEngine.h
+	syntax/CppHighlighter.h
+	syntax/HighlighterRegistry.h
+	syntax/NullHighlighter.h
+	syntax/JsonHighlighter.h
+	syntax/MarkdownHighlighter.h
+	syntax/ShellHighlighter.h
+	syntax/GoHighlighter.h
+	syntax/PythonHighlighter.h
+	syntax/RustHighlighter.h
+	syntax/LispHighlighter.h
+)
+
+if (KTE_ENABLE_TREESITTER)
+	list(APPEND SYNTAX_HEADERS
+		syntax/TreeSitterHighlighter.h)
 endif ()
 
 set(COMMON_HEADERS
@@ -117,18 +167,7 @@ set(COMMON_HEADERS
 	UndoTree.h
 	UndoSystem.h
 	Highlight.h
-	LanguageHighlighter.h
-	HighlighterEngine.h
-	CppHighlighter.h
-	HighlighterRegistry.h
-	NullHighlighter.h
-	JsonHighlighter.h
-	MarkdownHighlighter.h
-	ShellHighlighter.h
-	GoHighlighter.h
-	PythonHighlighter.h
-	RustHighlighter.h
-	LispHighlighter.h
+	lsp/UtfCodec.h
 	lsp/LspTypes.h
 	lsp/BufferChangeTracker.h
 	lsp/JsonRpcTransport.h
@@ -140,12 +179,12 @@ set(COMMON_HEADERS
 	lsp/TerminalDiagnosticDisplay.h
 	lsp/LspManager.h
 	lsp/LspServerConfig.h
-)
+	ext/json.h
+	ext/json_fwd.h
 
-if (KTE_ENABLE_TREESITTER)
-	list(APPEND COMMON_HEADERS
-		TreeSitterHighlighter.h)
-endif ()
+	${THEME_HEADERS}
+	${SYNTAX_HEADERS}
+)
 
 # kte (terminal-first) executable
 add_executable(kte
@@ -162,6 +201,8 @@ if (KTE_UNDO_DEBUG)
 endif ()
 
 target_link_libraries(kte ${CURSES_LIBRARIES})
+# Ensure vendored headers (e.g., ext/json.h) are on the include path
+target_include_directories(kte PRIVATE ${CMAKE_SOURCE_DIR}/ext)
 
 if (KTE_ENABLE_TREESITTER)
 	# Users can provide their own tree-sitter include/lib via cache variables
@@ -200,12 +241,98 @@ if (BUILD_TESTS)
 
 
 	target_link_libraries(test_undo ${CURSES_LIBRARIES})
+	# Ensure vendored headers (e.g., ext/json.h) are on the include path for tests as well
+	target_include_directories(test_undo PRIVATE ${CMAKE_SOURCE_DIR}/ext)
 	if (KTE_ENABLE_TREESITTER)
 		if (TREESITTER_INCLUDE_DIR)
 			target_include_directories(test_undo PRIVATE ${TREESITTER_INCLUDE_DIR})
 		endif ()
 		if (TREESITTER_LIBRARY)
 			target_link_libraries(test_undo ${TREESITTER_LIBRARY})
+		endif ()
+	endif ()
+
+	# test_utfcodec executable for UTF conversion helpers
+	add_executable(test_utfcodec
+		test_utfcodec.cc
+		${COMMON_SOURCES}
+		${COMMON_HEADERS}
+	)
+
+	if (KTE_USE_PIECE_TABLE)
+		target_compile_definitions(test_utfcodec PRIVATE KTE_USE_PIECE_TABLE=1)
+	endif ()
+
+	if (KTE_UNDO_DEBUG)
+		target_compile_definitions(test_utfcodec PRIVATE KTE_UNDO_DEBUG=1)
+	endif ()
+
+
+	target_link_libraries(test_utfcodec ${CURSES_LIBRARIES})
+	# Ensure vendored headers (e.g., ext/json.h) are on the include path for tests as well
+	target_include_directories(test_utfcodec PRIVATE ${CMAKE_SOURCE_DIR}/ext)
+	if (KTE_ENABLE_TREESITTER)
+		if (TREESITTER_INCLUDE_DIR)
+			target_include_directories(test_utfcodec PRIVATE ${TREESITTER_INCLUDE_DIR})
+		endif ()
+		if (TREESITTER_LIBRARY)
+			target_link_libraries(test_utfcodec ${TREESITTER_LIBRARY})
+		endif ()
+	endif ()
+
+	# test_transport executable for JSON-RPC framing
+	add_executable(test_transport
+		test_transport.cc
+		${COMMON_SOURCES}
+		${COMMON_HEADERS}
+	)
+
+	if (KTE_USE_PIECE_TABLE)
+		target_compile_definitions(test_transport PRIVATE KTE_USE_PIECE_TABLE=1)
+	endif ()
+
+	if (KTE_UNDO_DEBUG)
+		target_compile_definitions(test_transport PRIVATE KTE_UNDO_DEBUG=1)
+	endif ()
+
+
+	target_link_libraries(test_transport ${CURSES_LIBRARIES})
+	# Ensure vendored headers (e.g., ext/json.h) are on the include path for tests as well
+	target_include_directories(test_transport PRIVATE ${CMAKE_SOURCE_DIR}/ext)
+	if (KTE_ENABLE_TREESITTER)
+		if (TREESITTER_INCLUDE_DIR)
+			target_include_directories(test_transport PRIVATE ${TREESITTER_INCLUDE_DIR})
+		endif ()
+		if (TREESITTER_LIBRARY)
+			target_link_libraries(test_transport ${TREESITTER_LIBRARY})
+		endif ()
+	endif ()
+
+	# test_lsp_decode executable for dispatcher decoding
+	add_executable(test_lsp_decode
+		test_lsp_decode.cc
+		${COMMON_SOURCES}
+		${COMMON_HEADERS}
+	)
+
+	if (KTE_USE_PIECE_TABLE)
+		target_compile_definitions(test_lsp_decode PRIVATE KTE_USE_PIECE_TABLE=1)
+	endif ()
+
+	if (KTE_UNDO_DEBUG)
+		target_compile_definitions(test_lsp_decode PRIVATE KTE_UNDO_DEBUG=1)
+	endif ()
+
+
+	target_link_libraries(test_lsp_decode ${CURSES_LIBRARIES})
+	# Ensure vendored headers (e.g., ext/json.h) are on the include path for tests as well
+	target_include_directories(test_lsp_decode PRIVATE ${CMAKE_SOURCE_DIR}/ext)
+	if (KTE_ENABLE_TREESITTER)
+		if (TREESITTER_INCLUDE_DIR)
+			target_include_directories(test_lsp_decode PRIVATE ${TREESITTER_INCLUDE_DIR})
+		endif ()
+		if (TREESITTER_LIBRARY)
+			target_link_libraries(test_lsp_decode ${TREESITTER_LIBRARY})
 		endif ()
 	endif ()
 endif ()
@@ -242,6 +369,7 @@ if (${BUILD_GUI})
 		target_compile_definitions(kge PRIVATE KTE_UNDO_DEBUG=1)
 	endif ()
 	target_link_libraries(kge ${CURSES_LIBRARIES} imgui)
+	target_include_directories(kge PRIVATE ${CMAKE_SOURCE_DIR}/ext)
 
 	# On macOS, build kge as a proper .app bundle
 	if (APPLE)

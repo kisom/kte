@@ -15,6 +15,12 @@ public:
 
 	bool Poll(MappedInput &out) override;
 
+
+	void SetUtf8Enabled(bool on)
+	{
+		utf8_enabled_ = on;
+	}
+
 private:
 	bool decode_(MappedInput &out);
 
@@ -30,6 +36,8 @@ private:
 	bool uarg_had_digits_ = false; // whether any digits were supplied
 	int uarg_value_       = 0; // current absolute value (>=0)
 	std::string uarg_text_; // raw digits/minus typed for status display
+
+	bool utf8_enabled_ = true;
 };
 
 #endif // KTE_TERMINAL_INPUT_HANDLER_H

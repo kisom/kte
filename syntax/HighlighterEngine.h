@@ -10,7 +10,7 @@
 #include <atomic>
 #include <thread>
 
-#include "Highlight.h"
+#include "../Highlight.h"
 #include "LanguageHighlighter.h"
 
 class Buffer;

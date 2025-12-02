@@ -1,5 +1,5 @@
 #include "NullHighlighter.h"
-#include "Buffer.h"
+#include "../Buffer.h"
 
 namespace kte {
 void

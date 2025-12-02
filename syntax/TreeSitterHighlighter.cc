@@ -1,4 +1,4 @@
-#include "TreeSitterHighlighter.h"
+#include "../TreeSitterHighlighter.h"
 
 #ifdef KTE_ENABLE_TREESITTER
 

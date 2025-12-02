@@ -16,8 +16,8 @@
 #include "Font.h" // embedded default font (DefaultFontRegular)
 #include "GUIConfig.h"
 #include "GUITheme.h"
-#include "HighlighterRegistry.h"
-#include "NullHighlighter.h"
+#include "syntax/HighlighterRegistry.h"
+#include "syntax/NullHighlighter.h"
 
 
 #ifndef KTE_FONT_SIZE

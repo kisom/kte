@@ -7,15 +7,15 @@
 #include <cctype>
 
 #include "Command.h"
-#include "HighlighterRegistry.h"
-#include "NullHighlighter.h"
+#include "syntax/HighlighterRegistry.h"
+#include "syntax/NullHighlighter.h"
 #include "Editor.h"
 #include "Buffer.h"
 #include "UndoSystem.h"
 #include "HelpText.h"
-#include "LanguageHighlighter.h"
-#include "HighlighterEngine.h"
-#include "CppHighlighter.h"
+#include "syntax/LanguageHighlighter.h"
+#include "syntax/HighlighterEngine.h"
+#include "syntax/CppHighlighter.h"
 #ifdef KTE_BUILD_GUI
 #include "GUITheme.h"
 #endif
@@ -554,6 +554,8 @@ cmd_save(CommandContext &ctx)
 	ctx.editor.SetStatus("Saved " + buf->Filename());
 	if (auto *u = buf->Undo())
 		u->mark_saved();
+	// Notify LSP of save
+	ctx.editor.NotifyBufferSaved(buf);
 	return true;
 }
 
@@ -608,6 +610,8 @@ cmd_save_as(CommandContext &ctx)
 	ctx.editor.SetStatus("Saved as " + ctx.arg);
 	if (auto *u = buf->Undo())
 		u->mark_saved();
+	// Notify LSP of save
+	ctx.editor.NotifyBufferSaved(buf);
 	return true;
 }
 

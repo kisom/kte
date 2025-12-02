@@ -1,13 +1,14 @@
 #include <algorithm>
 #include <utility>
 #include <filesystem>
-#include "HighlighterRegistry.h"
-#include "NullHighlighter.h"
+#include "syntax/HighlighterRegistry.h"
+#include "syntax/NullHighlighter.h"
 
 #include "Editor.h"
-#include "HighlighterRegistry.h"
-#include "CppHighlighter.h"
-#include "NullHighlighter.h"
+#include "lsp/LspManager.h"
+#include "syntax/HighlighterRegistry.h"
+#include "syntax/CppHighlighter.h"
+#include "syntax/NullHighlighter.h"
 
 
 Editor::Editor() = default;
@@ -26,6 +27,15 @@ Editor::SetStatus(const std::string &message)
 {
 	msg_   = message;
 	msgtm_ = std::time(nullptr);
+}
+
+
+void
+Editor::NotifyBufferSaved(Buffer *buf)
+{
+	if (lsp_manager_ && buf) {
+		lsp_manager_->onBufferSaved(buf);
+	}
 }
 
 
@@ -181,6 +191,10 @@ Editor::OpenFile(const std::string &path, std::string &err)
 					eng->InvalidateFrom(0);
 				}
 			}
+			// Notify LSP (if wired) for current buffer open
+			if (lsp_manager_) {
+				lsp_manager_->onBufferOpened(&cur);
+			}
 			return true;
 		}
 	}
@@ -216,6 +230,10 @@ Editor::OpenFile(const std::string &path, std::string &err)
 	// Add as a new buffer and switch to it
 	std::size_t idx = AddBuffer(std::move(b));
 	SwitchTo(idx);
+	// Notify LSP (if wired) for current buffer open
+	if (lsp_manager_) {
+		lsp_manager_->onBufferOpened(&buffers_[curbuf_]);
+	}
 	return true;
 }
 

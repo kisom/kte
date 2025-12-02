@@ -15,6 +15,7 @@ class Editor; // fwd
 #include "DiagnosticStore.h"
 #include "LspClient.h"
 #include "LspServerConfig.h"
+#include "UtfCodec.h"
 
 namespace kte::lsp {
 class LspManager {
@@ -29,6 +30,11 @@ public:
 	void stopServer(const std::string &languageId);
 
 	void stopAllServers();
+
+	// Manual lifecycle controls
+	bool startServerForLanguage(const std::string &languageId, const std::string &rootPath = std::string());
+
+	bool restartServer(const std::string &languageId, const std::string &rootPath = std::string());
 
 	// Document sync (to be called by editor/buffer events)
 	void onBufferOpened(Buffer *buffer);
@@ -55,6 +61,14 @@ public:
 		debug_ = enabled;
 	}
 
+
+	// Configuration utilities
+	bool toggleAutostart(const std::string &languageId);
+
+	std::vector<std::string> configuredLanguages() const;
+
+	std::vector<std::string> runningLanguages() const;
+
 private:
 	[[maybe_unused]] Editor *editor_{}; // non-owning
 	DiagnosticDisplay *display_{}; // non-owning
@@ -79,6 +93,15 @@ private:
 	void registerDefaultServers();
 
 	static std::string patternToLanguageId(const std::string &pattern);
+
+	// Workspace root detection helpers/cache
+	std::string detectWorkspaceRoot(const std::string &filePath, const LspServerConfig &cfg);
+
+	// key = startDir + "|" + cfg.rootPatterns
+	std::unordered_map<std::string, std::string> rootCache_;
+
+	// Resolve a buffer by its file:// (or untitled:) URI
+	Buffer *findBufferByUri(const std::string &uri);
 };
 } // namespace kte::lsp
 

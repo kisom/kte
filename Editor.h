@@ -11,6 +11,13 @@
 
 #include "Buffer.h"
 
+// fwd decl for LSP wiring
+namespace kte {
+namespace lsp {
+class LspManager;
+}
+}
+
 
 class Editor {
 public:
@@ -436,6 +443,16 @@ public:
 
 	bool OpenFile(const std::string &path, std::string &err);
 
+	// LSP: attach/detach manager
+	void SetLspManager(kte::lsp::LspManager *mgr)
+	{
+		lsp_manager_ = mgr;
+	}
+
+
+	// LSP: notify buffer saved (used by commands)
+	void NotifyBufferSaved(Buffer *buf);
+
 	// Buffer switching/closing
 	bool SwitchTo(std::size_t index);
 
@@ -551,6 +568,9 @@ public:
 private:
 	std::string replace_find_tmp_;
 	std::string replace_with_tmp_;
+
+	// Non-owning pointer to LSP manager (if provided)
+	kte::lsp::LspManager *lsp_manager_ = nullptr;
 };
 
 #endif // KTE_EDITOR_H

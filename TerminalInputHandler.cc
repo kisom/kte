@@ -1,4 +1,6 @@
 #include <cstdio>
+#include <cwchar>
+#include <climits>
 #include <ncurses.h>
 
 #include "TerminalInputHandler.h"
@@ -281,6 +283,77 @@ map_key_to_command(const int ch,
 bool
 TerminalInputHandler::decode_(MappedInput &out)
 {
+#if defined(KTE_HAVE_GET_WCH)
+	if (utf8_enabled_) {
+		// Prefer wide-character input so we can capture Unicode code points
+		wint_t wch = 0;
+		int rc     = get_wch(&wch);
+		if (rc == ERR) {
+			return false;
+		}
+		if (rc == KEY_CODE_YES) {
+			// Function/special key; pass through existing mapper
+			int sk        = static_cast<int>(wch);
+			bool consumed = map_key_to_command(
+				sk,
+				k_prefix_, esc_meta_,
+				uarg_active_, uarg_collecting_, uarg_negative_, uarg_had_digits_, uarg_value_,
+				uarg_text_,
+				out);
+			if (!consumed)
+				return false;
+		} else {
+			// Regular character
+			if (wch <= 0x7F) {
+				// ASCII path -> reuse existing mapping (handles control, ESC, etc.)
+				int ch        = static_cast<int>(wch);
+				bool consumed = map_key_to_command(
+					ch,
+					k_prefix_, esc_meta_,
+					uarg_active_, uarg_collecting_, uarg_negative_, uarg_had_digits_, uarg_value_,
+					uarg_text_,
+					out);
+				if (!consumed)
+					return false;
+			} else {
+				// Non-ASCII printable -> insert UTF-8 text directly
+				if (iswcntrl(static_cast<wint_t>(wch))) {
+					out.hasCommand = false;
+					return true;
+				}
+				char mb[MB_LEN_MAX];
+				mbstate_t st{};
+				std::size_t n = wcrtomb(mb, static_cast<wchar_t>(wch), &st);
+				if (n == static_cast<std::size_t>(-1)) {
+					// Fallback placeholder if encoding failed
+					out.hasCommand = true;
+					out.id         = CommandId::InsertText;
+					out.arg        = "?";
+					out.count      = 0;
+				} else {
+					out.hasCommand = true;
+					out.id         = CommandId::InsertText;
+					out.arg.assign(mb, mb + n);
+					out.count = 0;
+				}
+			}
+		}
+	} else {
+		int ch = getch();
+		if (ch == ERR) {
+			return false; // no input
+		}
+		bool consumed = map_key_to_command(
+			ch,
+			k_prefix_, esc_meta_,
+			uarg_active_, uarg_collecting_, uarg_negative_, uarg_had_digits_, uarg_value_, uarg_text_,
+			out);
+		if (!consumed)
+			return false;
+	}
+#else
+	// Wide-character input not available in this curses; fall back to byte-wise getch
+	(void) utf8_enabled_;
 	int ch = getch();
 	if (ch == ERR) {
 		return false; // no input
@@ -292,6 +365,7 @@ TerminalInputHandler::decode_(MappedInput &out)
 		out);
 	if (!consumed)
 		return false;
+#endif
 	// If a command was produced and a universal argument is active, attach it and clear state
 	if (out.hasCommand && uarg_active_ && out.id != CommandId::UArgStatus) {
 		int count = 0;

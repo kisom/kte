@@ -1,5 +1,5 @@
-#include "RustHighlighter.h"
-#include "Buffer.h"
+#include "SqlHighlighter.h"
+#include "../Buffer.h"
 #include <cctype>
 
 namespace kte {
@@ -21,31 +21,31 @@ is_ident_start(char c)
 static bool
 is_ident_char(char c)
 {
-	return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+	return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '$';
 }
 
 
-RustHighlighter::RustHighlighter()
+SqlHighlighter::SqlHighlighter()
 {
 	const char *kw[] = {
-		"as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn", "for", "if",
-		"impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return", "self", "Self",
-		"static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where", "while", "dyn", "async",
-		"await", "try"
+		"select", "insert", "update", "delete", "from", "where", "group", "by", "order", "limit",
+		"offset", "values", "into", "create", "table", "index", "unique", "on", "as", "and", "or",
+		"not", "null", "is", "primary", "key", "constraint", "foreign", "references", "drop", "alter",
+		"add", "column", "rename", "to", "if", "exists", "join", "left", "right", "inner", "outer",
+		"cross", "using", "set", "distinct", "having", "union", "all", "case", "when", "then", "else",
+		"end", "pragma", "transaction", "begin", "commit", "rollback", "replace"
 	};
 	for (auto s: kw)
 		kws_.insert(s);
-	const char *tp[] = {
-		"u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize", "f32", "f64",
-		"bool", "char", "str"
-	};
-	for (auto s: tp)
+
+	const char *types[] = {"integer", "real", "text", "blob", "numeric", "boolean", "date", "datetime"};
+	for (auto s: types)
 		types_.insert(s);
 }
 
 
 void
-RustHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<HighlightSpan> &out) const
+SqlHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<HighlightSpan> &out) const
 {
 	const auto &rows = buf.Rows();
 	if (row < 0 || static_cast<std::size_t>(row) >= rows.size())
@@ -53,6 +53,7 @@ RustHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<Highlight
 	std::string s = static_cast<std::string>(rows[static_cast<std::size_t>(row)]);
 	int n         = static_cast<int>(s.size());
 	int i         = 0;
+
 	while (i < n) {
 		char c = s[i];
 		if (c == ' ' || c == '\t') {
@@ -63,10 +64,12 @@ RustHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<Highlight
 			i = j;
 			continue;
 		}
-		if (c == '/' && i + 1 < n && s[i + 1] == '/') {
+		// line comments: -- ...
+		if (c == '-' && i + 1 < n && s[i + 1] == '-') {
 			push(out, i, n, TokenKind::Comment);
 			break;
 		}
+		// simple block comment on same line: /* ... */
 		if (c == '/' && i + 1 < n && s[i + 1] == '*') {
 			int j       = i + 2;
 			bool closed = false;
@@ -87,21 +90,26 @@ RustHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<Highlight
 				continue;
 			}
 		}
-		if (c == '"') {
+		// strings: '...' or "..."
+		if (c == '\'' || c == '"') {
+			char q   = c;
 			int j    = i + 1;
 			bool esc = false;
 			while (j < n) {
 				char d = s[j++];
-				if (esc) {
-					esc = false;
-					continue;
+				if (d == q) {
+					// Handle doubled quote escaping for SQL single quotes
+					if (q == '\'' && j < n && s[j] == '\'') {
+						++j;
+						continue;
+					}
+					break;
 				}
 				if (d == '\\') {
-					esc = true;
-					continue;
+					esc = !esc;
+				} else {
+					esc = false;
 				}
-				if (d == '"')
-					break;
 			}
 			push(out, i, j, TokenKind::String);
 			i = j;
@@ -120,10 +128,14 @@ RustHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<Highlight
 			while (j < n && is_ident_char(s[j]))
 				++j;
 			std::string id = s.substr(i, j - i);
-			TokenKind k    = TokenKind::Identifier;
-			if (kws_.count(id))
+			std::string lower;
+			lower.reserve(id.size());
+			for (char ch: id)
+				lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+			TokenKind k = TokenKind::Identifier;
+			if (kws_.count(lower))
 				k = TokenKind::Keyword;
-			else if (types_.count(id))
+			else if (types_.count(lower))
 				k = TokenKind::Type;
 			push(out, i, j, k);
 			i = j;
@@ -131,8 +143,7 @@ RustHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<Highlight
 		}
 		if (std::ispunct(static_cast<unsigned char>(c))) {
 			TokenKind k = TokenKind::Operator;
-			if (c == ';' || c == ',' || c == '(' || c == ')' || c == '{' || c == '}' || c == '[' || c ==
-			    ']')
+			if (c == ',' || c == ';' || c == '(' || c == ')')
 				k = TokenKind::Punctuation;
 			push(out, i, i + 1, k);
 			++i;

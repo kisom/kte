@@ -14,7 +14,7 @@
 #include "UndoSystem.h"
 #include <cstdint>
 #include <memory>
-#include "HighlighterEngine.h"
+#include "syntax/HighlighterEngine.h"
 #include "Highlight.h"
 
 // Forward declarations to avoid heavy includes

@@ -7,16 +7,42 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <fstream>
 #include <utility>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
+#include <cstdarg>
 
 #include "../Buffer.h"
 #include "../Editor.h"
 #include "BufferChangeTracker.h"
 #include "LspProcessClient.h"
+#include "UtfCodec.h"
 
 namespace fs = std::filesystem;
 
 namespace kte::lsp {
+static void
+lsp_debug_file(const char *fmt, ...)
+{
+	FILE *f = std::fopen("/tmp/kte-lsp.log", "a");
+	if (!f)
+		return;
+	// prepend timestamp
+	std::time_t t = std::time(nullptr);
+	char ts[32];
+	std::strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
+	std::fprintf(f, "[%s] ", ts);
+	va_list ap;
+	va_start(ap, fmt);
+	std::vfprintf(f, fmt, ap);
+	va_end(ap);
+	std::fputc('\n', f);
+	std::fclose(f);
+}
+
+
 LspManager::LspManager(Editor *editor, DiagnosticDisplay *display)
 	: editor_(editor), display_(display)
 {
@@ -53,14 +79,50 @@ LspManager::startServerForBuffer(Buffer *buffer)
 	if (!cfg.autostart) {
 		return false;
 	}
-	auto client = std::make_unique<LspProcessClient>(cfg.command, cfg.args);
-	// Determine root as parent of file for now; future: walk rootPatterns
+	// Allow env override of server path
+	std::string command = cfg.command;
+	if (lang == "cpp") {
+		if (const char *p = std::getenv("KTE_LSP_CLANGD"); p && *p)
+			command   = p;
+	} else if (lang == "go") {
+		if (const char *p = std::getenv("KTE_LSP_GOPLS"); p && *p)
+			command   = p;
+	} else if (lang == "rust") {
+		if (const char *p = std::getenv("KTE_LSP_RUST_ANALYZER"); p && *p)
+			command   = p;
+	}
+	if (debug_) {
+		std::fprintf(stderr, "[kte][lsp] startServerForBuffer: lang=%s cmd=%s args=%zu file=%s\n",
+		             lang.c_str(), command.c_str(), cfg.args.size(), buffer->Filename().c_str());
+		lsp_debug_file("startServerForBuffer: lang=%s cmd=%s args=%zu file=%s",
+		               lang.c_str(), command.c_str(), cfg.args.size(), buffer->Filename().c_str());
+	}
+	auto client = std::make_unique<LspProcessClient>(command, cfg.args);
+	// Wire diagnostics handler to manager
+	client->setDiagnosticsHandler([this](const std::string &uri, const std::vector<Diagnostic> &diags) {
+		this->handleDiagnostics(uri, diags);
+	});
+	// Determine workspace root using rootPatterns if set; fallback to file's parent
 	std::string rootPath;
 	if (!buffer->Filename().empty()) {
-		fs::path p(buffer->Filename());
-		rootPath = p.has_parent_path() ? p.parent_path().string() : std::string{};
+		rootPath = detectWorkspaceRoot(buffer->Filename(), cfg);
+		if (rootPath.empty()) {
+			fs::path p(buffer->Filename());
+			rootPath = p.has_parent_path() ? p.parent_path().string() : std::string{};
+		}
+	}
+	if (debug_) {
+		const char *pathEnv = std::getenv("PATH");
+		std::fprintf(stderr, "[kte][lsp] initializing server: rootPath=%s PATH=%s\n",
+		             rootPath.c_str(), pathEnv ? pathEnv : "<null>");
+		lsp_debug_file("initializing server: rootPath=%s PATH=%s",
+		               rootPath.c_str(), pathEnv ? pathEnv : "<null>");
 	}
 	if (!client->initialize(rootPath)) {
+		if (debug_) {
+			std::fprintf(stderr, "[kte][lsp] initialize failed for lang=%s\n", lang.c_str());
+			lsp_debug_file("initialize failed for lang=%s", lang.c_str());
+		}
 		return false;
 	}
 	servers_[lang] = std::move(client);
@@ -89,11 +151,84 @@ LspManager::stopAllServers()
 }
 
 
+bool
+LspManager::startServerForLanguage(const std::string &languageId, const std::string &rootPath)
+{
+	auto cfgIt = serverConfigs_.find(languageId);
+	if (cfgIt == serverConfigs_.end())
+		return false;
+
+	// If already running, nothing to do
+	auto it = servers_.find(languageId);
+	if (it != servers_.end() && it->second && it->second->isRunning()) {
+		return true;
+	}
+
+	const auto &cfg     = cfgIt->second;
+	std::string command = cfg.command;
+	if (languageId == "cpp") {
+		if (const char *p = std::getenv("KTE_LSP_CLANGD"); p && *p)
+			command   = p;
+	} else if (languageId == "go") {
+		if (const char *p = std::getenv("KTE_LSP_GOPLS"); p && *p)
+			command   = p;
+	} else if (languageId == "rust") {
+		if (const char *p = std::getenv("KTE_LSP_RUST_ANALYZER"); p && *p)
+			command   = p;
+	}
+	if (debug_) {
+		std::fprintf(stderr, "[kte][lsp] startServerForLanguage: lang=%s cmd=%s args=%zu root=%s\n",
+		             languageId.c_str(), command.c_str(), cfg.args.size(), rootPath.c_str());
+		lsp_debug_file("startServerForLanguage: lang=%s cmd=%s args=%zu root=%s",
+		               languageId.c_str(), command.c_str(), cfg.args.size(), rootPath.c_str());
+	}
+	auto client = std::make_unique<LspProcessClient>(command, cfg.args);
+	client->setDiagnosticsHandler([this](const std::string &uri, const std::vector<Diagnostic> &diags) {
+		this->handleDiagnostics(uri, diags);
+	});
+	std::string root = rootPath;
+	if (!root.empty()) {
+		// keep
+	} else {
+		// Try cwd if not provided
+		root = std::string();
+	}
+	if (!client->initialize(root)) {
+		if (debug_) {
+			std::fprintf(stderr, "[kte][lsp] initialize failed for lang=%s\n", languageId.c_str());
+			lsp_debug_file("initialize failed for lang=%s", languageId.c_str());
+		}
+		return false;
+	}
+	servers_[languageId] = std::move(client);
+	return true;
+}
+
+
+bool
+LspManager::restartServer(const std::string &languageId, const std::string &rootPath)
+{
+	stopServer(languageId);
+	return startServerForLanguage(languageId, rootPath);
+}
+
+
 void
 LspManager::onBufferOpened(Buffer *buffer)
 {
-	if (!startServerForBuffer(buffer))
+	if (debug_) {
+		std::fprintf(stderr, "[kte][lsp] onBufferOpened: file=%s lang=%s\n",
+		             buffer->Filename().c_str(), getLanguageId(buffer).c_str());
+		lsp_debug_file("onBufferOpened: file=%s lang=%s",
+		               buffer->Filename().c_str(), getLanguageId(buffer).c_str());
+	}
+	if (!startServerForBuffer(buffer)) {
+		if (debug_) {
+			std::fprintf(stderr, "[kte][lsp] onBufferOpened: server did not start\n");
+			lsp_debug_file("onBufferOpened: server did not start");
+		}
 		return;
+	}
 	auto *client = ensureServerForLanguage(getLanguageId(buffer));
 	if (!client)
 		return;
@@ -102,6 +237,12 @@ LspManager::onBufferOpened(Buffer *buffer)
 	const auto lang        = getLanguageId(buffer);
 	const int version      = static_cast<int>(buffer->Version());
 	const std::string text = buffer->FullText();
+	if (debug_) {
+		std::fprintf(stderr, "[kte][lsp] didOpen: uri=%s lang=%s version=%d bytes=%zu\n",
+		             uri.c_str(), lang.c_str(), version, text.size());
+		lsp_debug_file("didOpen: uri=%s lang=%s version=%d bytes=%zu",
+		               uri.c_str(), lang.c_str(), version, text.size());
+	}
 	client->didOpen(uri, lang, version, text);
 }
 
@@ -127,7 +268,38 @@ LspManager::onBufferChanged(Buffer *buffer)
 		ev.text = buffer->FullText();
 		changes.push_back(std::move(ev));
 	}
-	client->didChange(uri, version, changes);
+
+	// Option A: convert ranges from UTF-8 (editor coords) -> UTF-16 (LSP wire)
+	std::vector<TextDocumentContentChangeEvent> changes16;
+	changes16.reserve(changes.size());
+	// LineProvider that serves lines from this buffer by URI
+	Buffer *bufForUri = buffer; // changes are for this buffer
+	auto provider     = [bufForUri](const std::string &/*u*/, int line) -> std::string_view {
+		if (!bufForUri)
+			return std::string_view();
+		const auto &rows = bufForUri->Rows();
+		if (line < 0 || static_cast<size_t>(line) >= rows.size())
+			return std::string_view();
+		// Materialize one line into a thread_local scratch; return view
+		thread_local std::string scratch;
+		scratch = static_cast<std::string>(rows[static_cast<size_t>(line)]);
+		return std::string_view(scratch);
+	};
+	for (const auto &ch: changes) {
+		TextDocumentContentChangeEvent out = ch;
+		if (ch.range.has_value()) {
+			Range r16 = toUtf16(uri, *ch.range, provider);
+			if (debug_) {
+				lsp_debug_file("didChange range convert: L%d C%d-%d -> L%d C%d-%d",
+				               ch.range->start.line, ch.range->start.character,
+				               ch.range->end.character,
+				               r16.start.line, r16.start.character, r16.end.character);
+			}
+			out.range = r16;
+		}
+		changes16.push_back(std::move(out));
+	}
+	client->didChange(uri, version, changes16);
 }
 
 
@@ -157,7 +329,24 @@ void
 LspManager::requestCompletion(Buffer *buffer, Position pos, CompletionCallback callback)
 {
 	if (auto *client = ensureServerForLanguage(getLanguageId(buffer))) {
-		client->completion(getUri(buffer), pos, std::move(callback));
+		const auto uri = getUri(buffer);
+		// Convert position to UTF-16 using Option A provider
+		auto provider = [buffer](const std::string &/*u*/, int line) -> std::string_view {
+			if (!buffer)
+				return std::string_view();
+			const auto &rows = buffer->Rows();
+			if (line < 0 || static_cast<size_t>(line) >= rows.size())
+				return std::string_view();
+			thread_local std::string scratch;
+			scratch = static_cast<std::string>(rows[static_cast<size_t>(line)]);
+			return std::string_view(scratch);
+		};
+		Position p16 = toUtf16(uri, pos, provider);
+		if (debug_) {
+			lsp_debug_file("completion pos convert: L%d C%d -> L%d C%d", pos.line, pos.character, p16.line,
+			               p16.character);
+		}
+		client->completion(uri, p16, std::move(callback));
 	}
 }
 
@@ -166,7 +355,23 @@ void
 LspManager::requestHover(Buffer *buffer, Position pos, HoverCallback callback)
 {
 	if (auto *client = ensureServerForLanguage(getLanguageId(buffer))) {
-		client->hover(getUri(buffer), pos, std::move(callback));
+		const auto uri = getUri(buffer);
+		auto provider  = [buffer](const std::string &/*u*/, int line) -> std::string_view {
+			if (!buffer)
+				return std::string_view();
+			const auto &rows = buffer->Rows();
+			if (line < 0 || static_cast<size_t>(line) >= rows.size())
+				return std::string_view();
+			thread_local std::string scratch;
+			scratch = static_cast<std::string>(rows[static_cast<size_t>(line)]);
+			return std::string_view(scratch);
+		};
+		Position p16 = toUtf16(uri, pos, provider);
+		if (debug_) {
+			lsp_debug_file("hover pos convert: L%d C%d -> L%d C%d", pos.line, pos.character, p16.line,
+			               p16.character);
+		}
+		client->hover(uri, p16, std::move(callback));
 	}
 }
 
@@ -175,7 +380,23 @@ void
 LspManager::requestDefinition(Buffer *buffer, Position pos, LocationCallback callback)
 {
 	if (auto *client = ensureServerForLanguage(getLanguageId(buffer))) {
-		client->definition(getUri(buffer), pos, std::move(callback));
+		const auto uri = getUri(buffer);
+		auto provider  = [buffer](const std::string &/*u*/, int line) -> std::string_view {
+			if (!buffer)
+				return std::string_view();
+			const auto &rows = buffer->Rows();
+			if (line < 0 || static_cast<size_t>(line) >= rows.size())
+				return std::string_view();
+			thread_local std::string scratch;
+			scratch = static_cast<std::string>(rows[static_cast<size_t>(line)]);
+			return std::string_view(scratch);
+		};
+		Position p16 = toUtf16(uri, pos, provider);
+		if (debug_) {
+			lsp_debug_file("definition pos convert: L%d C%d -> L%d C%d", pos.line, pos.character, p16.line,
+			               p16.character);
+		}
+		client->definition(uri, p16, std::move(callback));
 	}
 }
 
@@ -183,11 +404,69 @@ LspManager::requestDefinition(Buffer *buffer, Position pos, LocationCallback cal
 void
 LspManager::handleDiagnostics(const std::string &uri, const std::vector<Diagnostic> &diagnostics)
 {
-	diagnosticStore_.setDiagnostics(uri, diagnostics);
+	// Convert incoming ranges from UTF-16 (wire) -> UTF-8 (editor)
+	std::vector<Diagnostic> conv = diagnostics;
+	Buffer *buf                  = findBufferByUri(uri);
+	auto provider                = [buf](const std::string &/*u*/, int line) -> std::string_view {
+		if (!buf)
+			return std::string_view();
+		const auto &rows = buf->Rows();
+		if (line < 0 || static_cast<size_t>(line) >= rows.size())
+			return std::string_view();
+		thread_local std::string scratch;
+		scratch = static_cast<std::string>(rows[static_cast<size_t>(line)]);
+		return std::string_view(scratch);
+	};
+	for (auto &d: conv) {
+		Range r8 = toUtf8(uri, d.range, provider);
+		if (debug_) {
+			lsp_debug_file("diagnostic range convert: L%d C%d-%d -> L%d C%d-%d",
+			               d.range.start.line, d.range.start.character, d.range.end.character,
+			               r8.start.line, r8.start.character, r8.end.character);
+		}
+		d.range = r8;
+	}
+	diagnosticStore_.setDiagnostics(uri, conv);
 	if (display_) {
-		display_->updateDiagnostics(uri, diagnostics);
+		display_->updateDiagnostics(uri, conv);
 		display_->updateStatusBar(diagnosticStore_.getErrorCount(uri), diagnosticStore_.getWarningCount(uri));
 	}
+}
+
+
+bool
+LspManager::toggleAutostart(const std::string &languageId)
+{
+	auto it = serverConfigs_.find(languageId);
+	if (it == serverConfigs_.end())
+		return false;
+	it->second.autostart = !it->second.autostart;
+	return it->second.autostart;
+}
+
+
+std::vector<std::string>
+LspManager::configuredLanguages() const
+{
+	std::vector<std::string> out;
+	out.reserve(serverConfigs_.size());
+	for (const auto &kv: serverConfigs_)
+		out.push_back(kv.first);
+	std::sort(out.begin(), out.end());
+	return out;
+}
+
+
+std::vector<std::string>
+LspManager::runningLanguages() const
+{
+	std::vector<std::string> out;
+	for (const auto &kv: servers_) {
+		if (kv.second && kv.second->isRunning())
+			out.push_back(kv.first);
+	}
+	std::sort(out.begin(), out.end());
+	return out;
 }
 
 
@@ -220,6 +499,22 @@ LspManager::getUri(Buffer *buffer)
 #else
 	return std::string("file://") + p.string();
 #endif
+}
+
+
+// Resolve a Buffer* by matching constructed file URI
+Buffer *
+LspManager::findBufferByUri(const std::string &uri)
+{
+	if (!editor_)
+		return nullptr;
+	// Compare against getUri for each buffer
+	auto &bufs = editor_->Buffers();
+	for (auto &b: bufs) {
+		if (getUri(&b) == uri)
+			return &b;
+	}
+	return nullptr;
 }
 
 
@@ -268,6 +563,10 @@ LspManager::ensureServerForLanguage(const std::string &languageId)
 	if (cfg == serverConfigs_.end())
 		return nullptr;
 	auto client = std::make_unique<LspProcessClient>(cfg->second.command, cfg->second.args);
+	client->setDiagnosticsHandler([this](const std::string &uri, const std::vector<Diagnostic> &diags) {
+		this->handleDiagnostics(uri, diags);
+	});
+	// No specific file context here; initialize with empty or current working dir
 	if (!client->initialize(""))
 		return nullptr;
 	auto *ret            = client.get();
@@ -322,5 +621,74 @@ LspManager::patternToLanguageId(const std::string &pattern)
 	if (ext.empty())
 		return {};
 	return extToLanguageId(ext);
+}
+
+
+// Detect workspace root by walking up from filePath looking for any of the
+// configured rootPatterns (simple filenames). Supports comma/semicolon-separated
+// patterns in cfg.rootPatterns.
+std::string
+LspManager::detectWorkspaceRoot(const std::string &filePath, const LspServerConfig &cfg)
+{
+	if (filePath.empty())
+		return {};
+	fs::path start(filePath);
+	fs::path dir = start.has_parent_path() ? start.parent_path() : start;
+
+	// Build cache key
+	const std::string cacheKey = (dir.string() + "|" + cfg.rootPatterns);
+	auto it                    = rootCache_.find(cacheKey);
+	if (it != rootCache_.end()) {
+		return it->second;
+	}
+
+	// Split patterns by ',', ';', or ':'
+	std::vector<std::string> pats;
+	{
+		std::string acc;
+		for (char c: cfg.rootPatterns) {
+			if (c == ',' || c == ';' || c == ':') {
+				if (!acc.empty()) {
+					pats.push_back(acc);
+					acc.clear();
+				}
+			} else if (!std::isspace(static_cast<unsigned char>(c))) {
+				acc.push_back(c);
+			}
+		}
+		if (!acc.empty())
+			pats.push_back(acc);
+	}
+	// If no patterns defined, cache empty and return {}
+	if (pats.empty()) {
+		rootCache_[cacheKey] = {};
+		return {};
+	}
+
+	fs::path cur = dir;
+	while (true) {
+		// Check each pattern in this directory
+		for (const auto &pat: pats) {
+			if (pat.empty())
+				continue;
+			fs::path candidate = cur / pat;
+			std::error_code ec;
+			bool exists = fs::exists(candidate, ec);
+			if (!ec && exists) {
+				rootCache_[cacheKey] = cur.string();
+				return rootCache_[cacheKey];
+			}
+		}
+		if (cur.has_parent_path()) {
+			fs::path parent = cur.parent_path();
+			if (parent == cur)
+				break; // reached root guard
+			cur = parent;
+		} else {
+			break;
+		}
+	}
+	rootCache_[cacheKey] = {};
+	return {};
 }
 } // namespace kte::lsp

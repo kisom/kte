@@ -5,7 +5,7 @@
 #include <vector>
 #include <string>
 
-#include "Highlight.h"
+#include "../Highlight.h"
 
 class Buffer;
 

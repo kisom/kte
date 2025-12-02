@@ -1,5 +1,5 @@
 #include "ShellHighlighter.h"
-#include "Buffer.h"
+#include "../Buffer.h"
 #include <cctype>
 
 namespace kte {

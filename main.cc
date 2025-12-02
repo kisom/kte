@@ -12,6 +12,7 @@
 #include "Editor.h"
 #include "Frontend.h"
 #include "TerminalFrontend.h"
+#include "lsp/LspManager.h"
 
 #if defined(KTE_BUILD_GUI)
 #include "GUIFrontend.h"
@@ -28,6 +29,7 @@ PrintUsage(const char *prog)
 {
 	std::cerr << "Usage: " << prog << " [OPTIONS] [files]\n"
 		<< "Options:\n"
+		<< "  -c, --chdir DIR  Change working directory before opening files\n"
 		<< "  -g, --gui        Use GUI frontend (if built)\n"
 		<< "  -t, --term       Use terminal (ncurses) frontend [default]\n"
 		<< "  -h, --help       Show this help and exit\n"
@@ -36,9 +38,17 @@ PrintUsage(const char *prog)
 
 
 int
-main(int argc, const char *argv[])
+main(const int argc, const char *argv[])
 {
 	Editor editor;
+	// Wire up LSP manager (no diagnostic UI yet; frontends may provide later)
+	kte::lsp::LspManager lspMgr(&editor, nullptr);
+	// Enable LSP debug logging if KTE_LSP_DEBUG is set
+	if (const char *dbg = std::getenv("KTE_LSP_DEBUG"); dbg && *dbg) {
+		lspMgr.setDebugLogging(true);
+		std::fprintf(stderr, "[kte][lsp] debug logging enabled via KTE_LSP_DEBUG\n");
+	}
+	editor.SetLspManager(&lspMgr);
 
 	// CLI parsing using getopt_long
 	bool req_gui      = false;
@@ -46,7 +56,10 @@ main(int argc, const char *argv[])
 	bool show_help    = false;
 	bool show_version = false;
 
+	std::string nwd;
+
 	static struct option long_opts[] = {
+		{"chdir", required_argument, nullptr, 'c'},
 		{"gui", no_argument, nullptr, 'g'},
 		{"term", no_argument, nullptr, 't'},
 		{"help", no_argument, nullptr, 'h'},
@@ -56,8 +69,11 @@ main(int argc, const char *argv[])
 
 	int opt;
 	int long_index = 0;
-	while ((opt = getopt_long(argc, const_cast<char *const *>(argv), "gthV", long_opts, &long_index)) != -1) {
+	while ((opt = getopt_long(argc, const_cast<char *const *>(argv), "c:gthV", long_opts, &long_index)) != -1) {
 		switch (opt) {
+		case 'c':
+			nwd = optarg;
+			break;
 		case 'g':
 			req_gui = true;
 			break;
@@ -104,11 +120,13 @@ main(int argc, const char *argv[])
 	} else if (req_term) {
 		use_gui = false;
 	} else {
-		// Default depends on build target: kge defaults to GUI, kte to terminal
+
+
+	// Default depends on build target: kge defaults to GUI, kte to terminal
 #if defined(KTE_DEFAULT_GUI)
-		use_gui = true;
+	use_gui = true;
 #else
-		use_gui = false;
+	use_gui = false;
 #endif
 	}
 #endif
@@ -199,6 +217,13 @@ main(int argc, const char *argv[])
 	}
 #endif
 
+#if defined(KTE_BUILD_GUI)
+	if (!nwd.empty()) {
+		if (chdir(nwd.c_str()) != 0) {
+			std::cerr << "kge: failed to chdir to " << nwd << std::endl;
+		}
+	}
+#endif
 	if (!fe->Init(editor)) {
 		std::cerr << "kte: failed to initialize frontend" << std::endl;
 		return 1;

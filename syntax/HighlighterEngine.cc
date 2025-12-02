@@ -1,5 +1,5 @@
 #include "HighlighterEngine.h"
-#include "Buffer.h"
+#include "../Buffer.h"
 #include "LanguageHighlighter.h"
 #include <thread>
 

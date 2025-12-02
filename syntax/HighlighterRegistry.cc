@@ -30,6 +30,9 @@ class GoHighlighter;
 class PythonHighlighter;
 class RustHighlighter;
 class LispHighlighter;
+class SqlHighlighter;
+class ErlangHighlighter;
+class ForthHighlighter;
 }
 
 // Headers for the above
@@ -40,6 +43,9 @@ class LispHighlighter;
 #include "PythonHighlighter.h"
 #include "RustHighlighter.h"
 #include "LispHighlighter.h"
+#include "SqlHighlighter.h"
+#include "ErlangHighlighter.h"
+#include "ForthHighlighter.h"
 
 namespace kte {
 static std::string
@@ -76,6 +82,12 @@ HighlighterRegistry::Normalize(std::string_view ft)
 	if (f == "lisp" || f == "scheme" || f == "scm" || f == "rkt" || f == "el" || f == "clj" || f == "cljc" || f ==
 	    "cl")
 		return "lisp";
+	if (f == "sql" || f == "sqlite" || f == "sqlite3")
+		return "sql";
+	if (f == "erlang" || f == "erl" || f == "hrl")
+		return "erlang";
+	if (f == "forth" || f == "fth" || f == "4th" || f == "fs")
+		return "forth";
 	return f;
 }
 
@@ -105,6 +117,12 @@ HighlighterRegistry::CreateFor(std::string_view filetype)
 		return std::make_unique<RustHighlighter>();
 	if (ft == "lisp")
 		return std::make_unique<LispHighlighter>();
+	if (ft == "sql")
+		return std::make_unique<SqlHighlighter>();
+	if (ft == "erlang")
+		return std::make_unique<ErlangHighlighter>();
+	if (ft == "forth")
+		return std::make_unique<ForthHighlighter>();
 	return nullptr;
 }
 
@@ -160,6 +178,12 @@ HighlighterRegistry::DetectForPath(std::string_view path, std::string_view first
 		if (ext == ".lisp" || ext == ".scm" || ext == ".rkt" || ext == ".el" || ext == ".clj" || ext == ".cljc"
 		    || ext == ".cl")
 			return "lisp";
+		if (ext == ".sql" || ext == ".sqlite")
+			return "sql";
+		if (ext == ".erl" || ext == ".hrl")
+			return "erlang";
+		if (ext == ".forth" || ext == ".fth" || ext == ".4th" || ext == ".fs")
+			return "forth";
 	}
 	// Shebang
 	std::string ft = shebang_to_ft(first_line);
