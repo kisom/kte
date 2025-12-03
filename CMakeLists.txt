@@ -4,7 +4,7 @@ project(kte)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 17)
-set(KTE_VERSION "1.3.1")
+set(KTE_VERSION "1.3.2")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
@@ -14,6 +14,16 @@ option(KTE_USE_PIECE_TABLE "Use PieceTable instead of GapBuffer implementation" 
 set(KTE_FONT_SIZE "18.0" CACHE STRING "Default font size for GUI")
 option(KTE_UNDO_DEBUG "Enable undo instrumentation logs" OFF)
 option(KTE_ENABLE_TREESITTER "Enable optional Tree-sitter highlighter adapter" OFF)
+
+# Optionally enable AddressSanitizer (ASan)
+option(ENABLE_ASAN "Enable AddressSanitizer for builds" ON)
+
+if (ENABLE_ASAN)
+    message(STATUS "ASan enabled")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
+    # Ensure the sanitizer is linked too (especially important on some platforms)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
+endif ()
 
 if (CMAKE_HOST_UNIX)
     message(STATUS "Build system is POSIX.")
