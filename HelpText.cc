@@ -75,7 +75,7 @@ HelpText::Text()
 		"Buffers:\n  +HELP+ is read-only. Press C-k ' to toggle; C-k h restores it.\n"
 		"\n"
 		"GUI appearance (command prompt):\n"
-		"  : theme NAME         Set GUI theme (eink, everforest, gruvbox, kanagawa-paper, nord, old-book, plan9, solarized, zenburn)\n"
-		"  : background MODE    Set background: light | dark (affects eink, gruvbox, solarized)\n"
+		"  : theme NAME         Set GUI theme (amber, eink, everforest, gruvbox, kanagawa-paper, lcars, nord, old-book, plan9, solarized, weyland-yutani, zenburn)\n"
+		"  : background MODE    Set background: light | dark (affects eink, gruvbox, old-book, solarized)\n"
 	);
 }

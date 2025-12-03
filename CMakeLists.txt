@@ -155,7 +155,11 @@ set(THEME_HEADERS
         themes/Nord.h
         themes/Everforest.h
         themes/KanagawaPaper.h
+        themes/LCARS.h
         themes/OldBook.h
+        themes/Amber.h
+        themes/Orbital.h
+        themes/WeylandYutani.h
         themes/Zenburn.h
 )
 
