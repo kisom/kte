@@ -61,35 +61,46 @@ map_key(const SDL_Keycode key,
 	}
 
 	// Movement and basic keys
+	// These keys exit k-prefix mode if active (user pressed C-k then a special key).
 	switch (key) {
 	case SDLK_LEFT:
+		k_prefix = false;
 		out = {true, CommandId::MoveLeft, "", 0};
 		return true;
 	case SDLK_RIGHT:
+		k_prefix = false;
 		out = {true, CommandId::MoveRight, "", 0};
 		return true;
 	case SDLK_UP:
+		k_prefix = false;
 		out = {true, CommandId::MoveUp, "", 0};
 		return true;
 	case SDLK_DOWN:
+		k_prefix = false;
 		out = {true, CommandId::MoveDown, "", 0};
 		return true;
 	case SDLK_HOME:
+		k_prefix = false;
 		out = {true, CommandId::MoveHome, "", 0};
 		return true;
 	case SDLK_END:
+		k_prefix = false;
 		out = {true, CommandId::MoveEnd, "", 0};
 		return true;
 	case SDLK_PAGEUP:
+		k_prefix = false;
 		out = {true, CommandId::PageUp, "", 0};
 		return true;
 	case SDLK_PAGEDOWN:
+		k_prefix = false;
 		out = {true, CommandId::PageDown, "", 0};
 		return true;
 	case SDLK_DELETE:
+		k_prefix = false;
 		out = {true, CommandId::DeleteChar, "", 0};
 		return true;
 	case SDLK_BACKSPACE:
+		k_prefix = false;
 		out = {true, CommandId::Backspace, "", 0};
 		return true;
 	case SDLK_TAB:
