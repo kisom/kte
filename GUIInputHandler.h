@@ -1,9 +1,7 @@
 /*
  * GUIInputHandler - ImGui/SDL2-based input mapping for GUI mode
  */
-#ifndef KTE_GUI_INPUT_HANDLER_H
-#define KTE_GUI_INPUT_HANDLER_H
-
+#pragma once
 #include <mutex>
 #include <queue>
 
@@ -42,5 +40,3 @@ private:
 	int uarg_value_       = 0; // current absolute value (>=0)
 	std::string uarg_text_; // raw digits/minus typed for status display
 };
-
-#endif // KTE_GUI_INPUT_HANDLER_H

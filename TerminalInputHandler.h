@@ -1,9 +1,7 @@
 /*
  * TerminalInputHandler - ncurses-based input handling for terminal mode
  */
-#ifndef KTE_TERMINAL_INPUT_HANDLER_H
-#define KTE_TERMINAL_INPUT_HANDLER_H
-
+#pragma once
 #include "InputHandler.h"
 
 
@@ -31,5 +29,3 @@ private:
 	int uarg_value_       = 0; // current absolute value (>=0)
 	std::string uarg_text_; // raw digits/minus typed for status display
 };
-
-#endif // KTE_TERMINAL_INPUT_HANDLER_H

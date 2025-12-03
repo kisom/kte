@@ -1,9 +1,7 @@
 /*
  * TerminalRenderer - ncurses-based renderer for terminal mode
  */
-#ifndef KTE_TERMINAL_RENDERER_H
-#define KTE_TERMINAL_RENDERER_H
-
+#pragma once
 #include "Renderer.h"
 
 
@@ -15,5 +13,3 @@ public:
 
 	void Draw(Editor &ed) override;
 };
-
-#endif // KTE_TERMINAL_RENDERER_H

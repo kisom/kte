@@ -1,8 +1,7 @@
 /*
  * GUIConfig - loads simple GUI configuration from $HOME/.config/kte/kge.ini
  */
-#ifndef KTE_GUI_CONFIG_H
-#define KTE_GUI_CONFIG_H
+#pragma once
 
 #include <string>
 
@@ -32,5 +31,3 @@ public:
 	// Load from explicit path. Returns true if file existed and was parsed.
 	bool LoadFromFile(const std::string &path);
 };
-
-#endif // KTE_GUI_CONFIG_H

@@ -1,8 +1,7 @@
 /*
  * Buffer.h - editor buffer representing an open document
  */
-#ifndef KTE_BUFFER_H
-#define KTE_BUFFER_H
+#pragma once
 
 #include <cstddef>
 #include <memory>
@@ -467,5 +466,3 @@ private:
 	std::string filetype_;
 	std::unique_ptr<kte::HighlighterEngine> highlighter_;
 };
-
-#endif // KTE_BUFFER_H

@@ -1,9 +1,7 @@
 /*
  * GapBuffer.h - C++ replacement for abuf append/prepend buffer utilities
  */
-#ifndef KTE_GAPBUFFER_H
-#define KTE_GAPBUFFER_H
-
+#pragma once
 #include <cstddef>
 
 
@@ -76,5 +74,3 @@ private:
 	std::size_t size_     = 0; // number of valid bytes (excluding terminator)
 	std::size_t capacity_ = 0; // capacity of buffer_ excluding space for terminator
 };
-
-#endif // KTE_GAPBUFFER_H

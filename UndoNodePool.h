@@ -1,6 +1,4 @@
-#ifndef KTE_UNDONODEPOOL_H
-#define KTE_UNDONODEPOOL_H
-
+#pragma once
 #include <stack>
 #include <vector>
 #include <memory>
@@ -61,5 +59,3 @@ private:
 	std::vector<std::unique_ptr<UndoNode[]> > blocks_;
 	std::stack<UndoNode *> available_;
 };
-
-#endif // KTE_UNDONODEPOOL_H

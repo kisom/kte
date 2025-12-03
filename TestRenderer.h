@@ -1,9 +1,7 @@
 /*
  * TestRenderer.h - minimal renderer for testing (no actual display)
  */
-#ifndef KTE_TEST_RENDERER_H
-#define KTE_TEST_RENDERER_H
-
+#pragma once
 #include <cstddef>
 
 #include "Renderer.h"
@@ -32,5 +30,3 @@ public:
 private:
 	std::size_t draw_count_ = 0;
 };
-
-#endif // KTE_TEST_RENDERER_H

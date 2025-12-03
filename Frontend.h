@@ -1,9 +1,7 @@
 /*
  * Frontend.h - top-level container that couples Input + Renderer and runs the loop
  */
-#ifndef KTE_FRONTEND_H
-#define KTE_FRONTEND_H
-
+#pragma once
 
 class Editor;
 class InputHandler;
@@ -22,5 +20,3 @@ public:
 	// Shutdown/cleanup
 	virtual void Shutdown() = 0;
 };
-
-#endif // KTE_FRONTEND_H

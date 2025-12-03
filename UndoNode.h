@@ -1,6 +1,4 @@
-#ifndef KTE_UNDONODE_H
-#define KTE_UNDONODE_H
-
+#pragma once
 #include <cstdint>
 #include <string>
 
@@ -21,6 +19,3 @@ struct UndoNode {
 	UndoNode *child = nullptr; // next in current timeline
 	UndoNode *next  = nullptr; // redo branch
 };
-
-
-#endif // KTE_UNDONODE_H

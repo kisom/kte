@@ -1,9 +1,7 @@
 /*
  * Editor.h - top-level editor state and buffer management
  */
-#ifndef KTE_EDITOR_H
-#define KTE_EDITOR_H
-
+#pragma once
 #include <cstddef>
 #include <ctime>
 #include <string>
@@ -562,5 +560,3 @@ private:
 	std::string replace_find_tmp_;
 	std::string replace_with_tmp_;
 };
-
-#endif // KTE_EDITOR_H

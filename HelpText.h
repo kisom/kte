@@ -1,9 +1,7 @@
 /*
  * HelpText.h - embedded/customizable help content
  */
-#ifndef KTE_HELPTEXT_H
-#define KTE_HELPTEXT_H
-
+#pragma once
 #include <string>
 
 class HelpText {
@@ -13,5 +11,3 @@ public:
 	// (in HelpText.cc) without touching the help command logic.
 	static std::string Text();
 };
-
-#endif // KTE_HELPTEXT_H

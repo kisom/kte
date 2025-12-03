@@ -1,6 +1,4 @@
-#ifndef KTE_UNDOTREE_H
-#define KTE_UNDOTREE_H
-
+#pragma once
 #include "UndoNode.h"
 
 
@@ -10,6 +8,3 @@ struct UndoTree {
 	UndoNode *saved   = nullptr; // points to node matching last save (for dirty flag)
 	UndoNode *pending = nullptr; // in-progress batch (detached)
 };
-
-
-#endif // KTE_UNDOTREE_H

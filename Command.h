@@ -1,8 +1,7 @@
 /*
  * Command.h - command model and registry for editor actions
  */
-#ifndef KTE_COMMAND_H
-#define KTE_COMMAND_H
+#pragma once
 
 #include <functional>
 #include <string>
@@ -156,5 +155,3 @@ void InstallDefaultCommands();
 bool Execute(Editor &ed, CommandId id, const std::string &arg = std::string(), int count = 0);
 
 bool Execute(Editor &ed, const std::string &name, const std::string &arg = std::string(), int count = 0);
-
-#endif // KTE_COMMAND_H

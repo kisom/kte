@@ -1,8 +1,7 @@
 /*
  * AppendBuffer.h - selector header to choose GapBuffer or PieceTable
  */
-#ifndef KTE_APPENDBUFFER_H
-#define KTE_APPENDBUFFER_H
+#pragma once
 
 #ifdef KTE_USE_PIECE_TABLE
 #include "PieceTable.h"
@@ -11,5 +10,3 @@ using AppendBuffer = PieceTable;
 #include "GapBuffer.h"
 using AppendBuffer = GapBuffer;
 #endif
-
-#endif // KTE_APPENDBUFFER_H

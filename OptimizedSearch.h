@@ -1,7 +1,5 @@
 // OptimizedSearch.h - Boyer–Moore (bad character) based substring search
-#ifndef KTE_OPTIMIZED_SEARCH_H
-#define KTE_OPTIMIZED_SEARCH_H
-
+#pragma once
 #include <array>
 #include <cstddef>
 #include <string>
@@ -23,5 +21,3 @@ private:
 
 	void build_bad_char(const std::string &pattern);
 };
-
-#endif // KTE_OPTIMIZED_SEARCH_H

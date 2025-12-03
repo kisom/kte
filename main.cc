@@ -1,7 +1,10 @@
 #include <cctype>
+#include <cerrno>
 #include <cstdio>
+#include <cstring>
 #include <getopt.h>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <signal.h>
 #include <string>
@@ -41,10 +44,10 @@ main(int argc, const char *argv[])
 	Editor editor;
 
 	// CLI parsing using getopt_long
-	bool req_gui      = false;
-	bool req_term     = false;
-	bool show_help    = false;
-	bool show_version = false;
+	bool req_gui                   = false;
+	[[maybe_unused]] bool req_term = false;
+	bool show_help                 = false;
+	bool show_version              = false;
 
 	static struct option long_opts[] = {
 		{"gui", no_argument, nullptr, 'g'},
@@ -86,10 +89,6 @@ main(int argc, const char *argv[])
 		return 0;
 	}
 
-#if !defined(KTE_BUILD_GUI)
-	(void) req_term; // suppress unused warning when GUI is not compiled in
-#endif
-
 	// Determine frontend
 #if !defined(KTE_BUILD_GUI)
 	if (req_gui) {
@@ -104,11 +103,13 @@ main(int argc, const char *argv[])
 	} else if (req_term) {
 		use_gui = false;
 	} else {
-		// Default depends on build target: kge defaults to GUI, kte to terminal
+
+
+	// Default depends on build target: kge defaults to GUI, kte to terminal
 #if defined(KTE_DEFAULT_GUI)
-		use_gui = true;
+	use_gui = true;
 #else
-		use_gui = false;
+	use_gui = false;
 #endif
 	}
 #endif
@@ -134,7 +135,13 @@ main(int argc, const char *argv[])
 						// Clamp to >=1 later; 0 disables.
 						try {
 							unsigned long v = std::stoul(p);
-							pending_line    = static_cast<std::size_t>(v);
+							if (v > std::numeric_limits<std::size_t>::max()) {
+								std::cerr <<
+									"kte: Warning: Line number too large, ignoring\n";
+								pending_line = 0;
+							} else {
+								pending_line = static_cast<std::size_t>(v);
+							}
 						} catch (...) {
 							// Ignore malformed huge numbers
 							pending_line = 0;
@@ -193,8 +200,15 @@ main(int argc, const char *argv[])
 #if defined(KTE_BUILD_GUI) && defined(__APPLE__)
 	if (use_gui) {
 		/* likely using the .app, so need to cd */
-		if (chdir(getenv("HOME")) != 0) {
-			std::cerr << "kge.app: failed to chdir to HOME" << std::endl;
+		const char *home = getenv("HOME");
+		if (!home) {
+			std::cerr << "kge.app: HOME environment variable not set" << std::endl;
+			return 1;
+		}
+		if (chdir(home) != 0) {
+			std::cerr << "kge.app: failed to chdir to " << home << ": "
+				<< std::strerror(errno) << std::endl;
+			return 1;
 		}
 	}
 #endif

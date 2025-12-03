@@ -1,9 +1,7 @@
 /*
  * TestFrontend.h - headless frontend for testing with programmable input
  */
-#ifndef KTE_TEST_FRONTEND_H
-#define KTE_TEST_FRONTEND_H
-
+#pragma once
 #include "Frontend.h"
 #include "TestInputHandler.h"
 #include "TestRenderer.h"
@@ -37,5 +35,3 @@ private:
 	TestInputHandler input_{};
 	TestRenderer renderer_{};
 };
-
-#endif // KTE_TEST_FRONTEND_H

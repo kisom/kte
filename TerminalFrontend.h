@@ -1,9 +1,7 @@
 /*
  * TerminalFrontend - couples TerminalInputHandler + TerminalRenderer and owns ncurses lifecycle
  */
-#ifndef KTE_TERMINAL_FRONTEND_H
-#define KTE_TERMINAL_FRONTEND_H
-
+#pragma once
 #include <termios.h>
 
 #include "Frontend.h"
@@ -32,5 +30,3 @@ private:
 	bool have_orig_tio_ = false;
 	struct termios orig_tio_{};
 };
-
-#endif // KTE_TERMINAL_FRONTEND_H

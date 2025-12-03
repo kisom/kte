@@ -12,7 +12,7 @@ inline const unsigned int *DefaultFontData = BrassMonoCode::DefaultFontBoldCompr
 
 class Font {
 public:
-	Font(std::string name, unsigned int *data, const unsigned int size)
+	Font(std::string name, const unsigned int *data, const unsigned int size)
 		: name_(std::move(name)),
 		  data_(data),
 		  size_(size) {}
@@ -28,7 +28,7 @@ public:
 
 private:
 	std::string name_;
-	unsigned int *data_{nullptr};
+	const unsigned int *data_{nullptr};
 	unsigned int size_{0};
 };
 }

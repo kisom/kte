@@ -1,9 +1,7 @@
 /*
  * TestInputHandler.h - programmable input handler for testing
  */
-#ifndef KTE_TEST_INPUT_HANDLER_H
-#define KTE_TEST_INPUT_HANDLER_H
-
+#pragma once
 #include <queue>
 
 #include "InputHandler.h"
@@ -30,5 +28,3 @@ public:
 private:
 	std::queue<MappedInput> queue_;
 };
-
-#endif // KTE_TEST_INPUT_HANDLER_H

@@ -1,9 +1,7 @@
 /*
  * GUIFrontend - couples GUIInputHandler + GUIRenderer and owns SDL2/ImGui lifecycle
  */
-#ifndef KTE_GUI_FRONTEND_H
-#define KTE_GUI_FRONTEND_H
-
+#pragma once
 #include "Frontend.h"
 #include "GUIConfig.h"
 #include "GUIInputHandler.h"
@@ -36,5 +34,3 @@ private:
 	int width_            = 1280;
 	int height_           = 800;
 };
-
-#endif // KTE_GUI_FRONTEND_H

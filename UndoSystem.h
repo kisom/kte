@@ -1,6 +1,4 @@
-#ifndef KTE_UNDOSYSTEM_H
-#define KTE_UNDOSYSTEM_H
-
+#pragma once
 #include <string_view>
 #include <cstddef>
 #include <cstdint>
@@ -55,5 +53,3 @@ private:
 	// Internal hint for Delete batching: whether next Append() should prepend
 	bool pending_prepend_ = false;
 };
-
-#endif // KTE_UNDOSYSTEM_H

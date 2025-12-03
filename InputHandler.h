@@ -1,9 +1,7 @@
 /*
  * InputHandler.h - input abstraction and mapping to commands
  */
-#ifndef KTE_INPUT_HANDLER_H
-#define KTE_INPUT_HANDLER_H
-
+#pragma once
 #include <string>
 
 #include "Command.h"
@@ -25,5 +23,3 @@ public:
 	// Returns true if a command is available in 'out'. Returns false if no input.
 	virtual bool Poll(MappedInput &out) = 0;
 };
-
-#endif // KTE_INPUT_HANDLER_H

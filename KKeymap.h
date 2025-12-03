@@ -1,9 +1,7 @@
 /*
  * KKeymap.h - mapping for k-command (C-k prefix) keys to CommandId
  */
-#ifndef KTE_KKEYMAP_H
-#define KTE_KKEYMAP_H
-
+#pragma once
 #include "Command.h"
 
 
@@ -30,5 +28,3 @@ KLowerAscii(const int key)
 		return key + ('a' - 'A');
 	return key;
 }
-
-#endif // KTE_KKEYMAP_H

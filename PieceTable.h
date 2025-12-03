@@ -1,9 +1,7 @@
 /*
  * PieceTable.h - Alternative to GapBuffer using a piece table representation
  */
-#ifndef KTE_PIECETABLE_H
-#define KTE_PIECETABLE_H
-
+#pragma once
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -94,5 +92,3 @@ private:
 	mutable bool dirty_     = true;
 	std::size_t total_size_ = 0;
 };
-
-#endif // KTE_PIECETABLE_H
