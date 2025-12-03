@@ -4,7 +4,7 @@ project(kte)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 17)
-set(KTE_VERSION "1.2.4")
+set(KTE_VERSION "1.3.0")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
@@ -153,6 +153,10 @@ set(THEME_HEADERS
         themes/Solarized.h
         themes/Plan9.h
         themes/Nord.h
+        themes/Everforest.h
+        themes/KanagawaPaper.h
+        themes/OldBook.h
+        themes/Zenburn.h
 )
 
 set(FONT_HEADERS
