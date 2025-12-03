@@ -140,8 +140,7 @@ GUIRenderer::Draw(Editor &ed)
 		prev_buf_coloffs = buf_coloffs;
 
 		// Synchronize cursor and scrolling.
-		// Ensure the cursor is visible even on the first frame or when it didn't move,
-		// unless we already forced scrolling from Buffer::Rowoffs this frame.
+		// Ensure the cursor is visible even on the first frame or when it didn't move.
 		{
 			// Compute visible row range using the child window height
 			float child_h  = ImGui::GetWindowHeight();
@@ -151,56 +150,54 @@ GUIRenderer::Draw(Editor &ed)
 				vis_rows = 1;
 			long last_row = first_row + vis_rows - 1;
 
-			if (!forced_scroll) {
-				long cyr = static_cast<long>(cy);
-				if (cyr < first_row || cyr > last_row) {
-					float target = (static_cast<float>(cyr) - std::max(0L, vis_rows / 2)) * row_h;
-					float max_y  = ImGui::GetScrollMaxY();
-					if (target < 0.f)
-						target = 0.f;
-					if (max_y >= 0.f && target > max_y)
-						target = max_y;
-					ImGui::SetScrollY(target);
-					// refresh local variables
-					scroll_y  = ImGui::GetScrollY();
-					first_row = static_cast<long>(scroll_y / row_h);
-					last_row  = first_row + vis_rows - 1;
-				}
+			long cyr = static_cast<long>(cy);
+			if (cyr < first_row || cyr > last_row) {
+				float target = (static_cast<float>(cyr) - std::max(0L, vis_rows / 2)) * row_h;
+				float max_y  = ImGui::GetScrollMaxY();
+				if (target < 0.f)
+					target = 0.f;
+				if (max_y >= 0.f && target > max_y)
+					target = max_y;
+				ImGui::SetScrollY(target);
+				// refresh local variables
+				scroll_y  = ImGui::GetScrollY();
+				first_row = static_cast<long>(scroll_y / row_h);
+				last_row  = first_row + vis_rows - 1;
+			}
 
-				// Horizontal scroll: ensure cursor column is visible
-				float child_w = ImGui::GetWindowWidth();
-				long vis_cols = static_cast<long>(child_w / space_w);
-				if (vis_cols < 1)
-					vis_cols = 1;
-				long first_col = static_cast<long>(scroll_x / space_w);
-				long last_col  = first_col + vis_cols - 1;
+			// Horizontal scroll: ensure cursor column is visible
+			float child_w = ImGui::GetWindowWidth();
+			long vis_cols = static_cast<long>(child_w / space_w);
+			if (vis_cols < 1)
+				vis_cols = 1;
+			long first_col = static_cast<long>(scroll_x / space_w);
+			long last_col  = first_col + vis_cols - 1;
 
-				// Compute cursor's rendered X position (accounting for tabs)
-				std::size_t cursor_rx = 0;
-				if (cy < lines.size()) {
-					std::string cur_line   = static_cast<std::string>(lines[cy]);
-					const std::size_t tabw = 8;
-					for (std::size_t i = 0; i < cx && i < cur_line.size(); ++i) {
-						if (cur_line[i] == '\t') {
-							cursor_rx += tabw - (cursor_rx % tabw);
-						} else {
-							cursor_rx += 1;
-						}
+			// Compute cursor's rendered X position (accounting for tabs)
+			std::size_t cursor_rx = 0;
+			if (cy < lines.size()) {
+				std::string cur_line   = static_cast<std::string>(lines[cy]);
+				const std::size_t tabw = 8;
+				for (std::size_t i = 0; i < cx && i < cur_line.size(); ++i) {
+					if (cur_line[i] == '\t') {
+						cursor_rx += tabw - (cursor_rx % tabw);
+					} else {
+						cursor_rx += 1;
 					}
 				}
-				long cxr = static_cast<long>(cursor_rx);
-				if (cxr < first_col || cxr > last_col) {
-					float target_x = static_cast<float>(cxr) * space_w;
-					// Center horizontally if possible
-					target_x -= (child_w / 2.0f);
-					if (target_x < 0.f)
-						target_x = 0.f;
-					float max_x = ImGui::GetScrollMaxX();
-					if (max_x >= 0.f && target_x > max_x)
-						target_x = max_x;
-					ImGui::SetScrollX(target_x);
-					scroll_x = ImGui::GetScrollX();
-				}
+			}
+			long cxr = static_cast<long>(cursor_rx);
+			if (cxr < first_col || cxr > last_col) {
+				float target_x = static_cast<float>(cxr) * space_w;
+				// Center horizontally if possible
+				target_x -= (child_w / 2.0f);
+				if (target_x < 0.f)
+					target_x = 0.f;
+				float max_x = ImGui::GetScrollMaxX();
+				if (max_x >= 0.f && target_x > max_x)
+					target_x = max_x;
+				ImGui::SetScrollX(target_x);
+				scroll_x = ImGui::GetScrollX();
 			}
 			// Phase 3: prefetch visible viewport highlights and warm around in background
 			if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
