@@ -40,11 +40,13 @@ def generate_header(header, guard, files):
         pass
     except:
         raise
+    print(f'Header: {header}')
     with open(header, 'wt') as header_file:
         header_file.write(f"""#pragma once
 namespace kte::Fonts::{header.removesuffix('.h')} {{
 """)
         for file in files:
+            print(f'\t{file}')
             generate_font(header_file, file)
 
         header_file.write('}');
