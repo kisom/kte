@@ -95,6 +95,8 @@ enum class CommandId {
 	CommandPromptStart, // begin generic command prompt (C-k ;)
 	// Theme by name
 	ThemeSetByName,
+	// Font by name (GUI)
+	FontSetByName,
 	// Background mode (GUI)
 	BackgroundSet,
 	// Syntax highlighting

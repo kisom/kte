@@ -5,6 +5,7 @@
 #define KTE_GUI_FRONTEND_H
 
 #include "Frontend.h"
+#include "GUIConfig.h"
 #include "GUIInputHandler.h"
 #include "GUIRenderer.h"
 
@@ -27,6 +28,7 @@ public:
 private:
 	static bool LoadGuiFont_(const char *path, float size_px);
 
+	GUIConfig config_{};
 	GUIInputHandler input_{};
 	GUIRenderer renderer_{};
 	SDL_Window *window_   = nullptr;

@@ -102,6 +102,8 @@ GUIConfig::LoadFromFile(const std::string &path)
 			if (v > 0.0f) {
 				font_size = v;
 			}
+		} else if (key == "font") {
+			font = val;
 		} else if (key == "theme") {
 			theme = val;
 		} else if (key == "background" || key == "bg") {

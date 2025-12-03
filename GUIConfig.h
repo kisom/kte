@@ -16,6 +16,7 @@ public:
 	int columns       = 80;
 	int rows          = 42;
 	float font_size   = (float) KTE_FONT_SIZE;
+	std::string font  = "default";
 	std::string theme = "nord";
 	// Background mode for themes that support light/dark variants
 	// Values: "dark" (default), "light"

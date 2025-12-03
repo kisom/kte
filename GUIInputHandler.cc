@@ -285,11 +285,12 @@ GUIInputHandler::ProcessSDLEvent(const SDL_Event &e)
 	bool produced = false;
 	switch (e.type) {
 	case SDL_MOUSEWHEEL: {
-		// Map vertical wheel to viewport scrolling (ScrollUp/ScrollDown)
-		// Note: We don't check WantCaptureMouse here because ImGui sets it to true
-		// whenever the mouse is over any ImGui window (including our editor content area).
-		// The NoScrollWithMouse flag on the child window prevents ImGui from handling
-		// scroll internally, so we can safely process wheel events ourselves.
+		// Let ImGui handle mouse wheel when it wants to capture the mouse
+		// (e.g., when hovering the editor child window with scrollbars).
+		// This enables native vertical and horizontal scrolling behavior in GUI.
+		if (ImGui::GetIO().WantCaptureMouse)
+			return false;
+		// Otherwise, fallback to mapping vertical wheel to editor scroll commands.
 		int dy = e.wheel.y;
 #ifdef SDL_MOUSEWHEEL_FLIPPED
 		if (e.wheel.direction == SDL_MOUSEWHEEL_FLIPPED)
@@ -561,6 +562,8 @@ GUIInputHandler::ProcessSDLEvent(const SDL_Event &e)
 	if (produced && mi.hasCommand) {
 		// Attach universal-argument count if present, then clear the state
 		if (uarg_active_ &&mi
+
+
 		
 		.
 		id != CommandId::UArgStatus

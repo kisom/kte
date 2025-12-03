@@ -13,11 +13,17 @@ DEFAULT_FONTS = [
     'FiraCode',
     'Go',
     'IBMPlexMono',
+    'Idealist',
     'Inconsolata',
     'InconsolataExpanded',
+    'Iosoveka',
+    'IosovekaExtended',
+    'Orbitron',
     'ShareTech',
+    'SpaceMono',
     'Syne',
     'Triplicate',
+    'Unispace',
 ]
 
 

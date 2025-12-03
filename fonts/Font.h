@@ -6,9 +6,9 @@
 #include "BrassMonoCode.h"
 
 namespace kte::Fonts {
-static const unsigned int DefaultFontSize  = DefaultFontBoldCompressedSize;
-static const unsigned int *DefaultFontData = DefaultFontBoldCompressedData;
-}
+// Provide default embedded font aliases used by GUIFrontend fallback loader
+inline const unsigned int DefaultFontSize  = BrassMonoCode::DefaultFontBoldCompressedSize;
+inline const unsigned int *DefaultFontData = BrassMonoCode::DefaultFontBoldCompressedData;
 
 class Font {
 public:
@@ -31,3 +31,4 @@ private:
 	unsigned int *data_{nullptr};
 	unsigned int size_{0};
 };
+}

@@ -8,9 +8,7 @@
 
 #include "Font.h"
 
-// Forward declaration
-// class Font;
-
+namespace kte::Fonts {
 class FontRegistry {
 public:
 	// Get the global instance
@@ -51,6 +49,30 @@ public:
 	}
 
 
+	// Request font load to be applied at a safe time (e.g., before starting a new frame)
+	// Thread-safe. Frontend should call ConsumePendingFontRequest() and then LoadFont().
+	void RequestLoadFont(const std::string &name, float size)
+	{
+		std::lock_guard lock(mutex_);
+		pending_name_ = name;
+		pending_size_ = size;
+		has_pending_  = true;
+	}
+
+
+	// Retrieve and clear a pending font request. Returns true if there was one.
+	bool ConsumePendingFontRequest(std::string &name, float &size)
+	{
+		std::lock_guard lock(mutex_);
+		if (!has_pending_)
+			return false;
+		name         = pending_name_;
+		size         = pending_size_;
+		has_pending_ = false;
+		return true;
+	}
+
+
 	// Check if font exists
 	bool HasFont(const std::string &name) const
 	{
@@ -63,4 +85,13 @@ private:
 
 	mutable std::mutex mutex_;
 	std::unordered_map<std::string, std::unique_ptr<Font> > fonts_;
+
+	// Pending font change request (applied by frontend between frames)
+	bool has_pending_ = false;
+	std::string pending_name_;
+	float pending_size_ = 0.0f;
 };
+
+
+void InstallDefaultFonts();
+}

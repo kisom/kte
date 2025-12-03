@@ -2,7 +2,7 @@
 
 #include "imgui.h"
 
-
+namespace kte::Fonts {
 void
 Font::Load(const float size) const
 {
@@ -20,3 +20,4 @@ Font::Load(const float size) const
 	(void) font;
 	io.Fonts->Build();
 }
+} // namespace kte::Fonts

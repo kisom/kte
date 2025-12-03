@@ -90,6 +90,7 @@ endif ()
 
 set(FONT_SOURCES
         fonts/Font.cc
+        fonts/FontRegistry.cc
 )
 
 set(GUI_SOURCES
@@ -158,6 +159,23 @@ set(FONT_HEADERS
         fonts/Font.h
         fonts/FontRegistry.h
         fonts/FontRegistry.h
+        fonts/FontList.h
+        fonts/B612Mono.h
+        fonts/BrassMono.h
+        fonts/BrassMonoCode.h
+        fonts/FiraCode.h
+        fonts/Go.h
+        fonts/IBMPlexMono.h
+        fonts/Idealist.h
+        fonts/Inconsolata.h
+        fonts/InconsolataExpanded.h
+        fonts/Iosevka.h
+        fonts/IosevkaExtended.h
+        fonts/ShareTech.h
+        fonts/SpaceMono.h
+        fonts/Syne.h
+        fonts/Triplicate.h
+        fonts/Unispace.h
 )
 
 set(COMMON_HEADERS
@@ -270,9 +288,8 @@ if (${BUILD_GUI})
 
     # io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     # io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-    target_sources(kte PRIVATE ${COMMON_SOURCES} ${COMMON_HEADERS})
-    target_compile_definitions(kte PRIVATE KTE_BUILD_GUI=1)
-    target_link_libraries(kte imgui)
+    # Do not enable GUI in the terminal-first 'kte' binary; GUI is built as separate 'kge'.
+    # This avoids referencing GUI classes from kte and keeps dependencies minimal.
 
     # kge (GUI-first) executable
     add_executable(kge

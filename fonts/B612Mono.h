@@ -1,5 +1,10 @@
 #pragma once
-namespace kte::Fonts::B612Mono {
+
+#include "Font.h"
+
+
+namespace kte::Fonts {
+namespace B612Mono {
 // File: 'B612Mono/B612Mono-Bold.ttf' (135904 bytes)
 // Exported using binary_to_compressed_c.cpp
 static const unsigned int DefaultFontBoldCompressedSize            = 74748;
@@ -11878,4 +11883,5 @@ static const unsigned int DefaultFontRegularCompressedData[72616 / 4] =
 	0x534c1701, 0x17042a0f, 0x1efd613e, 0x0130511f, 0x2a568e22, 0x3e611404, 0x51301ffd, 0x8f22041f, 0x00fa055c,
 	0x0070a96e,
 };
+}
 }
