@@ -573,8 +573,6 @@ GUIInputHandler::ProcessSDLEvent(const SDL_Event &e)
 	if (produced && mi.hasCommand) {
 		// Attach universal-argument count if present, then clear the state
 		if (uarg_active_ &&mi
-
-
 		
 		.
 		id != CommandId::UArgStatus
@@ -582,13 +580,15 @@ GUIInputHandler::ProcessSDLEvent(const SDL_Event &e)
 		{
 			int count = 0;
 			if (!uarg_had_digits_ && !uarg_negative_) {
+				// No explicit digits: use current value (default 4 or 4^n)
 				count = (uarg_value_ > 0) ? uarg_value_ : 4;
 			} else {
 				count = uarg_value_;
 				if (uarg_negative_)
 					count = -count;
 			}
-			mi.count         = count;
+			mi.count = count;
+			// Clear universal-argument state after applying it
 			uarg_active_     = false;
 			uarg_collecting_ = false;
 			uarg_negative_   = false;

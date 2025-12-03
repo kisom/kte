@@ -77,5 +77,4 @@ k-command mode can be exited with ESC or C-g.
 
 The find operation is an incremental search. The up or left arrow
 keys will go to the previous result, while the down or right arrow keys
-will go to the next result. Unfortunately, the search starts from the
-top of the file each time. This is a known bug.
+will go to the next result.

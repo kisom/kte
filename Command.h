@@ -97,6 +97,8 @@ enum class CommandId {
 	ThemeSetByName,
 	// Font by name (GUI)
 	FontSetByName,
+	// Font size (GUI)
+	FontSetSize,
 	// Background mode (GUI)
 	BackgroundSet,
 	// Syntax highlighting

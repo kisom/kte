@@ -17,6 +17,7 @@
 #include "GUIConfig.h"
 #include "GUITheme.h"
 #include "fonts/Font.h" // embedded default font (DefaultFont)
+#include "fonts/FontRegistry.h"
 #include "syntax/HighlighterRegistry.h"
 #include "syntax/NullHighlighter.h"
 
@@ -196,8 +197,19 @@ GUIFrontend::Init(Editor &ed)
 	}
 #endif
 
-	// Initialize GUI font from embedded default (use configured size or compiled default)
-	LoadGuiFont_(nullptr, (float) cfg.font_size);
+	// Install embedded fonts into registry and load configured font
+	kte::Fonts::InstallDefaultFonts();
+	// Initialize font atlas using configured font name and size; fallback to embedded default helper
+	if (!kte::Fonts::FontRegistry::Instance().LoadFont(cfg.font, (float) cfg.font_size)) {
+		LoadGuiFont_(nullptr, (float) cfg.font_size);
+		// Record defaults in registry so subsequent size changes have a base
+		kte::Fonts::FontRegistry::Instance().RequestLoadFont("default", (float) cfg.font_size);
+		std::string n;
+		float s = 0.0f;
+		if (kte::Fonts::FontRegistry::Instance().ConsumePendingFontRequest(n, s)) {
+			kte::Fonts::FontRegistry::Instance().LoadFont(n, s);
+		}
+	}
 
 	return true;
 }
@@ -224,6 +236,20 @@ GUIFrontend::Step(Editor &ed, bool &running)
 		}
 		// Map input to commands
 		input_.ProcessSDLEvent(e);
+	}
+
+	// Apply pending font change before starting a new frame
+	{
+		std::string fname;
+		float fsize = 0.0f;
+		if (kte::Fonts::FontRegistry::Instance().ConsumePendingFontRequest(fname, fsize)) {
+			if (!fname.empty() && fsize > 0.0f) {
+				kte::Fonts::FontRegistry::Instance().LoadFont(fname, fsize);
+				// Recreate backend font texture
+				ImGui_ImplOpenGL3_DestroyFontsTexture();
+				ImGui_ImplOpenGL3_CreateFontsTexture();
+			}
+		}
 	}
 
 	// Start a new ImGui frame BEFORE processing commands so dimensions are correct

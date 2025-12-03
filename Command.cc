@@ -4,6 +4,7 @@
 #include <regex>
 #include <fstream>
 #include <sstream>
+#include <cmath>
 #include <cctype>
 
 #include "Command.h"
@@ -18,6 +19,8 @@
 #include "syntax/CppHighlighter.h"
 #ifdef KTE_BUILD_GUI
 #include "GUITheme.h"
+#include "fonts/FontRegistry.h"
+#include "imgui.h"
 #endif
 
 
@@ -979,6 +982,117 @@ cmd_theme_set_by_name(CommandContext &ctx)
 {
 	(void) ctx;
 	// No-op in terminal build
+	return true;
+}
+#endif
+
+
+// Font set by name (GUI)
+#ifdef KTE_BUILD_GUI
+static bool
+cmd_font_set_by_name(const CommandContext &ctx)
+{
+	using namespace kte::Fonts;
+	std::string name = ctx.arg;
+	// trim
+	auto ltrim = [](std::string &s) {
+		s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}));
+	};
+	auto rtrim = [](std::string &s) {
+		s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}).base(), s.end());
+	};
+	ltrim(name);
+	rtrim(name);
+	std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+		return (char) std::tolower(c);
+	});
+	if (name.empty()) {
+		ctx.editor.SetStatus("font: missing name");
+		return true;
+	}
+
+	auto &reg = FontRegistry::Instance();
+	if (!reg.HasFont(name)) {
+		ctx.editor.SetStatus("font: unknown name");
+		return true;
+	}
+
+	float size = reg.CurrentFontSize();
+	if (size <= 0.0f) {
+		// Fallback to current ImGui font size if available
+		size = ImGui::GetFontSize();
+		if (size <= 0.0f)
+			size = 16.0f;
+	}
+	reg.RequestLoadFont(name, size);
+	ctx.editor.SetStatus(std::string("Font: ") + name + " (" + std::to_string((int) std::round(size)) + ")");
+	return true;
+}
+#else
+static bool
+cmd_font_set_by_name(CommandContext &ctx)
+{
+	(void) ctx;
+	return true;
+}
+#endif
+
+
+// Font size set (GUI)
+#ifdef KTE_BUILD_GUI
+static bool
+cmd_font_set_size(const CommandContext &ctx)
+{
+	using namespace kte::Fonts;
+	std::string a = ctx.arg;
+	auto ltrim    = [](std::string &s) {
+		s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}));
+	};
+	auto rtrim = [](std::string &s) {
+		s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}).base(), s.end());
+	};
+	ltrim(a);
+	rtrim(a);
+	if (a.empty()) {
+		ctx.editor.SetStatus("font-size: missing value");
+		return true;
+	}
+	char *endp = nullptr;
+	float size = strtof(a.c_str(), &endp);
+	if (endp == a.c_str() || !std::isfinite(size)) {
+		ctx.editor.SetStatus("font-size: expected number");
+		return true;
+	}
+	// Clamp to a reasonable range
+	if (size < 6.0f)
+		size = 6.0f;
+	if (size > 96.0f)
+		size = 96.0f;
+
+	auto &reg        = FontRegistry::Instance();
+	std::string name = reg.CurrentFontName();
+	if (name.empty())
+		name = "default";
+	if (!reg.HasFont(name))
+		name = "default";
+
+	reg.RequestLoadFont(name, size);
+	ctx.editor.SetStatus(std::string("Font size: ") + std::to_string((int) std::round(size)));
+	return true;
+}
+#else
+static bool
+cmd_font_set_size(CommandContext &ctx)
+{
+	(void) ctx;
 	return true;
 }
 #endif
@@ -3780,6 +3894,14 @@ InstallDefaultCommands()
 	// Theme by name (public in command prompt)
 	CommandRegistry::Register({
 		CommandId::ThemeSetByName, "theme", "Set GUI theme by name", cmd_theme_set_by_name, true
+	});
+	// Font by name (public)
+	CommandRegistry::Register({
+		CommandId::FontSetByName, "font", "Set GUI font by name", cmd_font_set_by_name, true
+	});
+	// Font size (public)
+	CommandRegistry::Register({
+		CommandId::FontSetSize, "font-size", "Set GUI font size (pixels)", cmd_font_set_size, true
 	});
 	// Background light/dark (public)
 	CommandRegistry::Register({

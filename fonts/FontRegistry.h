@@ -39,10 +39,16 @@ public:
 
 
 	// Convenience: load a font by name and size
-	bool LoadFont(const std::string &name, const float size) const
+	bool LoadFont(const std::string &name, const float size)
 	{
 		if (auto *font = Get(name)) {
 			font->Load(size);
+			// Track current selection
+			{
+				std::lock_guard lock(mutex_);
+				current_name_ = name;
+				current_size_ = size;
+			}
 			return true;
 		}
 		return false;
@@ -80,6 +86,21 @@ public:
 		return fonts_.count(name) > 0;
 	}
 
+
+	// Current font name/size as last successfully loaded via LoadFont()
+	std::string CurrentFontName() const
+	{
+		std::lock_guard lock(mutex_);
+		return current_name_;
+	}
+
+
+	float CurrentFontSize() const
+	{
+		std::lock_guard lock(mutex_);
+		return current_size_;
+	}
+
 private:
 	FontRegistry() = default;
 
@@ -90,6 +111,10 @@ private:
 	bool has_pending_ = false;
 	std::string pending_name_;
 	float pending_size_ = 0.0f;
+
+	// Track last applied font
+	std::string current_name_;
+	float current_size_ = 0.0f;
 };
 
 
