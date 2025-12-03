@@ -77,13 +77,17 @@ GUIFrontend::Init(Editor &ed)
 		height_ = std::max(200, h);
 	}
 
+	SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1");
 	window_ = SDL_CreateWindow(
 		"kge - kyle's graphical editor " KTE_VERSION_STR,
 		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
 		width_, height_,
 		win_flags);
-	if (!window_)
+	if (!window_) {
 		return false;
+	}
+
+	SDL_EnableScreenSaver();
 
 #if defined(__APPLE__)
 	// macOS: when "fullscreen" is requested, position the window at the
