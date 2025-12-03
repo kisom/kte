@@ -1,22 +1,22 @@
-#include <cstdio>
-#include <string>
-#include <cstring>
-#include <cstdlib>
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <string>
 
+#include <imgui.h>
 #include <SDL.h>
 #include <SDL_opengl.h>
-#include <imgui.h>
-#include <backends/imgui_impl_sdl2.h>
 #include <backends/imgui_impl_opengl3.h>
+#include <backends/imgui_impl_sdl2.h>
 
-#include "Editor.h"
-#include "Command.h"
 #include "GUIFrontend.h"
-#include <filesystem>
-#include "Font.h" // embedded default font (DefaultFontRegular)
+#include "Command.h"
+#include "Editor.h"
 #include "GUIConfig.h"
 #include "GUITheme.h"
+#include "fonts/Font.h" // embedded default font (DefaultFont)
 #include "syntax/HighlighterRegistry.h"
 #include "syntax/NullHighlighter.h"
 
@@ -25,7 +25,7 @@
 #define KTE_FONT_SIZE 16.0f
 #endif
 
-static const char *kGlslVersion = "#version 150"; // GL 3.2 core (macOS compatible)
+static auto kGlslVersion = "#version 150"; // GL 3.2 core (macOS compatible)
 
 bool
 GUIFrontend::Init(Editor &ed)
@@ -324,13 +324,13 @@ GUIFrontend::Shutdown()
 
 
 bool
-GUIFrontend::LoadGuiFont_(const char * /*path*/, float size_px)
+GUIFrontend::LoadGuiFont_(const char * /*path*/, const float size_px)
 {
 	const ImGuiIO &io = ImGui::GetIO();
 	io.Fonts->Clear();
 	const ImFont *font = io.Fonts->AddFontFromMemoryCompressedTTF(
-		kte::Fonts::DefaultFontRegularCompressedData,
-		kte::Fonts::DefaultFontRegularCompressedSize,
+		kte::Fonts::DefaultFontData,
+		kte::Fonts::DefaultFontSize,
 		size_px);
 	if (!font) {
 		font = io.Fonts->AddFontDefault();
@@ -339,6 +339,3 @@ GUIFrontend::LoadGuiFont_(const char * /*path*/, float size_px)
 	io.Fonts->Build();
 	return true;
 }
-
-
-// No runtime font reload or system font resolution in this simplified build.

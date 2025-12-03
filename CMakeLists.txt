@@ -88,6 +88,19 @@ if (KTE_ENABLE_TREESITTER)
             TreeSitterHighlighter.cc)
 endif ()
 
+set(FONT_SOURCES
+        fonts/Font.cc
+)
+
+set(GUI_SOURCES
+        ${FONT_SOURCES}
+        GUIConfig.cc
+        GUIRenderer.cc
+        GUIInputHandler.cc
+        GUIFrontend.cc
+)
+
+
 set(COMMON_SOURCES
         GapBuffer.cc
         PieceTable.cc
@@ -108,7 +121,6 @@ set(COMMON_SOURCES
 
         ${SYNTAX_SOURCES}
 )
-
 
 set(SYNTAX_HEADERS
         syntax/GoHighlighter.h
@@ -142,6 +154,12 @@ set(THEME_HEADERS
         themes/Nord.h
 )
 
+set(FONT_HEADERS
+        fonts/Font.h
+        fonts/FontRegistry.h
+        fonts/FontRegistry.h
+)
+
 set(COMMON_HEADERS
         GapBuffer.h
         PieceTable.h
@@ -166,7 +184,15 @@ set(COMMON_HEADERS
         Highlight.h
 
         ${SYNTAX_HEADERS}
+)
+
+set(GUI_HEADERS
         ${THEME_HEADERS}
+        ${FONT_HEADERS}
+        GUIConfig.h
+        GUIRenderer.h
+        GUIInputHandler.h
+        GUIFrontend.h
 )
 
 # kte (terminal-first) executable
@@ -244,16 +270,7 @@ if (${BUILD_GUI})
 
     # io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     # io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-    target_sources(kte PRIVATE
-            Font.h
-            GUIConfig.cc
-            GUIConfig.h
-            GUIRenderer.cc
-            GUIRenderer.h
-            GUIInputHandler.cc
-            GUIInputHandler.h
-            GUIFrontend.cc
-            GUIFrontend.h)
+    target_sources(kte PRIVATE ${COMMON_SOURCES} ${COMMON_HEADERS})
     target_compile_definitions(kte PRIVATE KTE_BUILD_GUI=1)
     target_link_libraries(kte imgui)
 
@@ -261,15 +278,11 @@ if (${BUILD_GUI})
     add_executable(kge
             main.cc
             ${COMMON_SOURCES}
+            ${GUI_SOURCES}
             ${COMMON_HEADERS}
-            GUIConfig.cc
-            GUIConfig.h
-            GUIRenderer.cc
-            GUIRenderer.h
-            GUIInputHandler.cc
-            GUIInputHandler.h
-            GUIFrontend.cc
-            GUIFrontend.h)
+            ${GUI_HEADERS}
+
+    )
     target_compile_definitions(kge PRIVATE KTE_BUILD_GUI=1 KTE_DEFAULT_GUI=1 KTE_FONT_SIZE=${KTE_FONT_SIZE})
     if (KTE_UNDO_DEBUG)
         target_compile_definitions(kge PRIVATE KTE_UNDO_DEBUG=1)
