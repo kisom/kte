@@ -141,6 +141,9 @@
         <pair source="c++m" header="" fileNamingConvention="NONE" />
       </extensions>
     </files>
+    <codeStyleSettings language="Markdown">
+      <option name="RIGHT_MARGIN" value="72" />
+    </codeStyleSettings>
     <codeStyleSettings language="ObjectiveC">
       <indentOptions>
         <option name="INDENT_SIZE" value="8" />

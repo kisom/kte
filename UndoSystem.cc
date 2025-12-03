@@ -11,214 +11,66 @@ UndoSystem::UndoSystem(Buffer &owner, UndoTree &tree)
 void
 UndoSystem::Begin(UndoType type)
 {
-#ifdef KTE_UNDO_DEBUG
-	debug_log("Begin");
-#endif
-	// Reuse pending if batching conditions are met
-	const int row = static_cast<int>(buf_->Cury());
-	const int col = static_cast<int>(buf_->Curx());
-	if (tree_.pending && tree_.pending->type == type && tree_.pending->row == row) {
-		if (type == UndoType::Delete) {
-			// Support batching both forward deletes (DeleteChar) and backspace (prepend case)
-			// Forward delete: cursor stays at anchor col; keep batching when col == anchor
-			const auto anchor = static_cast<std::size_t>(tree_.pending->col);
-			if (anchor == static_cast<std::size_t>(col)) {
-				pending_prepend_ = false;
-				return; // keep batching forward delete
-			}
-			// Backspace: cursor moved left by exactly one position relative to current anchor.
-			// Extend batch by shifting anchor left and prepending the deleted byte.
-			if (static_cast<std::size_t>(col) + 1 == anchor) {
-				tree_.pending->col = col;
-				pending_prepend_   = true;
-				return;
-			}
-		} else {
-			std::size_t expected = static_cast<std::size_t>(tree_.pending->col) + tree_.pending->text.
-			                       size();
-			if (expected == static_cast<std::size_t>(col)) {
-				pending_prepend_ = false;
-				return; // keep batching
-			}
-		}
-	}
-	// Otherwise commit any existing batch and start a new node
-	commit();
-	auto *node       = new UndoNode();
-	node->type       = type;
-	node->row        = row;
-	node->col        = col;
-	node->child      = nullptr;
-	node->next       = nullptr;
-	tree_.pending    = node;
-	pending_prepend_ = false;
-
-#ifdef KTE_UNDO_DEBUG
-	debug_log("Begin:new");
-#endif
-	// Assert pending is detached from the tree
-	assert(tree_.pending && "pending must exist after Begin");
-	assert(tree_.pending != tree_.root);
-	assert(tree_.pending != tree_.current);
-	assert(tree_.pending != tree_.saved);
-	assert(!is_descendant(tree_.root, tree_.pending));
+	// STUB: Undo system incomplete - disabled until it can be properly implemented
+	(void) type;
 }
 
 
 void
 UndoSystem::Append(char ch)
 {
-	if (!tree_.pending)
-		return;
-	if (pending_prepend_ && tree_.pending->type == UndoType::Delete) {
-		// Prepend for backspace so that text is in increasing column order
-		tree_.pending->text.insert(tree_.pending->text.begin(), ch);
-	} else {
-		tree_.pending->text.push_back(ch);
-	}
-#ifdef KTE_UNDO_DEBUG
-	debug_log("Append:ch");
-#endif
+	// STUB: Undo system incomplete - disabled until it can be properly implemented
+	(void) ch;
 }
 
 
 void
 UndoSystem::Append(std::string_view text)
 {
-	if (!tree_.pending)
-		return;
-	tree_.pending->text.append(text.data(), text.size());
-#ifdef KTE_UNDO_DEBUG
-	debug_log("Append:sv");
-#endif
+	// STUB: Undo system incomplete - disabled until it can be properly implemented
+	(void) text;
 }
 
 
 void
 UndoSystem::commit()
 {
-#ifdef KTE_UNDO_DEBUG
-	debug_log("commit:enter");
-#endif
-	if (!tree_.pending)
-		return;
-
-	// If we have redo branches from current, discard them (non-linear behavior)
-	if (tree_.current && tree_.current->child) {
-		free_node(tree_.current->child);
-		tree_.current->child = nullptr;
-		// We diverged; saved snapshot cannot be on discarded branch anymore
-		if (tree_.saved) {
-			// If saved is not equal to current, keep it; if it was on discarded branch we cannot easily detect now.
-			// For simplicity, leave saved as-is; dirty flag uses pointer equality.
-		}
-	}
-
-	// Attach pending as next state
-	if (!tree_.root) {
-		tree_.root    = tree_.pending;
-		tree_.current = tree_.pending;
-	} else if (!tree_.current) {
-		// Should not happen if root exists, but handle gracefully
-		tree_.current = tree_.pending;
-	} else {
-		// Attach as primary child (head of redo list)
-		tree_.pending->next  = nullptr;
-		tree_.current->child = tree_.pending;
-		tree_.current        = tree_.pending;
-	}
-	tree_.pending = nullptr;
-	update_dirty_flag();
-#ifdef KTE_UNDO_DEBUG
-	debug_log("commit:done");
-#endif
-	// post-conditions
-	assert(tree_.pending == nullptr && "pending must be cleared after commit");
+	// STUB: Undo system incomplete - disabled until it can be properly implemented
 }
 
 
 void
 UndoSystem::undo()
 {
-	// Close any pending batch
-	commit();
-	if (!tree_.current)
-		return;
-	UndoNode *parent = find_parent(tree_.root, tree_.current);
-	UndoNode *node   = tree_.current;
-	// Apply inverse of current node
-	apply(node, -1);
-	tree_.current = parent;
-	update_dirty_flag();
-#ifdef KTE_UNDO_DEBUG
-	debug_log("undo");
-#endif
+	// STUB: Undo system incomplete - disabled until it can be properly implemented
 }
 
 
 void
 UndoSystem::redo()
 {
-	// Redo next child along current timeline
-	if (tree_.pending) {
-		// If app added pending edits, finalize them before redo chain
-		commit();
-	}
-	UndoNode *next = nullptr;
-	if (!tree_.current) {
-		next = tree_.root; // if nothing yet, try applying first node
-	} else {
-		next = tree_.current->child;
-	}
-	if (!next)
-		return;
-	apply(next, +1);
-	tree_.current = next;
-	update_dirty_flag();
-#ifdef KTE_UNDO_DEBUG
-	debug_log("redo");
-#endif
+	// STUB: Undo system incomplete - disabled until it can be properly implemented
 }
 
 
 void
 UndoSystem::mark_saved()
 {
-	tree_.saved = tree_.current;
-	update_dirty_flag();
-#ifdef KTE_UNDO_DEBUG
-	debug_log("mark_saved");
-#endif
+	// STUB: Undo system incomplete - disabled until it can be properly implemented
 }
 
 
 void
 UndoSystem::discard_pending()
 {
-	if (tree_.pending) {
-		delete tree_.pending;
-		tree_.pending = nullptr;
-	}
-#ifdef KTE_UNDO_DEBUG
-	debug_log("discard_pending");
-#endif
+	// STUB: Undo system incomplete - disabled until it can be properly implemented
 }
 
 
 void
 UndoSystem::clear()
 {
-	if (tree_.root) {
-		free_node(tree_.root);
-	}
-	if (tree_.pending) {
-		delete tree_.pending;
-	}
-	tree_.root = tree_.current = tree_.saved = tree_.pending = nullptr;
-	update_dirty_flag();
-#ifdef KTE_UNDO_DEBUG
-	debug_log("clear");
-#endif
+	// STUB: Undo system incomplete - disabled until it can be properly implemented
 }
 
 

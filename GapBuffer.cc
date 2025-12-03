@@ -82,7 +82,7 @@ GapBuffer::~GapBuffer()
 void
 GapBuffer::Reserve(const std::size_t newCapacity)
 {
-	if (newCapacity <= capacity_)
+	if (newCapacity <= capacity_) [[likely]]
 		return;
 	// Allocate space for terminator as well
 	char *nb = new char[newCapacity + 1];
@@ -108,7 +108,7 @@ GapBuffer::AppendChar(const char c)
 void
 GapBuffer::Append(const char *s, const std::size_t len)
 {
-	if (!s || len == 0)
+	if (!s || len == 0) [[unlikely]]
 		return;
 	ensureCapacityFor(len);
 	std::memcpy(buffer_ + size_, s, len);
@@ -131,7 +131,7 @@ GapBuffer::PrependChar(char c)
 {
 	ensureCapacityFor(1);
 	// shift right by 1
-	if (size_ > 0) {
+	if (size_ > 0) [[likely]] {
 		std::memmove(buffer_ + 1, buffer_, size_);
 	}
 	buffer_[0] = c;
@@ -143,10 +143,10 @@ GapBuffer::PrependChar(char c)
 void
 GapBuffer::Prepend(const char *s, std::size_t len)
 {
-	if (!s || len == 0)
+	if (!s || len == 0) [[unlikely]]
 		return;
 	ensureCapacityFor(len);
-	if (size_ > 0) {
+	if (size_ > 0) [[likely]] {
 		std::memmove(buffer_ + len, buffer_, size_);
 	}
 	std::memcpy(buffer_, s, len);
@@ -175,7 +175,7 @@ GapBuffer::Clear()
 void
 GapBuffer::ensureCapacityFor(std::size_t delta)
 {
-	if (capacity_ - size_ >= delta)
+	if (capacity_ - size_ >= delta) [[likely]]
 		return;
 	auto required = size_ + delta;
 	Reserve(growCapacity(capacity_, required));

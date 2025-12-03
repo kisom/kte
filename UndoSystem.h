@@ -50,6 +50,4 @@ private:
 
 	Buffer *buf_;
 	UndoTree &tree_;
-	// Internal hint for Delete batching: whether next Append() should prepend
-	bool pending_prepend_ = false;
 };
