@@ -1,2 +1,3 @@
 #pragma once
-namespace kte::Fonts::FiraCode {}
+namespace kte::Fonts::FiraCode {
+}

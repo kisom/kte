@@ -17,6 +17,7 @@ DEFAULT_FONTS = [
     'InconsolataExpanded',
     'ShareTech',
     'Syne',
+    'Triplicate',
 ]
 
 
