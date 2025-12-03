@@ -166,6 +166,41 @@ GUIRenderer::Draw(Editor &ed)
 					first_row = static_cast<long>(scroll_y / row_h);
 					last_row  = first_row + vis_rows - 1;
 				}
+
+				// Horizontal scroll: ensure cursor column is visible
+				float child_w = ImGui::GetWindowWidth();
+				long vis_cols = static_cast<long>(child_w / space_w);
+				if (vis_cols < 1)
+					vis_cols = 1;
+				long first_col = static_cast<long>(scroll_x / space_w);
+				long last_col  = first_col + vis_cols - 1;
+
+				// Compute cursor's rendered X position (accounting for tabs)
+				std::size_t cursor_rx = 0;
+				if (cy < lines.size()) {
+					std::string cur_line   = static_cast<std::string>(lines[cy]);
+					const std::size_t tabw = 8;
+					for (std::size_t i = 0; i < cx && i < cur_line.size(); ++i) {
+						if (cur_line[i] == '\t') {
+							cursor_rx += tabw - (cursor_rx % tabw);
+						} else {
+							cursor_rx += 1;
+						}
+					}
+				}
+				long cxr = static_cast<long>(cursor_rx);
+				if (cxr < first_col || cxr > last_col) {
+					float target_x = static_cast<float>(cxr) * space_w;
+					// Center horizontally if possible
+					target_x -= (child_w / 2.0f);
+					if (target_x < 0.f)
+						target_x = 0.f;
+					float max_x = ImGui::GetScrollMaxX();
+					if (max_x >= 0.f && target_x > max_x)
+						target_x = max_x;
+					ImGui::SetScrollX(target_x);
+					scroll_x = ImGui::GetScrollX();
+				}
 			}
 			// Phase 3: prefetch visible viewport highlights and warm around in background
 			if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
@@ -174,6 +209,9 @@ GUIRenderer::Draw(Editor &ed)
 				buf->Highlighter()->PrefetchViewport(*buf, fr, rc, buf->Version());
 			}
 		}
+		// Cache current horizontal offset in rendered columns for click handling
+		const std::size_t coloffs_now = buf->Coloffs();
+
 		// Handle mouse click before rendering to avoid dependent on drawn items
 		if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
 			ImVec2 mp = ImGui::GetIO().MousePos;
@@ -194,18 +232,21 @@ GUIRenderer::Draw(Editor &ed)
 					by = 0;
 			}
 
-			// Compute content-relative X position accounting for scroll
-			// mp.x - child_window_pos.x gives us pixels from left edge of child window
-			// Adding scroll_x gives us pixels from left edge of content (column 0)
-			float content_x = (mp.x - child_window_pos.x) + scroll_x;
-			if (content_x < 0.0f)
-				content_x = 0.0f;
+			// Compute click X position relative to left edge of child window (in pixels)
+			// This gives us the visual offset from the start of displayed content
+			float visual_x = mp.x - child_window_pos.x;
+			if (visual_x < 0.0f)
+				visual_x = 0.0f;
+
+			// Convert visual pixel offset to rendered column, then add coloffs_now
+			// to get the absolute rendered column in the buffer
+			std::size_t clicked_rx = static_cast<std::size_t>(visual_x / space_w) + coloffs_now;
 
 			// Empty buffer guard: if there are no lines yet, just move to 0:0
 			if (lines.empty()) {
 				Execute(ed, CommandId::MoveCursorTo, std::string("0:0"));
 			} else {
-				// Convert pixel X to source column accounting for tabs
+				// Convert rendered column (clicked_rx) to source column accounting for tabs
 				std::string line_clicked = static_cast<std::string>(lines[by]);
 				const std::size_t tabw   = 8;
 
@@ -213,11 +254,11 @@ GUIRenderer::Draw(Editor &ed)
 				std::size_t rx       = 0; // rendered column position
 				std::size_t best_col = 0;
 				float best_dist      = std::numeric_limits<float>::infinity();
+				float clicked_rx_f   = static_cast<float>(clicked_rx);
 
 				for (std::size_t i = 0; i <= line_clicked.size(); ++i) {
 					// Check current position
-					float rx_px = static_cast<float>(rx) * space_w;
-					float dist  = std::fabs(content_x - rx_px);
+					float dist = std::fabs(clicked_rx_f - static_cast<float>(rx));
 					if (dist < best_dist) {
 						best_dist = dist;
 						best_col  = i;
@@ -239,8 +280,6 @@ GUIRenderer::Draw(Editor &ed)
 				Execute(ed, CommandId::MoveCursorTo, std::string(tmp));
 			}
 		}
-		// Cache current horizontal offset in rendered columns
-		const std::size_t coloffs_now = buf->Coloffs();
 		for (std::size_t i = rowoffs; i < lines.size(); ++i) {
 			// Capture the screen position before drawing the line
 			ImVec2 line_pos  = ImGui::GetCursorScreenPos();
@@ -350,24 +389,37 @@ GUIRenderer::Draw(Editor &ed)
 						static_cast<std::size_t>(std::max(sp.col_start, sp.col_end)));
 					if (rx_e <= coloffs_now)
 						continue;
-					std::size_t vx0 = (rx_s > coloffs_now) ? (rx_s - coloffs_now) : 0;
-					std::size_t vx1 = (rx_e > coloffs_now) ? (rx_e - coloffs_now) : 0;
-					if (vx0 >= expanded.size())
+					// Clamp rx_s/rx_e to the visible portion
+					std::size_t draw_start = (rx_s > coloffs_now) ? rx_s : coloffs_now;
+					std::size_t draw_end   = rx_e;
+					if (draw_start >= expanded.size())
 						continue;
-					vx1 = std::min<std::size_t>(vx1, expanded.size());
-					if (vx1 <= vx0)
+					draw_end = std::min<std::size_t>(draw_end, expanded.size());
+					if (draw_end <= draw_start)
 						continue;
+					// Screen position is relative to coloffs_now
+					std::size_t screen_x = draw_start - coloffs_now;
 					ImU32 col = ImGui::GetColorU32(kte::SyntaxInk(sp.kind));
-					ImVec2 p  = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w, line_pos.y);
+					ImVec2 p = ImVec2(line_pos.x + static_cast<float>(screen_x) * space_w,
+					                  line_pos.y);
 					ImGui::GetWindowDrawList()->AddText(
-						p, col, expanded.c_str() + vx0, expanded.c_str() + vx1);
+						p, col, expanded.c_str() + draw_start, expanded.c_str() + draw_end);
 				}
 				// We drew text via draw list (no layout advance). Manually advance the cursor to the next line.
 				// Use row_h (with spacing) to match click calculation and ensure consistent line positions.
 				ImGui::SetCursorScreenPos(ImVec2(line_pos.x, line_pos.y + row_h));
 			} else {
-				// No syntax: draw as one run
-				ImGui::TextUnformatted(expanded.c_str());
+				// No syntax: draw as one run, accounting for horizontal scroll offset
+				if (coloffs_now < expanded.size()) {
+					ImVec2 p = ImVec2(line_pos.x, line_pos.y);
+					ImGui::GetWindowDrawList()->AddText(
+						p, ImGui::GetColorU32(ImGuiCol_Text),
+						expanded.c_str() + coloffs_now);
+					ImGui::SetCursorScreenPos(ImVec2(line_pos.x, line_pos.y + row_h));
+				} else {
+					// Line is fully scrolled out of view horizontally
+					ImGui::SetCursorScreenPos(ImVec2(line_pos.x, line_pos.y + row_h));
+				}
 			}
 
 			// Draw a visible cursor indicator on the current line
