@@ -38,7 +38,7 @@ enum class ThemeId {
 
 // Current theme tracking
 static inline auto gCurrentTheme             = ThemeId::Nord;
-static inline std::size_t gCurrentThemeIndex = 0;
+static inline std::size_t gCurrentThemeIndex = 6; // Nord index
 
 // Forward declarations for helpers used below
 static size_t ThemeIndexFromId(ThemeId id);

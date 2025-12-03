@@ -957,7 +957,9 @@ cmd_theme_set_by_name(const CommandContext &ctx)
 	ltrim(name);
 	rtrim(name);
 	if (name.empty()) {
-		ctx.editor.SetStatus("theme: missing name");
+		// Show current theme when no argument provided
+		ctx.editor.SetStatus(
+			std::string("Current theme: ") + kte::CurrentThemeName());
 		return true;
 	}
 	if (kte::ApplyThemeByName(name)) {
@@ -1011,7 +1013,12 @@ cmd_font_set_by_name(const CommandContext &ctx)
 		return (char) std::tolower(c);
 	});
 	if (name.empty()) {
-		ctx.editor.SetStatus("font: missing name");
+		// Show current font when no argument provided
+		auto &reg                = FontRegistry::Instance();
+		std::string current_font = reg.CurrentFontName();
+		if (current_font.empty())
+			current_font = "default";
+		ctx.editor.SetStatus(std::string("Current font: ") + current_font);
 		return true;
 	}
 
@@ -1062,7 +1069,17 @@ cmd_font_set_size(const CommandContext &ctx)
 	ltrim(a);
 	rtrim(a);
 	if (a.empty()) {
-		ctx.editor.SetStatus("font-size: missing value");
+		// Show current font size when no argument provided
+		auto &reg          = FontRegistry::Instance();
+		float current_size = reg.CurrentFontSize();
+		if (current_size <= 0.0f) {
+			// Fallback to current ImGui font size if available
+			current_size = ImGui::GetFontSize();
+			if (current_size <= 0.0f)
+				current_size = 16.0f;
+		}
+		ctx.editor.SetStatus(
+			std::string("Current font size: ") + std::to_string((int) std::round(current_size)));
 		return true;
 	}
 	char *endp = nullptr;
