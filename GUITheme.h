@@ -20,12 +20,16 @@ static inline auto gBackgroundMode = BackgroundMode::Dark;
 
 // Basic theme identifier (kept minimal; some ids are aliases)
 enum class ThemeId {
-	EInk = 0,
-	GruvboxDarkMedium = 1,
-	GruvboxLightMedium = 1, // alias to unified gruvbox index
-	Nord = 2,
-	Plan9 = 3,
-	Solarized = 4,
+    EInk = 0,
+    GruvboxDarkMedium = 1,
+    GruvboxLightMedium = 1, // alias to unified gruvbox index
+    Nord = 2,
+    Plan9 = 3,
+    Solarized = 4,
+    Everforest = 5,
+    KanagawaPaper = 6,
+    OldBook = 7,
+    Zenburn = 8,
 };
 
 // Current theme tracking
@@ -65,6 +69,10 @@ BackgroundModeName()
 #include "themes/Solarized.h"
 #include "themes/Gruvbox.h"
 #include "themes/EInk.h"
+#include "themes/Everforest.h"
+#include "themes/KanagawaPaper.h"
+#include "themes/OldBook.h"
+#include "themes/Zenburn.h"
 
 
 // Theme abstraction and registry (generalized theme system)
@@ -78,6 +86,81 @@ public:
 };
 
 namespace detail {
+struct EverforestTheme final : Theme {
+	[[nodiscard]] const char *Name() const override
+	{
+		return "everforest";
+	}
+
+
+	void Apply() const override
+	{
+		ApplyEverforestTheme();
+	}
+
+
+	ThemeId Id() override
+	{
+		return ThemeId::Everforest;
+	}
+};
+
+struct KanagawaPaperTheme final : Theme {
+	[[nodiscard]] const char *Name() const override
+	{
+		return "kanagawa-paper";
+	}
+
+
+	void Apply() const override
+	{
+		ApplyKanagawaPaperTheme();
+	}
+
+
+	ThemeId Id() override
+	{
+		return ThemeId::KanagawaPaper;
+	}
+};
+
+struct OldBookTheme final : Theme {
+	[[nodiscard]] const char *Name() const override
+	{
+		return "old-book";
+	}
+
+
+	void Apply() const override
+	{
+		ApplyOldBookTheme();
+	}
+
+
+	ThemeId Id() override
+	{
+		return ThemeId::OldBook;
+	}
+};
+
+struct ZenburnTheme final : Theme {
+	[[nodiscard]] const char *Name() const override
+	{
+		return "zenburn";
+	}
+
+
+	void Apply() const override
+	{
+		ApplyZenburnTheme();
+	}
+
+
+	ThemeId Id() override
+	{
+		return ThemeId::Zenburn;
+	}
+};
 struct NordTheme final : Theme {
 	[[nodiscard]] const char *Name() const override
 	{
@@ -187,16 +270,21 @@ struct Plan9Theme final : Theme {
 static const std::vector<std::unique_ptr<Theme> > &
 ThemeRegistry()
 {
-	static std::vector<std::unique_ptr<Theme> > reg;
-	if (reg.empty()) {
-		// Alphabetical by canonical name: eink, gruvbox, nord, plan9, solarized
-		reg.emplace_back(std::make_unique<detail::EInkTheme>());
-		reg.emplace_back(std::make_unique<detail::GruvboxTheme>());
-		reg.emplace_back(std::make_unique<detail::NordTheme>());
-		reg.emplace_back(std::make_unique<detail::Plan9Theme>());
-		reg.emplace_back(std::make_unique<detail::SolarizedTheme>());
-	}
-	return reg;
+    static std::vector<std::unique_ptr<Theme> > reg;
+    if (reg.empty()) {
+        // Alphabetical by canonical name:
+        // eink, everforest, gruvbox, kanagawa-paper, nord, old-book, plan9, solarized, zenburn
+        reg.emplace_back(std::make_unique<detail::EInkTheme>());
+        reg.emplace_back(std::make_unique<detail::EverforestTheme>());
+        reg.emplace_back(std::make_unique<detail::GruvboxTheme>());
+        reg.emplace_back(std::make_unique<detail::KanagawaPaperTheme>());
+        reg.emplace_back(std::make_unique<detail::NordTheme>());
+        reg.emplace_back(std::make_unique<detail::OldBookTheme>());
+        reg.emplace_back(std::make_unique<detail::Plan9Theme>());
+        reg.emplace_back(std::make_unique<detail::SolarizedTheme>());
+        reg.emplace_back(std::make_unique<detail::ZenburnTheme>());
+    }
+    return reg;
 }
 
 
@@ -304,6 +392,15 @@ ApplyThemeByName(const std::string &name)
 	} else if (n == "eink-light") {
 		SetBackgroundMode(BackgroundMode::Light);
 		n = "eink";
+	} else if (n == "everforest-hard") {
+		// Request asks for everforest hard; map to canonical name
+		n = "everforest";
+	} else if (n == "oldbook") {
+		// alias to old-book
+		n = "old-book";
+	} else if (n == "kanagawa" || n == "kanagawa-paper-light" || n == "kanagawa-light") {
+		// map to canonical kanagawa-paper (it's a light theme)
+		n = "kanagawa-paper";
 	}
 
 	const auto &reg = ThemeRegistry();
@@ -336,38 +433,54 @@ CurrentThemeName()
 static size_t
 ThemeIndexFromId(const ThemeId id)
 {
-	switch (id) {
-	case ThemeId::EInk:
-		return 0;
-	case ThemeId::GruvboxDarkMedium:
-		return 1;
-	case ThemeId::Nord:
-		return 2;
-	case ThemeId::Plan9:
-		return 3;
-	case ThemeId::Solarized:
-		return 4;
-	}
-	return 0;
+    switch (id) {
+    case ThemeId::EInk:
+        return 0;
+    case ThemeId::Everforest:
+        return 1;
+    case ThemeId::GruvboxDarkMedium:
+        return 2;
+    case ThemeId::KanagawaPaper:
+        return 3;
+    case ThemeId::Nord:
+        return 4;
+    case ThemeId::OldBook:
+        return 5;
+    case ThemeId::Plan9:
+        return 6;
+    case ThemeId::Solarized:
+        return 7;
+    case ThemeId::Zenburn:
+        return 8;
+    }
+    return 0;
 }
 
 
 static ThemeId
 ThemeIdFromIndex(const size_t idx)
 {
-	switch (idx) {
-	default:
-	case 0:
-		return ThemeId::EInk;
-	case 1:
-		return ThemeId::GruvboxDarkMedium; // unified gruvbox
-	case 2:
-		return ThemeId::Nord;
-	case 3:
-		return ThemeId::Plan9;
-	case 4:
-		return ThemeId::Solarized;
-	}
+    switch (idx) {
+    default:
+    case 0:
+        return ThemeId::EInk;
+    case 1:
+        return ThemeId::Everforest;
+    case 2:
+        return ThemeId::GruvboxDarkMedium; // unified gruvbox
+    case 3:
+        return ThemeId::KanagawaPaper;
+    case 4:
+        return ThemeId::Nord;
+    case 5:
+        return ThemeId::OldBook;
+    case 6:
+        return ThemeId::Plan9;
+    case 7:
+        return ThemeId::Solarized;
+    case 8:
+        return ThemeId::Zenburn;
+    }
 }
 
 
