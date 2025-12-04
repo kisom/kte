@@ -3,8 +3,8 @@ project(kte)
 
 include(GNUInstallDirs)
 
-set(CMAKE_CXX_STANDARD 17)
-set(KTE_VERSION "1.3.6")
+set(CMAKE_CXX_STANDARD 20)
+set(KTE_VERSION "1.3.7")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
@@ -32,25 +32,23 @@ else ()
 endif ()
 
 add_compile_options(
-        "-static"
-        "-Wall"
-        "-Wextra"
-        "-Werror"
-        "-Wno-unused-function"
-        "-Wno-unused-parameter"
-        "-g"
-        "$<$<CONFIG:RELEASE>:-O2>"
+
 )
 
 if (MSVC)
     add_compile_options("/W4" "$<$<CONFIG:RELEASE>:/O2>")
 else ()
     add_compile_options(
+            "-static"
             "-Wall"
             "-Wextra"
             "-Werror"
+            "-pedantic"
+            "-Wno-unused-function"
+            "-Wno-unused-parameter"
+            "$<$<CONFIG:RELEASE>:-O2>"
             "$<$<CONFIG:DEBUG>:-g>"
-            "$<$<CONFIG:RELEASE>:-O2>")
+    )
     if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
         add_compile_options("-stdlib=libc++")
     else ()
