@@ -90,6 +90,7 @@ enum class CommandId {
 	ShowHelp, // open +HELP+ buffer with manual text (C-k h)
 	// Meta
 	UnknownKCommand, // arg: single character that was not recognized after C-k
+	UnknownEscCommand, // invalid ESC (meta) command; show status and exit escape mode
 	// Generic command prompt
 	CommandPromptStart, // begin generic command prompt (C-k ;)
 	// Theme by name
@@ -128,6 +129,9 @@ struct Command {
 	CommandHandler handler;
 	// Public commands are exposed in the ": " prompt (C-k ;)
 	bool isPublic = false;
+	// Whether this command should consume and honor a universal argument repeat count.
+	// Default true per issue request; authors can turn off per-command.
+	bool repeatable = true;
 };
 
 

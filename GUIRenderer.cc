@@ -369,8 +369,34 @@ GUIRenderer::Draw(Editor &ed)
 
 			// Draw syntax-colored runs (text above background highlights)
 			if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
-				const kte::LineHighlight &lh = buf->Highlighter()->GetLine(
+				kte::LineHighlight lh = buf->Highlighter()->GetLine(
 					*buf, static_cast<int>(i), buf->Version());
+				// Sanitize spans defensively: clamp to [0, line.size()], ensure end>=start, drop empties
+				struct SSpan {
+					std::size_t s;
+					std::size_t e;
+					kte::TokenKind k;
+				};
+				std::vector<SSpan> spans;
+				spans.reserve(lh.spans.size());
+				const std::size_t line_len = line.size();
+				for (const auto &sp: lh.spans) {
+					int s_raw = sp.col_start;
+					int e_raw = sp.col_end;
+					if (e_raw < s_raw)
+						std::swap(e_raw, s_raw);
+					std::size_t s = static_cast<std::size_t>(std::max(
+						0, std::min(s_raw, static_cast<int>(line_len))));
+					std::size_t e = static_cast<std::size_t>(std::max(
+						static_cast<int>(s), std::min(e_raw, static_cast<int>(line_len))));
+					if (e <= s)
+						continue;
+					spans.push_back(SSpan{s, e, sp.kind});
+				}
+				std::sort(spans.begin(), spans.end(), [](const SSpan &a, const SSpan &b) {
+					return a.s < b.s;
+				});
+
 				// Helper to convert a src column to expanded rx position
 				auto src_to_rx_full = [&](std::size_t sidx) -> std::size_t {
 					std::size_t rx = 0;
@@ -379,24 +405,22 @@ GUIRenderer::Draw(Editor &ed)
 					}
 					return rx;
 				};
-				for (const auto &sp: lh.spans) {
-					std::size_t rx_s = src_to_rx_full(
-						static_cast<std::size_t>(std::max(0, sp.col_start)));
-					std::size_t rx_e = src_to_rx_full(
-						static_cast<std::size_t>(std::max(sp.col_start, sp.col_end)));
+
+				for (const auto &sp: spans) {
+					std::size_t rx_s = src_to_rx_full(sp.s);
+					std::size_t rx_e = src_to_rx_full(sp.e);
 					if (rx_e <= coloffs_now)
-						continue;
-					// Clamp rx_s/rx_e to the visible portion
+						continue; // fully left of viewport
+					// Clamp to visible portion and expanded length
 					std::size_t draw_start = (rx_s > coloffs_now) ? rx_s : coloffs_now;
-					std::size_t draw_end   = rx_e;
 					if (draw_start >= expanded.size())
-						continue;
-					draw_end = std::min<std::size_t>(draw_end, expanded.size());
+						continue; // fully right of expanded text
+					std::size_t draw_end = std::min<std::size_t>(rx_e, expanded.size());
 					if (draw_end <= draw_start)
 						continue;
 					// Screen position is relative to coloffs_now
 					std::size_t screen_x = draw_start - coloffs_now;
-					ImU32 col = ImGui::GetColorU32(kte::SyntaxInk(sp.kind));
+					ImU32 col = ImGui::GetColorU32(kte::SyntaxInk(sp.k));
 					ImVec2 p = ImVec2(line_pos.x + static_cast<float>(screen_x) * space_w,
 					                  line_pos.y);
 					ImGui::GetWindowDrawList()->AddText(

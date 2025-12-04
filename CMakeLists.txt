@@ -118,6 +118,7 @@ set(COMMON_SOURCES
         Command.cc
         HelpText.cc
         KKeymap.cc
+        Swap.cc
         TerminalInputHandler.cc
         TerminalRenderer.cc
         TerminalFrontend.cc
@@ -203,6 +204,7 @@ set(COMMON_HEADERS
         Command.h
         HelpText.h
         KKeymap.h
+        Swap.h
         InputHandler.h
         TerminalInputHandler.h
         Renderer.h

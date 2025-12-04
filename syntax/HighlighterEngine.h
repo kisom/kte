@@ -25,8 +25,9 @@ public:
 	void SetHighlighter(std::unique_ptr<LanguageHighlighter> hl);
 
 	// Retrieve highlights for a given line and buffer version.
+	// Returns a copy to avoid lifetime issues across threads/renderers.
 	// If cache is stale, recompute using the current highlighter.
-	const LineHighlight &GetLine(const Buffer &buf, int row, std::uint64_t buf_version) const;
+	LineHighlight GetLine(const Buffer &buf, int row, std::uint64_t buf_version) const;
 
 	// Invalidate cached lines from row (inclusive)
 	void InvalidateFrom(int row);
@@ -70,6 +71,10 @@ private:
 		std::uint64_t version{0};
 		int start_row{0};
 		int end_row{0}; // inclusive
+		// Visible rows to skip touching in the background (inclusive range).
+		// These are computed synchronously by PrefetchViewport.
+		int skip_first{0};
+		int skip_last{-1};
 	};
 
 	mutable std::condition_variable cv_;

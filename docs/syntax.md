@@ -4,67 +4,118 @@ Syntax highlighting in kte
 Overview
 --------
 
-kte provides lightweight syntax highlighting with a pluggable highlighter interface. The initial implementation targets C/C++ and focuses on speed and responsiveness.
+kte provides lightweight syntax highlighting with a pluggable
+highlighter interface. The initial implementation targets C/C++ and
+focuses on speed and responsiveness.
 
 Core types
 ----------
 
-- `TokenKind` — token categories (keywords, types, strings, comments, numbers, preprocessor, operators, punctuation, identifiers, whitespace, etc.).
-- `HighlightSpan` — a half-open column range `[col_start, col_end)` with a `TokenKind`.
-- `LineHighlight` — a vector of `HighlightSpan` and the buffer `version` used to compute it.
+- `TokenKind` — token categories (keywords, types, strings, comments,
+  numbers, preprocessor, operators, punctuation, identifiers,
+  whitespace, etc.).
+- `HighlightSpan` — a half-open column range `[col_start, col_end)` with
+  a `TokenKind`.
+- `LineHighlight` — a vector of `HighlightSpan` and the buffer `version`
+  used to compute it.
 
 Engine and caching
 ------------------
 
-- `HighlighterEngine` maintains a per-line cache of `LineHighlight` keyed by row and buffer version.
-- Cache invalidation occurs when the buffer version changes or when the buffer calls `InvalidateFrom(row)`, which clears cached lines and line states from `row` downward.
-- The engine supports both stateless and stateful highlighters. For stateful highlighters, it memoizes a simple per-line state and computes lines sequentially when necessary.
+- `HighlighterEngine` maintains a per-line cache of `LineHighlight`
+  keyed by row and buffer version.
+- Cache invalidation occurs when the buffer version changes or when the
+  buffer calls `InvalidateFrom(row)`, which clears cached lines and line
+  states from `row` downward.
+- The engine supports both stateless and stateful highlighters. For
+  stateful highlighters, it memoizes a simple per-line state and
+  computes lines sequentially when necessary.
 
 Stateful highlighters
 ---------------------
 
-- `LanguageHighlighter` is the base interface for stateless per-line tokenization.
-- `StatefulHighlighter` extends it with a `LineState` and the method `HighlightLineStateful(buf, row, prev_state, out)`.
-- The engine detects `StatefulHighlighter` via dynamic_cast and feeds each line the previous line’s state, caching the resulting state per line.
+- `LanguageHighlighter` is the base interface for stateless per-line
+  tokenization.
+- `StatefulHighlighter` extends it with a `LineState` and the method
+  `HighlightLineStateful(buf, row, prev_state, out)`.
+- The engine detects `StatefulHighlighter` via dynamic_cast and feeds
+  each line the previous line’s state, caching the resulting state per
+  line.
 
 C/C++ highlighter
 -----------------
 
 - `CppHighlighter` implements `StatefulHighlighter`.
-- Stateless constructs: line comments `//`, strings `"..."`, chars `'...'`, numbers, identifiers (keywords/types), preprocessor at beginning of line after leading whitespace, operators/punctuation, and whitespace.
+- Stateless constructs: line comments `//`, strings `"..."`, chars
+  `'...'`, numbers, identifiers (keywords/types), preprocessor at
+  beginning of line after leading whitespace, operators/punctuation, and
+  whitespace.
 - Stateful constructs (v2):
-  - Multi-line block comments `/* ... */` — the state records whether the next line continues a comment.
-  - Raw strings `R"delim(... )delim"` — the state tracks whether we are inside a raw string and its delimiter `delim` until the closing sequence appears.
+    - Multi-line block comments `/* ... */` — the state records whether
+      the next line continues a comment.
+    - Raw strings `R"delim(... )delim"` — the state tracks whether we
+      are inside a raw string and its delimiter `delim` until the
+      closing sequence appears.
 
 Limitations and TODOs
 ---------------------
 
-- Raw string detection is intentionally simple and does not handle all corner cases of the C++ standard.
-- Preprocessor handling is line-based; continuation lines with `\\` are not yet tracked.
-- No semantic analysis; identifiers are classified via small keyword/type sets.
-- Additional languages (JSON, Markdown, Shell, Python, Go, Rust, Lisp, …) are planned.
-- Terminal color mapping is conservative to support 8/16-color terminals. Rich color-pair themes can be added later.
+- Raw string detection is intentionally simple and does not handle all
+  corner cases of the C++ standard.
+- Preprocessor handling is line-based; continuation lines with `\\` are
+  not yet tracked.
+- No semantic analysis; identifiers are classified via small
+  keyword/type sets.
+- Additional languages (JSON, Markdown, Shell, Python, Go, Rust,
+  Lisp, …) are planned.
+- Terminal color mapping is conservative to support 8/16-color
+  terminals. Rich color-pair themes can be added later.
 
 Renderer integration
 --------------------
 
-- Terminal and GUI renderers request line spans via `Highlighter()->GetLine(buf, row, buf.Version())`.
-- Search highlight and cursor overlays take precedence over syntax colors.
+- Terminal and GUI renderers request line spans via
+  `Highlighter()->GetLine(buf, row, buf.Version())`.
+- Search highlight and cursor overlays take precedence over syntax
+  colors.
+
+Renderer-side robustness
+------------------------
+
+- Renderers defensively sanitize `HighlightSpan` data before use to
+  ensure stability even if a highlighter misbehaves:
+    - Clamp `col_start/col_end` to the line length and ensure
+      `end >= start`.
+    - Drop empty/invalid spans and sort by start.
+    - Clip drawing to the horizontally visible region and the
+      tab-expanded line length.
+- The highlighter engine returns `LineHighlight` by value to avoid
+  cross-thread lifetime issues; renderers operate on a local copy for
+  each frame.
 
 Extensibility (Phase 4)
 -----------------------
 
-- Public registration API: external code can register custom highlighters by filetype.
-  - Use `HighlighterRegistry::Register("mylang", []{ return std::make_unique<MyHighlighter>(); });`
-  - Registered factories are preferred over built-ins for the same filetype key.
-  - Filetype keys are normalized via `HighlighterRegistry::Normalize()`.
-- Optional Tree-sitter adapter: disabled by default to keep dependencies minimal.
-  - Enable with CMake option `-DKTE_ENABLE_TREESITTER=ON` and provide
-    `-DTREESITTER_INCLUDE_DIR=...` and `-DTREESITTER_LIBRARY=...` if needed.
-  - Register a Tree-sitter-backed highlighter for a language (example assumes you link a grammar):
-    ```c++
-    extern "C" const TSLanguage* tree_sitter_c();
-    kte::HighlighterRegistry::RegisterTreeSitter("c", &tree_sitter_c);
-    ```
-  - Current adapter is a stub scaffold; it compiles and integrates cleanly when enabled, but
-    intentionally emits no spans until Tree-sitter node-to-token mapping is implemented.
+- Public registration API: external code can register custom
+  highlighters by filetype.
+    - Use
+      `HighlighterRegistry::Register("mylang", []{ return std::make_unique<MyHighlighter>(); });`
+    - Registered factories are preferred over built-ins for the same
+      filetype key.
+    - Filetype keys are normalized via
+      `HighlighterRegistry::Normalize()`.
+- Optional Tree-sitter adapter: disabled by default to keep dependencies
+  minimal.
+    - Enable with CMake option `-DKTE_ENABLE_TREESITTER=ON` and provide
+      `-DTREESITTER_INCLUDE_DIR=...` and `-DTREESITTER_LIBRARY=...` if
+      needed.
+    - Register a Tree-sitter-backed highlighter for a language (example
+      assumes you link a grammar):
+      ```c++
+      extern "C" const TSLanguage* tree_sitter_c();
+      kte::HighlighterRegistry::RegisterTreeSitter("c", &tree_sitter_c);
+      ```
+    - Current adapter is a stub scaffold; it compiles and integrates
+      cleanly when enabled, but
+      intentionally emits no spans until Tree-sitter node-to-token
+      mapping is implemented.

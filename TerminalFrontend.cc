@@ -55,6 +55,8 @@ TerminalFrontend::Init(Editor &ed)
 	prev_r_ = r;
 	prev_c_ = c;
 	ed.SetDimensions(static_cast<std::size_t>(r), static_cast<std::size_t>(c));
+	// Attach editor to input handler for editor-owned features (e.g., universal argument)
+	input_.Attach(&ed);
 	return true;
 }
 

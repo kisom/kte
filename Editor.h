@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "Buffer.h"
+#include "Swap.h"
 
 
 class Editor {
@@ -156,6 +157,33 @@ public:
 	}
 
 
+	// --- Universal argument control (C-u) ---
+	// Begin or extend a universal argument (like ke's uarg_start)
+	void UArgStart();
+
+	// Add a digit 0..9 to the current universal argument (like ke's uarg_digit)
+	void UArgDigit(int d);
+
+	// Clear universal-argument state (like ke's uarg_clear)
+	void UArgClear();
+
+	// Consume the current universal argument, returning count >= 1.
+	// If no universal argument active, returns 1.
+	int UArgGet();
+
+	// Repeatable command flag: input layer can mark the next command as repeatable
+	void SetRepeatable(bool on)
+	{
+		repeatable_ = on;
+	}
+
+
+	[[nodiscard]] bool Repeatable() const
+	{
+		return repeatable_;
+	}
+
+
 	// Status message storage. Rendering is renderer-dependent; the editor
 	// merely stores the current message and its timestamp.
 	void SetStatus(const std::string &message);
@@ -189,6 +217,31 @@ public:
 	[[nodiscard]] bool QuitConfirmPending() const
 	{
 		return quit_confirm_pending_;
+	}
+
+
+	// --- Buffer close/save confirmation state ---
+	void SetCloseConfirmPending(bool on)
+	{
+		close_confirm_pending_ = on;
+	}
+
+
+	[[nodiscard]] bool CloseConfirmPending() const
+	{
+		return close_confirm_pending_;
+	}
+
+
+	void SetCloseAfterSave(bool on)
+	{
+		close_after_save_ = on;
+	}
+
+
+	[[nodiscard]] bool CloseAfterSave() const
+	{
+		return close_after_save_;
 	}
 
 
@@ -465,6 +518,13 @@ public:
 	}
 
 
+	// Swap manager access (for advanced integrations/tests)
+	[[nodiscard]] kte::SwapManager *Swap()
+	{
+		return swap_.get();
+	}
+
+
 	// --- GUI: Visual File Picker state ---
 	void SetFilePickerVisible(bool on)
 	{
@@ -498,17 +558,23 @@ private:
 	std::string msg_;
 	std::time_t msgtm_ = 0;
 	int uarg_          = 0, ucount_ = 0; // C-u support
+	bool repeatable_   = false; // whether the next command is repeatable
 
 	std::vector<Buffer> buffers_;
 	std::size_t curbuf_ = 0; // index into buffers_
+
+	// Swap journaling manager (lifetime = editor)
+	std::unique_ptr<kte::SwapManager> swap_;
 
 	// Kill ring (Emacs-like)
 	std::vector<std::string> kill_ring_;
 	std::size_t kill_ring_max_ = 60;
 
 	// Quit state
-	bool quit_requested_       = false;
-	bool quit_confirm_pending_ = false;
+	bool quit_requested_        = false;
+	bool quit_confirm_pending_  = false;
+	bool close_confirm_pending_ = false; // awaiting y/N to save-before-close
+	bool close_after_save_      = false; // if true, close buffer after successful Save/SaveAs
 
 	// Search state
 	bool search_active_ = false;

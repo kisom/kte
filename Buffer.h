@@ -16,6 +16,11 @@
 #include "syntax/HighlighterEngine.h"
 #include "Highlight.h"
 
+// Forward declaration for swap journal integration
+namespace kte {
+class SwapRecorder;
+}
+
 
 class Buffer {
 public:
@@ -423,6 +428,13 @@ public:
 	}
 
 
+	// Swap journal integration (set by Editor)
+	void SetSwapRecorder(kte::SwapRecorder *rec)
+	{
+		swap_rec_ = rec;
+	}
+
+
 	// Raw, low-level editing APIs used by UndoSystem apply().
 	// These must NOT trigger undo recording. They also do not move the cursor.
 	void insert_text(int row, int col, std::string_view text);
@@ -465,4 +477,6 @@ private:
 	bool syntax_enabled_   = true;
 	std::string filetype_;
 	std::unique_ptr<kte::HighlighterEngine> highlighter_;
+	// Non-owning pointer to swap recorder managed by Editor/SwapManager
+	kte::SwapRecorder *swap_rec_ = nullptr;
 };

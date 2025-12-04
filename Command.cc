@@ -104,24 +104,24 @@ static bool
 is_mutating_command(CommandId id)
 {
 	switch (id) {
-	case CommandId::InsertText:
-	case CommandId::Newline:
-	case CommandId::Backspace:
-	case CommandId::DeleteChar:
-	case CommandId::KillToEOL:
-	case CommandId::KillLine:
-	case CommandId::Yank:
-	case CommandId::DeleteWordPrev:
-	case CommandId::DeleteWordNext:
-	case CommandId::IndentRegion:
-	case CommandId::UnindentRegion:
-	case CommandId::ReflowParagraph:
-	case CommandId::KillRegion:
-	case CommandId::Undo:
-	case CommandId::Redo:
-		return true;
-	default:
-		return false;
+		case CommandId::InsertText:
+		case CommandId::Newline:
+		case CommandId::Backspace:
+		case CommandId::DeleteChar:
+		case CommandId::KillToEOL:
+		case CommandId::KillLine:
+		case CommandId::Yank:
+		case CommandId::DeleteWordPrev:
+		case CommandId::DeleteWordNext:
+		case CommandId::IndentRegion:
+		case CommandId::UnindentRegion:
+		case CommandId::ReflowParagraph:
+		case CommandId::KillRegion:
+		case CommandId::Undo:
+		case CommandId::Redo:
+			return true;
+		default:
+			return false;
 	}
 }
 
@@ -697,6 +697,10 @@ cmd_refresh(CommandContext &ctx)
 			ctx.editor.ClearSearchOrigin();
 			ctx.editor.SetSearchIndex(-1);
 		}
+		// Clear any pending close/overwrite state associated with prompts
+		ctx.editor.SetCloseConfirmPending(false);
+		ctx.editor.SetCloseAfterSave(false);
+		ctx.editor.ClearPendingOverwritePath();
 		ctx.editor.CancelPrompt();
 		ctx.editor.SetStatus("Canceled");
 		return true;
@@ -761,6 +765,15 @@ cmd_unknown_kcommand(CommandContext &ctx)
 	char buf[64];
 	std::snprintf(buf, sizeof(buf), "unknown k-command %c", ch);
 	ctx.editor.SetStatus(buf);
+	return true;
+}
+
+
+static bool
+cmd_unknown_esc_command(CommandContext &ctx)
+{
+	(void) ctx;
+	ctx.editor.SetStatus("invalid escape command");
 	return true;
 }
 
@@ -1374,6 +1387,14 @@ cmd_buffer_close(const CommandContext &ctx)
 	std::size_t idx  = ctx.editor.CurrentBufferIndex();
 	Buffer *b        = ctx.editor.CurrentBuffer();
 	std::string name = b ? buffer_display_name(*b) : std::string("");
+	// If buffer is dirty, prompt to save first (for both named and unnamed buffers)
+	if (b && b->Dirty()) {
+		ctx.editor.StartPrompt(Editor::PromptKind::Confirm, "Save", "");
+		ctx.editor.SetCloseConfirmPending(true);
+		ctx.editor.SetStatus(std::string("Save changes to ") + name + "? (y/N)");
+		return true;
+	}
+	// Otherwise close immediately
 	if (b && b->Undo())
 		b->Undo()->discard_pending();
 	ctx.editor.CloseBuffer(idx);
@@ -2191,6 +2212,28 @@ cmd_newline(CommandContext &ctx)
 							ctx.editor.SetStatus("Saved as " + value);
 							if (auto *u = buf->Undo())
 								u->mark_saved();
+							// If a close-after-save was requested (from closing a dirty, unnamed buffer),
+							// close the buffer now.
+							if (ctx.editor.CloseAfterSave()) {
+								ctx.editor.SetCloseAfterSave(false);
+								std::size_t idx_close = ctx.editor.CurrentBufferIndex();
+								std::string name_close = buffer_display_name(*buf);
+								if (buf->Undo())
+									buf->Undo()->discard_pending();
+								ctx.editor.CloseBuffer(idx_close);
+								if (ctx.editor.BufferCount() == 0) {
+									Buffer empty;
+									ctx.editor.AddBuffer(std::move(empty));
+									ctx.editor.SwitchTo(0);
+								}
+								const Buffer *cur = ctx.editor.CurrentBuffer();
+								ctx.editor.SetStatus(
+									std::string("Closed: ") + name_close +
+									std::string("  Now: ")
+									+ (cur
+										   ? buffer_display_name(*cur)
+										   : std::string("")));
+							}
 						}
 					}
 				}
@@ -2214,11 +2257,86 @@ cmd_newline(CommandContext &ctx)
 						ctx.editor.SetStatus("Saved as " + target);
 						if (auto *u = buf->Undo())
 							u->mark_saved();
+						// If this overwrite confirm was part of a close-after-save flow, close now.
+						if (ctx.editor.CloseAfterSave()) {
+							ctx.editor.SetCloseAfterSave(false);
+							std::size_t idx_close  = ctx.editor.CurrentBufferIndex();
+							std::string name_close = buffer_display_name(*buf);
+							if (buf->Undo())
+								buf->Undo()->discard_pending();
+							ctx.editor.CloseBuffer(idx_close);
+							if (ctx.editor.BufferCount() == 0) {
+								Buffer empty;
+								ctx.editor.AddBuffer(std::move(empty));
+								ctx.editor.SwitchTo(0);
+							}
+							const Buffer *cur = ctx.editor.CurrentBuffer();
+							ctx.editor.SetStatus(
+								std::string("Closed: ") + name_close + std::string(
+									"  Now: ")
+								+ (cur ? buffer_display_name(*cur) : std::string("")));
+						}
 					}
 				} else {
 					ctx.editor.SetStatus("Save canceled");
 				}
 				ctx.editor.ClearPendingOverwritePath();
+				// Regardless of answer, end any close-after-save pending state for safety.
+				ctx.editor.SetCloseAfterSave(false);
+			} else if (ctx.editor.CloseConfirmPending() && buf) {
+				bool yes = false;
+				if (!value.empty()) {
+					char c = value[0];
+					yes    = (c == 'y' || c == 'Y');
+				}
+				// Prepare close details
+				std::size_t idx_close  = ctx.editor.CurrentBufferIndex();
+				std::string name_close = buffer_display_name(*buf);
+				bool proceed_to_close  = true;
+				if (yes) {
+					std::string err;
+					if (buf->IsFileBacked()) {
+						if (!buf->Save(err)) {
+							ctx.editor.SetStatus(err);
+							proceed_to_close = false;
+						} else {
+							buf->SetDirty(false);
+							if (auto *u = buf->Undo())
+								u->mark_saved();
+						}
+					} else if (!buf->Filename().empty()) {
+						if (!buf->SaveAs(buf->Filename(), err)) {
+							ctx.editor.SetStatus(err);
+							proceed_to_close = false;
+						} else {
+							buf->SetDirty(false);
+							if (auto *u = buf->Undo())
+								u->mark_saved();
+						}
+					} else {
+						// No filename; fall back to Save As flow and set close-after-save
+						ctx.editor.StartPrompt(Editor::PromptKind::SaveAs, "Save as", "");
+						ctx.editor.SetCloseAfterSave(true);
+						ctx.editor.SetStatus("Save as: ");
+						ctx.editor.SetCloseConfirmPending(false);
+						return true;
+					}
+				}
+				if (proceed_to_close) {
+					if (buf->Undo())
+						buf->Undo()->discard_pending();
+					ctx.editor.CloseBuffer(idx_close);
+					if (ctx.editor.BufferCount() == 0) {
+						Buffer empty;
+						ctx.editor.AddBuffer(std::move(empty));
+						ctx.editor.SwitchTo(0);
+					}
+					const Buffer *cur = ctx.editor.CurrentBuffer();
+					ctx.editor.SetStatus(
+						std::string("Closed: ") + name_close + std::string("  Now: ")
+						+ (cur ? buffer_display_name(*cur) : std::string("")));
+				}
+				ctx.editor.SetCloseConfirmPending(false);
 			} else {
 				ctx.editor.SetStatus("Nothing to confirm");
 			}
@@ -3663,50 +3781,222 @@ cmd_reflow_paragraph(CommandContext &ctx)
 		++para_end;
 	if (para_start > para_end)
 		return false;
-	std::string text;
-	for (std::size_t i = para_start; i <= para_end; ++i) {
-		if (i > para_start && !text.empty() && text.back() != ' ')
-			text += ' ';
-		const auto &line = rows[i];
-		for (std::size_t j = 0; j < line.size(); ++j) {
-			char c = line[j];
-			if (c == '\t')
-				text += ' ';
-			else
-				text += c;
+
+	auto is_space = [](char c) {
+		return c == ' ' || c == '\t';
+	};
+
+	auto leading_ws = [&](const std::string &s) {
+		std::size_t i = 0;
+		while (i < s.size() && is_space(s[i]))
+			++i;
+		return s.substr(0, i);
+	};
+
+	auto starts_with = [](const std::string &s, const std::string &pfx) {
+		return s.size() >= pfx.size() && std::equal(pfx.begin(), pfx.end(), s.begin());
+	};
+
+	auto is_bullet_line = [&](const std::string &s, std::string &indent_out, char &marker_out,
+	                          std::size_t &after_prefix_idx) -> bool {
+		indent_out    = leading_ws(s);
+		std::size_t i = indent_out.size();
+		if (i + 1 < s.size()) {
+			char m = s[i];
+			if ((m == '-' || m == '+' || m == '*') && s[i + 1] == ' ') {
+				marker_out       = m;
+				after_prefix_idx = i + 2; // after marker + space
+				return true;
+			}
 		}
-	}
+		return false;
+	};
+
+	auto normalize_spaces = [](const std::string &in) {
+		std::string out;
+		out.reserve(in.size());
+		bool in_space = false;
+		for (char c: in) {
+			char cc = (c == '\t') ? ' ' : c;
+			if (cc == ' ') {
+				if (!in_space) {
+					out.push_back(' ');
+					in_space = true;
+				}
+			} else {
+				out.push_back(cc);
+				in_space = false;
+			}
+		}
+		// trim leading/trailing spaces
+		// leading
+		std::size_t start = 0;
+		while (start < out.size() && out[start] == ' ')
+			++start;
+		// trailing
+		std::size_t end = out.size();
+		while (end > start && out[end - 1] == ' ')
+			--end;
+		return out.substr(start, end - start);
+	};
+
+	auto wrap_with_prefixes = [&](const std::string &content,
+	                              const std::string &first_prefix,
+	                              const std::string &cont_prefix,
+	                              int w,
+	                              std::vector<std::string> &dst) {
+		// Tokenize by spaces
+		std::vector<std::string> words;
+		std::size_t pos = 0;
+		while (pos < content.size()) {
+			while (pos < content.size() && content[pos] == ' ')
+				++pos;
+			if (pos >= content.size())
+				break;
+			std::size_t ws = pos;
+			while (pos < content.size() && content[pos] != ' ')
+				++pos;
+			words.emplace_back(content.substr(ws, pos - ws));
+		}
+		std::string line        = first_prefix;
+		std::size_t cur_len     = line.size();
+		bool first_word_on_line = true;
+		auto flush_line         = [&]() {
+			dst.emplace_back(line);
+			line               = cont_prefix;
+			cur_len            = line.size();
+			first_word_on_line = true;
+		};
+		if (words.empty()) {
+			// Still emit a line with just the prefix (e.g., empty bullet)
+			dst.emplace_back(line);
+			return;
+		}
+		for (std::size_t i = 0; i < words.size(); ++i) {
+			const std::string &wrd = words[i];
+			std::size_t needed     = wrd.size() + (first_word_on_line ? 0 : 1);
+			if (static_cast<int>(cur_len + needed) > w) {
+				// wrap
+				flush_line();
+			}
+			if (!first_word_on_line) {
+				line.push_back(' ');
+				++cur_len;
+			}
+			line += wrd;
+			cur_len += wrd.size();
+			first_word_on_line = false;
+		}
+		if (!line.empty())
+			dst.emplace_back(line);
+	};
+
 	std::vector<std::string> new_lines;
-	std::string line;
-	std::size_t pos = 0;
-	while (pos < text.size()) {
-		while (pos < text.size() && text[pos] == ' ')
-			++pos;
-		if (pos >= text.size())
+
+	// Determine if this region looks like a list: any line starting with bullet
+	bool region_has_bullet = false;
+	for (std::size_t i = para_start; i <= para_end; ++i) {
+		std::string s = static_cast<std::string>(rows[i]);
+		std::string indent;
+		char marker;
+		std::size_t idx;
+		if (is_bullet_line(s, indent, marker, idx)) {
+			region_has_bullet = true;
 			break;
-		std::size_t word_start = pos;
-		while (pos < text.size() && text[pos] != ' ')
-			++pos;
-		std::string word = text.substr(word_start, pos - word_start);
-		if (line.empty()) {
-			line = word;
-		} else if (static_cast<int>(line.size() + 1 + word.size()) <= width) {
-			line += ' ';
-			line += word;
-		} else {
-			new_lines.push_back(line);
-			line = word;
 		}
 	}
-	if (!line.empty())
-		new_lines.push_back(line);
+
+	if (region_has_bullet) {
+		// Parse as list items; support hanging indent continuations
+		for (std::size_t i = para_start; i <= para_end; ++i) {
+			std::string s = static_cast<std::string>(rows[i]);
+			std::string indent;
+			char marker           = 0;
+			std::size_t after_idx = 0;
+			if (is_bullet_line(s, indent, marker, after_idx)) {
+				std::string first_prefix = indent + std::string(1, marker) + " ";
+				std::string cont_prefix  = indent + "  ";
+				std::string content      = s.substr(after_idx);
+				// consume continuation lines that are part of this bullet item
+				std::size_t j = i + 1;
+				while (j <= para_end) {
+					std::string ns = static_cast<std::string>(rows[j]);
+					if (starts_with(ns, indent + "  ")) {
+						content += ' ';
+						content += ns.substr(indent.size() + 2);
+						++j;
+						continue;
+					}
+					// stop if next bullet at same indentation or different structure
+					std::string nindent;
+					char nmarker;
+					std::size_t nidx;
+					if (is_bullet_line(ns, nindent, nmarker, nidx)) {
+						break; // next item
+					}
+					// Not a continuation and not a bullet: stop (treat as separate paragraph chunk)
+					break;
+				}
+				content = normalize_spaces(content);
+				wrap_with_prefixes(content, first_prefix, cont_prefix, width, new_lines);
+				i = j - 1; // advance
+			} else {
+				// A non-bullet line within a list region; treat as its own wrapped paragraph preserving its indent
+				std::string base_indent = leading_ws(s);
+				std::string content     = s.substr(base_indent.size());
+				std::size_t j           = i + 1;
+				while (j <= para_end) {
+					std::string ns      = static_cast<std::string>(rows[j]);
+					std::string nindent = leading_ws(ns);
+					std::string tmp_indent;
+					char tmp_marker;
+					std::size_t tmp_idx;
+					if (is_bullet_line(ns, tmp_indent, tmp_marker, tmp_idx)) {
+						break; // next bullet starts
+					}
+					if (nindent.size() >= base_indent.size()) {
+						content += ' ';
+						content += ns.substr(base_indent.size());
+						++j;
+					} else {
+						break;
+					}
+				}
+				content = normalize_spaces(content);
+				wrap_with_prefixes(content, base_indent, base_indent, width, new_lines);
+				i = j - 1;
+			}
+		}
+	} else {
+		// Normal paragraph: preserve indentation of first line
+		std::string s0  = static_cast<std::string>(rows[para_start]);
+		std::string pfx = leading_ws(s0);
+		std::string content;
+		for (std::size_t i = para_start; i <= para_end; ++i) {
+			std::string si = static_cast<std::string>(rows[i]);
+			// strip the same prefix length if present
+			if (si.size() >= pfx.size() && starts_with(si, pfx))
+				si.erase(0, pfx.size());
+			if (!content.empty())
+				content.push_back(' ');
+			content += si;
+		}
+		content = normalize_spaces(content);
+		wrap_with_prefixes(content, pfx, pfx, width, new_lines);
+	}
+
 	if (new_lines.empty())
 		new_lines.push_back("");
+
 	rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(para_start),
 	           rows.begin() + static_cast<std::ptrdiff_t>(para_end + 1));
 	rows.insert(rows.begin() + static_cast<std::ptrdiff_t>(para_start),
 	            new_lines.begin(), new_lines.end());
-	buf->SetCursor(0, para_start);
+
+	// Place cursor at the end of the paragraph
+	std::size_t new_last_y = para_start + (new_lines.empty() ? 0 : new_lines.size() - 1);
+	std::size_t new_last_x = new_lines.empty() ? 0 : new_lines.back().size();
+	buf->SetCursor(new_last_x, new_last_y);
 	buf->SetDirty(true);
 	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
@@ -3815,35 +4105,45 @@ InstallDefaultCommands()
 	CommandRegistry::Register({CommandId::SaveAndQuit, "save-quit", "Save and quit (request)", cmd_save_and_quit});
 	CommandRegistry::Register({CommandId::Refresh, "refresh", "Force redraw", cmd_refresh});
 	CommandRegistry::Register(
-		{CommandId::KPrefix, "k-prefix", "Entering k-command prefix (show hint)", cmd_kprefix});
+		{CommandId::KPrefix, "k-prefix", "Entering k-command prefix (show hint)", cmd_kprefix, false, false});
 	CommandRegistry::Register({
 		CommandId::UnknownKCommand, "unknown-k", "Unknown k-command (status)",
-		cmd_unknown_kcommand
-	});
-	CommandRegistry::Register({CommandId::FindStart, "find-start", "Begin incremental search", cmd_find_start});
-	CommandRegistry::Register({
-		CommandId::RegexFindStart, "regex-find-start", "Begin regex search", cmd_regex_find_start
+		cmd_unknown_kcommand, false, false
 	});
 	CommandRegistry::Register({
-		CommandId::RegexpReplace, "regex-replace", "Begin regex search & replace", cmd_regex_replace_start
+		CommandId::UnknownEscCommand, "unknown-esc", "Unknown ESC command (status)",
+		cmd_unknown_esc_command, false, false
 	});
 	CommandRegistry::Register({
-		CommandId::SearchReplace, "search-replace", "Begin search & replace", cmd_search_replace_start
+		CommandId::FindStart, "find-start", "Begin incremental search", cmd_find_start, false, false
 	});
 	CommandRegistry::Register({
-		CommandId::OpenFileStart, "open-file-start", "Begin open-file prompt", cmd_open_file_start
+		CommandId::RegexFindStart, "regex-find-start", "Begin regex search", cmd_regex_find_start, false, false
+	});
+	CommandRegistry::Register({
+		CommandId::RegexpReplace, "regex-replace", "Begin regex search & replace", cmd_regex_replace_start,
+		false, false
+	});
+	CommandRegistry::Register({
+		CommandId::SearchReplace, "search-replace", "Begin search & replace", cmd_search_replace_start, false,
+		false
+	});
+	CommandRegistry::Register({
+		CommandId::OpenFileStart, "open-file-start", "Begin open-file prompt", cmd_open_file_start, false, false
 	});
 	// Buffers
 	CommandRegistry::Register({
 		CommandId::BufferSwitchStart, "buffer-switch-start", "Begin buffer switch prompt",
-		cmd_buffer_switch_start
+		cmd_buffer_switch_start, false, false
 	});
 	CommandRegistry::Register({CommandId::BufferNext, "buffer-next", "Switch to next buffer", cmd_buffer_next});
 	CommandRegistry::Register({CommandId::BufferPrev, "buffer-prev", "Switch to previous buffer", cmd_buffer_prev});
-	CommandRegistry::Register({CommandId::BufferClose, "buffer-close", "Close current buffer", cmd_buffer_close});
+	CommandRegistry::Register({
+		CommandId::BufferClose, "buffer-close", "Close current buffer", cmd_buffer_close, false, false
+	});
 	// Editing
 	CommandRegistry::Register({
-		CommandId::InsertText, "insert", "Insert text at cursor (no newlines)", cmd_insert_text
+		CommandId::InsertText, "insert", "Insert text at cursor (no newlines)", cmd_insert_text, false, true
 	});
 	CommandRegistry::Register({CommandId::Newline, "newline", "Insert newline at cursor", cmd_newline});
 	CommandRegistry::Register({CommandId::Backspace, "backspace", "Delete char before cursor", cmd_backspace});
@@ -3885,15 +4185,15 @@ InstallDefaultCommands()
 		CommandId::DeleteWordNext, "delete-word-next", "Delete next word", cmd_delete_word_next
 	});
 	CommandRegistry::Register({
-		CommandId::MoveCursorTo, "move-cursor-to", "Move cursor to y:x", cmd_move_cursor_to
+		CommandId::MoveCursorTo, "move-cursor-to", "Move cursor to y:x", cmd_move_cursor_to, false, false
 	});
 	// Direct navigation by line number
 	CommandRegistry::Register({
-		CommandId::JumpToLine, "goto-line", "Prompt for line and jump", cmd_jump_to_line_start
+		CommandId::JumpToLine, "goto-line", "Prompt for line and jump", cmd_jump_to_line_start, false, false
 	});
 	// Undo/Redo
-	CommandRegistry::Register({CommandId::Undo, "undo", "Undo last edit", cmd_undo});
-	CommandRegistry::Register({CommandId::Redo, "redo", "Redo edit", cmd_redo});
+	CommandRegistry::Register({CommandId::Undo, "undo", "Undo last edit", cmd_undo, false, true});
+	CommandRegistry::Register({CommandId::Redo, "redo", "Redo edit", cmd_redo, false, true});
 	// Region formatting
 	CommandRegistry::Register({CommandId::IndentRegion, "indent-region", "Indent region", cmd_indent_region});
 	CommandRegistry::Register(
@@ -3910,32 +4210,32 @@ InstallDefaultCommands()
 	CommandRegistry::Register({CommandId::ThemePrev, "theme-prev", "Cycle to previous GUI theme", cmd_theme_prev});
 	// Theme by name (public in command prompt)
 	CommandRegistry::Register({
-		CommandId::ThemeSetByName, "theme", "Set GUI theme by name", cmd_theme_set_by_name, true
+		CommandId::ThemeSetByName, "theme", "Set GUI theme by name", cmd_theme_set_by_name, true, false
 	});
 	// Font by name (public)
 	CommandRegistry::Register({
-		CommandId::FontSetByName, "font", "Set GUI font by name", cmd_font_set_by_name, true
+		CommandId::FontSetByName, "font", "Set GUI font by name", cmd_font_set_by_name, true, false
 	});
 	// Font size (public)
 	CommandRegistry::Register({
-		CommandId::FontSetSize, "font-size", "Set GUI font size (pixels)", cmd_font_set_size, true
+		CommandId::FontSetSize, "font-size", "Set GUI font size (pixels)", cmd_font_set_size, true, false
 	});
 	// Background light/dark (public)
 	CommandRegistry::Register({
-		CommandId::BackgroundSet, "background", "Set GUI background light|dark", cmd_background_set, true
+		CommandId::BackgroundSet, "background", "Set GUI background light|dark", cmd_background_set, true, false
 	});
 	// Generic command prompt (C-k ;)
 	CommandRegistry::Register({
 		CommandId::CommandPromptStart, "command-prompt-start", "Start generic command prompt",
-		cmd_command_prompt_start
+		cmd_command_prompt_start, false, false
 	});
 	// Buffer operations
 	CommandRegistry::Register({
-		CommandId::ReloadBuffer, "reload-buffer", "Reload buffer from disk", cmd_reload_buffer
+		CommandId::ReloadBuffer, "reload-buffer", "Reload buffer from disk", cmd_reload_buffer, false, false
 	});
 	// Help
 	CommandRegistry::Register({
-		CommandId::ShowHelp, "help", "+HELP+ buffer with manual text", cmd_show_help
+		CommandId::ShowHelp, "help", "+HELP+ buffer with manual text", cmd_show_help, false, false
 	});
 	CommandRegistry::Register({
 		CommandId::MarkAllAndJumpEnd, "mark-all-jump-end", "Set mark at beginning and jump to end",
@@ -3944,20 +4244,20 @@ InstallDefaultCommands()
 	// GUI
 	CommandRegistry::Register({
 		CommandId::VisualFilePickerToggle, "file-picker-toggle", "Toggle visual file picker",
-		cmd_visual_file_picker_toggle
+		cmd_visual_file_picker_toggle, false, false
 	});
 	// Working directory
 	CommandRegistry::Register({
 		CommandId::ShowWorkingDirectory, "show-working-directory", "Show current working directory",
-		cmd_show_working_directory
+		cmd_show_working_directory, false, false
 	});
 	CommandRegistry::Register({
 		CommandId::ChangeWorkingDirectory, "change-working-directory", "Change current working directory",
-		cmd_change_working_directory_start
+		cmd_change_working_directory_start, false, false
 	});
 	// UI helpers
 	CommandRegistry::Register(
-		{CommandId::UArgStatus, "uarg-status", "Update universal-arg status", cmd_uarg_status});
+		{CommandId::UArgStatus, "uarg-status", "Update universal-arg status", cmd_uarg_status, false, false});
 	// Syntax highlighting (public commands)
 	CommandRegistry::Register({CommandId::Syntax, "syntax", "Syntax: on|off|reload", cmd_syntax, true});
 	CommandRegistry::Register({CommandId::SetOption, "set", "Set option: key=value", cmd_set_option, true});
@@ -3989,7 +4289,22 @@ Execute(Editor &ed, CommandId id, const std::string &arg, int count)
 		}
 	}
 
-	CommandContext ctx{ed, arg, count};
+	// Source repeat count from editor-level universal argument per new design.
+	int final_count = 0;
+	if (cmd->repeatable) {
+		final_count = ed.UArgGet(); // returns 1 if no active uarg
+	} else {
+		// Special-case non-repeatables that should NOT consume/clear uarg:
+		// - KPrefix: keeps uarg for the following k-suffix command.
+		// - UnknownKCommand / UnknownEscCommand: user mistyped; keep uarg for next try.
+		if (id != CommandId::KPrefix && id != CommandId::UnknownKCommand && id !=
+		    CommandId::UnknownEscCommand) {
+			ed.UArgClear();
+		}
+		final_count = 0;
+	}
+
+	CommandContext ctx{ed, arg, final_count};
 	return cmd->handler ? cmd->handler(ctx) : false;
 }
 

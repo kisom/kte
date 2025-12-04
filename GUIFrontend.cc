@@ -31,7 +31,9 @@ static auto kGlslVersion = "#version 150"; // GL 3.2 core (macOS compatible)
 bool
 GUIFrontend::Init(Editor &ed)
 {
-	(void) ed; // editor dimensions will be initialized during the first Step() frame
+	// Attach editor to input handler for editor-owned features (e.g., universal argument)
+	input_.Attach(&ed);
+	// editor dimensions will be initialized during the first Step() frame
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
 		return false;
 	}
@@ -222,17 +224,17 @@ GUIFrontend::Step(Editor &ed, bool &running)
 	while (SDL_PollEvent(&e)) {
 		ImGui_ImplSDL2_ProcessEvent(&e);
 		switch (e.type) {
-		case SDL_QUIT:
-			running = false;
-			break;
-		case SDL_WINDOWEVENT:
-			if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-				width_  = e.window.data1;
-				height_ = e.window.data2;
-			}
-			break;
-		default:
-			break;
+			case SDL_QUIT:
+				running = false;
+				break;
+			case SDL_WINDOWEVENT:
+				if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+					width_  = e.window.data1;
+					height_ = e.window.data2;
+				}
+				break;
+			default:
+				break;
 		}
 		// Map input to commands
 		input_.ProcessSDLEvent(e);

@@ -6,6 +6,10 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <algorithm>
+#include <chrono>
+#include <random>
+#include <thread>
 #include <signal.h>
 #include <string>
 #include <unistd.h>
@@ -34,7 +38,71 @@ PrintUsage(const char *prog)
 		<< "  -g, --gui        Use GUI frontend (if built)\n"
 		<< "  -t, --term       Use terminal (ncurses) frontend [default]\n"
 		<< "  -h, --help       Show this help and exit\n"
-		<< "  -V, --version    Show version and exit\n";
+		<< "  -V, --version    Show version and exit\n"
+		<< "      --stress-highlighter[=SECONDS]  Run a short highlighter stress harness (debug aid)\n";
+}
+
+
+static int
+RunStressHighlighter(unsigned seconds)
+{
+	// Build a synthetic buffer with code-like content
+	Buffer buf;
+	buf.SetFiletype("cpp");
+	buf.SetSyntaxEnabled(true);
+	buf.EnsureHighlighter();
+	// Seed with many lines
+	const int N = 1200;
+	for (int i = 0; i < N; ++i) {
+		std::string line = "int v" + std::to_string(i) + " = " + std::to_string(i) + "; // line\n";
+		buf.insert_row(i, line);
+	}
+	// Remove the extra last empty row if any artifacts
+	// Simulate a viewport of ~60 rows
+	const int viewport_rows = 60;
+	const auto start_ts     = std::chrono::steady_clock::now();
+	std::mt19937 rng{1234567u};
+	std::uniform_int_distribution<int> row_d(0, N - 1);
+	std::uniform_int_distribution<int> op_d(0, 2);
+	std::uniform_int_distribution<int> sleep_d(0, 2);
+
+	// Loop performing edits and highlighter queries while background worker runs
+	while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start_ts).count() <
+	       seconds) {
+		int fr = row_d(rng);
+		if (fr + viewport_rows >= N)
+			fr = std::max(0, N - viewport_rows - 1);
+		buf.SetOffsets(static_cast<std::size_t>(fr), 0);
+		if (buf.Highlighter()) {
+			buf.Highlighter()->PrefetchViewport(buf, fr, viewport_rows, buf.Version());
+		}
+		// Do a few direct GetLine calls over the viewport to shake the caches
+		if (buf.Highlighter()) {
+			for (int r = 0; r < viewport_rows; r += 7) {
+				(void) buf.Highlighter()->GetLine(buf, fr + r, buf.Version());
+			}
+		}
+		// Random simple edit
+		int op = op_d(rng);
+		int r  = row_d(rng);
+		if (op == 0) {
+			buf.insert_text(r, 0, "/*X*/");
+			buf.SetDirty(true);
+		} else if (op == 1) {
+			buf.delete_text(r, 0, 1);
+			buf.SetDirty(true);
+		} else {
+			// split and join occasionally
+			buf.split_line(r, 0);
+			buf.join_lines(std::min(r + 1, N - 1));
+			buf.SetDirty(true);
+		}
+		// tiny sleep to allow background thread to interleave
+		if (sleep_d(rng) == 0) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+	}
+	return 0;
 }
 
 
@@ -54,29 +122,42 @@ main(int argc, const char *argv[])
 		{"term", no_argument, nullptr, 't'},
 		{"help", no_argument, nullptr, 'h'},
 		{"version", no_argument, nullptr, 'V'},
+		{"stress-highlighter", optional_argument, nullptr, 1000},
 		{nullptr, 0, nullptr, 0}
 	};
 
 	int opt;
-	int long_index = 0;
+	int long_index          = 0;
+	unsigned stress_seconds = 0;
 	while ((opt = getopt_long(argc, const_cast<char *const *>(argv), "gthV", long_opts, &long_index)) != -1) {
 		switch (opt) {
-		case 'g':
-			req_gui = true;
-			break;
-		case 't':
-			req_term = true;
-			break;
-		case 'h':
-			show_help = true;
-			break;
-		case 'V':
-			show_version = true;
-			break;
-		case '?':
-		default:
-			PrintUsage(argv[0]);
-			return 2;
+			case 'g':
+				req_gui = true;
+				break;
+			case 't':
+				req_term = true;
+				break;
+			case 'h':
+				show_help = true;
+				break;
+			case 'V':
+				show_version = true;
+				break;
+			case 1000: {
+				stress_seconds = 5; // default
+				if (optarg && *optarg) {
+					try {
+						unsigned v = static_cast<unsigned>(std::stoul(optarg));
+						if (v > 0 && v < 36000)
+							stress_seconds = v;
+					} catch (...) {}
+				}
+				break;
+			}
+			case '?':
+			default:
+				PrintUsage(argv[0]);
+				return 2;
 		}
 	}
 
@@ -87,6 +168,10 @@ main(int argc, const char *argv[])
 	if (show_version) {
 		std::cout << "kte " << KTE_VERSION_STR << "\n";
 		return 0;
+	}
+
+	if (stress_seconds > 0) {
+		return RunStressHighlighter(stress_seconds);
 	}
 
 	// Determine frontend

@@ -8,7 +8,10 @@
 #include "syntax/NullHighlighter.h"
 
 
-Editor::Editor() = default;
+Editor::Editor()
+{
+	swap_ = std::make_unique<kte::SwapManager>();
+}
 
 
 void
@@ -123,6 +126,11 @@ std::size_t
 Editor::AddBuffer(const Buffer &buf)
 {
 	buffers_.push_back(buf);
+	// Attach swap recorder
+	if (swap_) {
+		buffers_.back().SetSwapRecorder(swap_.get());
+		swap_->Attach(&buffers_.back());
+	}
 	if (buffers_.size() == 1) {
 		curbuf_ = 0;
 	}
@@ -134,6 +142,10 @@ std::size_t
 Editor::AddBuffer(Buffer &&buf)
 {
 	buffers_.push_back(std::move(buf));
+	if (swap_) {
+		buffers_.back().SetSwapRecorder(swap_.get());
+		swap_->Attach(&buffers_.back());
+	}
 	if (buffers_.size() == 1) {
 		curbuf_ = 0;
 	}
@@ -157,6 +169,12 @@ Editor::OpenFile(const std::string &path, std::string &err)
 			bool ok = cur.OpenFromFile(path, err);
 			if (!ok)
 				return false;
+			// Ensure swap recorder is attached for this buffer
+			if (swap_) {
+				cur.SetSwapRecorder(swap_.get());
+				swap_->Attach(&cur);
+				swap_->NotifyFilenameChanged(cur);
+			}
 			// Setup highlighting using registry (extension + shebang)
 			cur.EnsureHighlighter();
 			std::string first = "";
@@ -186,6 +204,12 @@ Editor::OpenFile(const std::string &path, std::string &err)
 	Buffer b;
 	if (!b.OpenFromFile(path, err)) {
 		return false;
+	}
+	if (swap_) {
+		b.SetSwapRecorder(swap_.get());
+		// path is known, notify
+		swap_->Attach(&b);
+		swap_->NotifyFilenameChanged(b);
 	}
 	// Initialize syntax highlighting by extension + shebang via registry (v2)
 	b.EnsureHighlighter();
@@ -278,8 +302,67 @@ Editor::Reset()
 	msgtm_                = 0;
 	uarg_                 = 0;
 	ucount_               = 0;
+	repeatable_           = false;
 	quit_requested_       = false;
 	quit_confirm_pending_ = false;
+	// Reset close-confirm/save state
+	close_confirm_pending_ = false;
+	close_after_save_      = false;
 	buffers_.clear();
 	curbuf_ = 0;
+}
+
+
+// --- Universal argument helpers ---
+void
+Editor::UArgStart()
+{
+	// If not active, start fresh; else multiply by 4 per ke semantics
+	if (uarg_ == 0) {
+		ucount_ = 0;
+	} else {
+		if (ucount_ == 0) {
+			ucount_ = 1;
+		}
+		ucount_ *= 4;
+	}
+	uarg_ = 1;
+	char buf[64];
+	std::snprintf(buf, sizeof(buf), "C-u %d", ucount_);
+	SetStatus(buf);
+}
+
+
+void
+Editor::UArgDigit(int d)
+{
+	if (d < 0)
+		d = 0;
+	if (d > 9)
+		d = 9;
+	if (uarg_ == 0) {
+		uarg_   = 1;
+		ucount_ = 0;
+	}
+	ucount_ = ucount_ * 10 + d;
+	char buf[64];
+	std::snprintf(buf, sizeof(buf), "C-u %d", ucount_);
+	SetStatus(buf);
+}
+
+
+void
+Editor::UArgClear()
+{
+	uarg_   = 0;
+	ucount_ = 0;
+}
+
+
+int
+Editor::UArgGet()
+{
+	int n = (ucount_ > 0) ? ucount_ : 1;
+	UArgClear();
+	return n;
 }

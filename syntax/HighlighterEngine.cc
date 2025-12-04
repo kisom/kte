@@ -34,22 +34,24 @@ HighlighterEngine::SetHighlighter(std::unique_ptr<LanguageHighlighter> hl)
 }
 
 
-const LineHighlight &
+LineHighlight
 HighlighterEngine::GetLine(const Buffer &buf, int row, std::uint64_t buf_version) const
 {
 	std::unique_lock<std::mutex> lock(mtx_);
 	auto it = cache_.find(row);
 	if (it != cache_.end() && it->second.version == buf_version) {
-		return it->second;
+		return it->second; // return by value (copy)
 	}
 
-	// Prepare destination slot to reuse its capacity and avoid allocations
-	LineHighlight &slot = cache_[row];
-	slot.version        = buf_version;
-	slot.spans.clear();
+	// We'll compute into a local result to avoid exposing references to cache
+	LineHighlight result;
+	result.version = buf_version;
+	result.spans.clear();
 
 	if (!hl_) {
-		return slot;
+		// Cache empty result and return it
+		cache_[row] = result;
+		return result;
 	}
 
 	// Copy shared_ptr-like raw pointer for use outside critical sections
@@ -58,10 +60,12 @@ HighlighterEngine::GetLine(const Buffer &buf, int row, std::uint64_t buf_version
 
 	if (!is_stateful) {
 		// Stateless fast path: we can release the lock while computing to reduce contention
-		auto &out = slot.spans;
 		lock.unlock();
-		hl_ptr->HighlightLine(buf, row, out);
-		return cache_.at(row);
+		hl_ptr->HighlightLine(buf, row, result.spans);
+		// Update cache and return
+		std::lock_guard<std::mutex> gl(mtx_);
+		cache_[row] = result;
+		return result;
 	}
 
 	// Stateful path: we need to walk from a known previous state. Keep lock while consulting caches,
@@ -96,7 +100,7 @@ HighlighterEngine::GetLine(const Buffer &buf, int row, std::uint64_t buf_version
 	StatefulHighlighter::LineState cur_state = prev_state;
 	for (int r = start_row + 1; r <= row; ++r) {
 		std::vector<HighlightSpan> tmp;
-		std::vector<HighlightSpan> &out = (r == row) ? slot.spans : tmp;
+		std::vector<HighlightSpan> &out = (r == row) ? result.spans : tmp;
 		auto next_state                 = stateful->HighlightLineStateful(buf, r, cur_state, out);
 		// Update state cache for r
 		std::lock_guard<std::mutex> gl(mtx_);
@@ -107,9 +111,10 @@ HighlighterEngine::GetLine(const Buffer &buf, int row, std::uint64_t buf_version
 		cur_state       = next_state;
 	}
 
-	// Return reference under lock to ensure slot's address stability in map
+	// Store in cache and return by value
 	lock.lock();
-	return cache_.at(row);
+	cache_[row] = result;
+	return result;
 }
 
 
@@ -164,11 +169,15 @@ HighlighterEngine::worker_loop() const
 		// Copy locals then release lock while computing
 		lock.unlock();
 		if (req.buf) {
-			int start = std::max(0, req.start_row);
-			int end   = std::max(start, req.end_row);
+			int start  = std::max(0, req.start_row);
+			int end    = std::max(start, req.end_row);
+			int skip_f = std::min(req.skip_first, req.skip_last);
+			int skip_l = std::max(req.skip_first, req.skip_last);
 			for (int r = start; r <= end; ++r) {
-				// Re-check version staleness quickly by peeking cache version; not strictly necessary
-				// Compute line; GetLine is thread-safe
+				// Avoid touching rows that the foreground just computed/drew.
+				if (r >= skip_f && r <= skip_l)
+					continue;
+				// Compute line; GetLine is thread-safe and will refresh caches.
 				(void) this->GetLine(*req.buf, r, req.version);
 			}
 		}
@@ -201,11 +210,13 @@ HighlighterEngine::PrefetchViewport(const Buffer &buf, int first_row, int row_co
 	int warm_end   = std::min(max_rows - 1, end + warm_margin);
 	{
 		std::lock_guard<std::mutex> lock(mtx_);
-		pending_.buf       = &buf;
-		pending_.version   = buf_version;
-		pending_.start_row = warm_start;
-		pending_.end_row   = warm_end;
-		has_request_       = true;
+		pending_.buf        = &buf;
+		pending_.version    = buf_version;
+		pending_.start_row  = warm_start;
+		pending_.end_row    = warm_end;
+		pending_.skip_first = start;
+		pending_.skip_last  = end;
+		has_request_        = true;
 	}
 	ensure_worker_started();
 	cv_.notify_one();

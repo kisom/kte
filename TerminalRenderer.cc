@@ -111,19 +111,44 @@ TerminalRenderer::Draw(Editor &ed)
 				std::string line = static_cast<std::string>(lines[li]);
 				src_i            = 0;
 				render_col       = 0;
-				// Syntax highlighting: fetch per-line spans
-				const kte::LineHighlight *lh_ptr = nullptr;
+				// Syntax highlighting: fetch per-line spans (sanitized copy)
+				std::vector<kte::HighlightSpan> sane_spans;
 				if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->
 				    HasHighlighter()) {
-					lh_ptr = &buf->Highlighter()->GetLine(
+					kte::LineHighlight lh_val = buf->Highlighter()->GetLine(
 						*buf, static_cast<int>(li), buf->Version());
+					// Sanitize defensively: clamp to [0, line.size()], ensure end>=start, drop empties
+					const std::size_t line_len = line.size();
+					sane_spans.reserve(lh_val.spans.size());
+					for (const auto &sp: lh_val.spans) {
+						int s_raw = sp.col_start;
+						int e_raw = sp.col_end;
+						if (e_raw < s_raw)
+							std::swap(e_raw, s_raw);
+						std::size_t s = static_cast<std::size_t>(std::max(
+							0, std::min(s_raw, static_cast<int>(line_len))));
+						std::size_t e = static_cast<std::size_t>(std::max(
+							static_cast<int>(s),
+							std::min(e_raw, static_cast<int>(line_len))));
+						if (e <= s)
+							continue;
+						sane_spans.push_back(kte::HighlightSpan{
+							static_cast<int>(s), static_cast<int>(e), sp.kind
+						});
+					}
+					std::sort(sane_spans.begin(), sane_spans.end(),
+					          [](const kte::HighlightSpan &a, const kte::HighlightSpan &b) {
+						          return a.col_start < b.col_start;
+					          });
 				}
 				auto token_at = [&](std::size_t src_index) -> kte::TokenKind {
-					if (!lh_ptr)
+					if (sane_spans.empty())
 						return kte::TokenKind::Default;
-					for (const auto &sp: lh_ptr->spans) {
-						if (static_cast<int>(src_index) >= sp.col_start && static_cast<int>(
-							    src_index) < sp.col_end)
+					int si = static_cast<int>(src_index);
+					for (const auto &sp: sane_spans) {
+						if (si < sp.col_start)
+							break;
+						if (si >= sp.col_start && si < sp.col_end)
 							return sp.kind;
 					}
 					return kte::TokenKind::Default;
@@ -132,23 +157,23 @@ TerminalRenderer::Draw(Editor &ed)
 					// Map to simple attributes; search highlight uses A_STANDOUT which takes precedence below
 					attrset(A_NORMAL);
 					switch (k) {
-					case kte::TokenKind::Keyword:
-					case kte::TokenKind::Type:
-					case kte::TokenKind::Constant:
-					case kte::TokenKind::Function:
-						attron(A_BOLD);
-						break;
-					case kte::TokenKind::Comment:
-						attron(A_DIM);
-						break;
-					case kte::TokenKind::String:
-					case kte::TokenKind::Char:
-					case kte::TokenKind::Number:
-						// standout a bit using A_UNDERLINE if available
-						attron(A_UNDERLINE);
-						break;
-					default:
-						break;
+						case kte::TokenKind::Keyword:
+						case kte::TokenKind::Type:
+						case kte::TokenKind::Constant:
+						case kte::TokenKind::Function:
+							attron(A_BOLD);
+							break;
+						case kte::TokenKind::Comment:
+							attron(A_DIM);
+							break;
+						case kte::TokenKind::String:
+						case kte::TokenKind::Char:
+						case kte::TokenKind::Number:
+							// standout a bit using A_UNDERLINE if available
+							attron(A_UNDERLINE);
+							break;
+						default:
+							break;
 					}
 				};
 				while (written < cols) {
