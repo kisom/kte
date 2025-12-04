@@ -4,7 +4,7 @@ project(kte)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 17)
-set(KTE_VERSION "1.3.5")
+set(KTE_VERSION "1.3.6")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
@@ -16,7 +16,7 @@ option(KTE_UNDO_DEBUG "Enable undo instrumentation logs" OFF)
 option(KTE_ENABLE_TREESITTER "Enable optional Tree-sitter highlighter adapter" OFF)
 
 # Optionally enable AddressSanitizer (ASan)
-option(ENABLE_ASAN "Enable AddressSanitizer for builds" ON)
+option(ENABLE_ASAN "Enable AddressSanitizer for builds" OFF)
 
 if (ENABLE_ASAN)
     message(STATUS "ASan enabled")

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+set -eu
+set -o pipefail
+
+mkdir -p cmake-build-release
+cmake -S . -B cmake-build-release -DBUILD_GUI=ON -DCMAKE_BUILD_TYPE=Release
+
+cd cmake-build-release
+make clean
+rm -fr kge.app*
+make
+zip -r kge.app.zip kge.app 
+sha256sum kge.app.zip
+open .
+cd ..

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+set -eu
+set -o pipefail
+
+KTE_VERSION=$(grep 'KTE_VERSION' CMakeLists.txt | grep -o '"[0-9.]*"' | tr -d '"')
+KTE_VERSION="v${KTE_VERSION}"
+
+if [ "${KTE_VERSION}" = "v" ]
+then
+	echo "invalid version" > /dev/stderr
+	exit 1
+fi
+
+echo "kte version ${KTE_VERSION}"
+TREE="$(git status --porcelain --untracked-files=no)"
+if [ ! -z "${TREE}" ]
+then
+	echo "tree is dirty" > /dev/stderr
+	exit 1
+fi
+
+git tag "${KTE_VERSION}"
+git push && git push --tags
+
+( ./make-app-release )
