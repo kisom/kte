@@ -294,11 +294,31 @@ TerminalRenderer::Draw(Editor &ed)
 			clrtoeol();
 		}
 
-		// Place terminal cursor at logical position accounting for tabs and coloffs
+		// Place terminal cursor at logical position accounting for tabs and coloffs.
+		// Recompute the rendered X using the same logic as the drawing loop to avoid
+		// any drift between the command-layer computation and the terminal renderer.
 		std::size_t cy = buf->Cury();
-		std::size_t rx = buf->Rx(); // render x computed by command layer
-		int cur_y      = static_cast<int>(cy) - static_cast<int>(buf->Rowoffs());
-		int cur_x      = static_cast<int>(rx) - static_cast<int>(buf->Coloffs());
+		std::size_t cx = buf->Curx();
+		int cur_y = static_cast<int>(cy) - static_cast<int>(buf->Rowoffs());
+		std::size_t rx_recomputed = 0;
+		if (cy < lines.size()) {
+			const std::string line_for_cursor = static_cast<std::string>(lines[cy]);
+			std::size_t src_i_cur = 0;
+			std::size_t render_col_cur = 0;
+			while (src_i_cur < line_for_cursor.size() && src_i_cur < cx) {
+				unsigned char ccur = static_cast<unsigned char>(line_for_cursor[src_i_cur]);
+				if (ccur == '\t') {
+					std::size_t next_tab = tabw - (render_col_cur % tabw);
+					render_col_cur += next_tab;
+					++src_i_cur;
+				} else {
+					++render_col_cur;
+					++src_i_cur;
+				}
+			}
+			rx_recomputed = render_col_cur;
+		}
+		int cur_x = static_cast<int>(rx_recomputed) - static_cast<int>(buf->Coloffs());
 		if (cur_y >= 0 && cur_y < content_rows && cur_x >= 0 && cur_x < cols) {
 			// remember where to leave the terminal cursor after status is drawn
 			saved_cur_y = cur_y;

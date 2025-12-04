@@ -455,7 +455,19 @@ GUIRenderer::Draw(Editor &ed)
 				}
 				// Convert to viewport x by subtracting horizontal col offset
 				std::size_t rx_viewport = (rx_abs > coloffs_now) ? (rx_abs - coloffs_now) : 0;
-				ImVec2 p0 = ImVec2(line_pos.x + static_cast<float>(rx_viewport) * space_w, line_pos.y);
+				// For proportional fonts (Linux GUI), avoid accumulating drift by computing
+				// the exact pixel width of the expanded substring up to the cursor.
+				// expanded contains the line with tabs expanded to spaces and is what we draw.
+				float cursor_px = 0.0f;
+				if (rx_viewport > 0 && coloffs_now < expanded.size()) {
+					std::size_t start = coloffs_now;
+					std::size_t end = std::min(expanded.size(), start + rx_viewport);
+					// Measure substring width in pixels
+					ImVec2 sz = ImGui::CalcTextSize(expanded.c_str() + start,
+									expanded.c_str() + end);
+					cursor_px = sz.x;
+				}
+				ImVec2 p0 = ImVec2(line_pos.x + cursor_px, line_pos.y);
 				ImVec2 p1 = ImVec2(p0.x + space_w, p0.y + line_h);
 				ImU32 col = IM_COL32(200, 200, 255, 128); // soft highlight
 				ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
