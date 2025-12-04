@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <cerrno>
 
 namespace fs = std::filesystem;
 
@@ -16,6 +17,25 @@ namespace kte {
 namespace {
 constexpr std::uint8_t MAGIC[8] = {'K', 'T', 'E', '_', 'S', 'W', 'P', '\0'};
 constexpr std::uint32_t VERSION = 1;
+
+// Write all bytes in buf to fd, handling EINTR and partial writes.
+static bool write_full(int fd, const void *buf, size_t len)
+{
+    const std::uint8_t *p = static_cast<const std::uint8_t *>(buf);
+    while (len > 0) {
+        ssize_t n = ::write(fd, p, len);
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            return false;
+        }
+        if (n == 0)
+            return false; // shouldn't happen for regular files; treat as error
+        p += static_cast<size_t>(n);
+        len -= static_cast<size_t>(n);
+    }
+    return true;
+}
 }
 
 
@@ -403,10 +423,12 @@ SwapManager::process_one(const Pending &p)
 	if (!p.payload.empty())
 		c = crc32(p.payload.data(), p.payload.size(), c);
 
-	// Write
-	(void) ::write(ctx.fd, head, sizeof(head));
-	if (!p.payload.empty())
-		(void) ::write(ctx.fd, p.payload.data(), p.payload.size());
-	(void) ::write(ctx.fd, &c, sizeof(c));
+    // Write (handle partial writes and check results)
+    bool ok = write_full(ctx.fd, head, sizeof(head));
+    if (ok && !p.payload.empty())
+        ok = write_full(ctx.fd, p.payload.data(), p.payload.size());
+    if (ok)
+        ok = write_full(ctx.fd, &c, sizeof(c));
+    (void) ok; // stage 1: best-effort; future work could mark ctx error state
 }
 } // namespace kte
