@@ -3772,7 +3772,9 @@ cmd_reflow_paragraph(CommandContext &ctx)
 	ensure_at_least_one_line(*buf);
 	auto &rows             = buf->Rows();
 	std::size_t y          = buf->Cury();
-	int width              = ctx.count > 0 ? ctx.count : 72;
+	// Treat a universal-argument count of 1 as "no width specified".
+	// Editor::UArgGet() returns 1 when no explicit count was provided.
+	int width = ctx.count > 1 ? ctx.count : 72;
 	std::size_t para_start = y;
 	while (para_start > 0 && !rows[para_start - 1].empty())
 		--para_start;
@@ -4199,8 +4201,9 @@ InstallDefaultCommands()
 	CommandRegistry::Register(
 		{CommandId::UnindentRegion, "unindent-region", "Unindent region", cmd_unindent_region});
 	CommandRegistry::Register({
-		CommandId::ReflowParagraph, "reflow-paragraph", "Reflow paragraph to column width", cmd_reflow_paragraph
-	});
+				      CommandId::ReflowParagraph, "reflow-paragraph",
+				      "Reflow paragraph to column width", cmd_reflow_paragraph
+				  });
 	// Read-only
 	CommandRegistry::Register({
 		CommandId::ToggleReadOnly, "toggle-read-only", "Toggle buffer read-only", cmd_toggle_read_only
