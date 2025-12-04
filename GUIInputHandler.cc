@@ -63,66 +63,66 @@ map_key(const SDL_Keycode key,
 	// Movement and basic keys
 	// These keys exit k-prefix mode if active (user pressed C-k then a special key).
 	switch (key) {
-	case SDLK_LEFT:
-		k_prefix = false;
-		out = {true, CommandId::MoveLeft, "", 0};
-		return true;
-	case SDLK_RIGHT:
-		k_prefix = false;
-		out = {true, CommandId::MoveRight, "", 0};
-		return true;
-	case SDLK_UP:
-		k_prefix = false;
-		out = {true, CommandId::MoveUp, "", 0};
-		return true;
-	case SDLK_DOWN:
-		k_prefix = false;
-		out = {true, CommandId::MoveDown, "", 0};
-		return true;
-	case SDLK_HOME:
-		k_prefix = false;
-		out = {true, CommandId::MoveHome, "", 0};
-		return true;
-	case SDLK_END:
-		k_prefix = false;
-		out = {true, CommandId::MoveEnd, "", 0};
-		return true;
-	case SDLK_PAGEUP:
-		k_prefix = false;
-		out = {true, CommandId::PageUp, "", 0};
-		return true;
-	case SDLK_PAGEDOWN:
-		k_prefix = false;
-		out = {true, CommandId::PageDown, "", 0};
-		return true;
-	case SDLK_DELETE:
-		k_prefix = false;
-		out = {true, CommandId::DeleteChar, "", 0};
-		return true;
-	case SDLK_BACKSPACE:
-		k_prefix = false;
-		out = {true, CommandId::Backspace, "", 0};
-		return true;
-	case SDLK_TAB:
-		// Insert a literal tab character when not interpreting a k-prefix suffix.
-		// If k-prefix is active, let the k-prefix handler below consume the key
-		// (so Tab doesn't leave k-prefix stuck).
-		if (!k_prefix) {
-			out = {true, CommandId::InsertText, std::string("\t"), 0};
+		case SDLK_LEFT:
+			k_prefix = false;
+			out = {true, CommandId::MoveLeft, "", 0};
 			return true;
-		}
-		break; // fall through so k-prefix handler can process
-	case SDLK_RETURN:
-	case SDLK_KP_ENTER:
-		out = {true, CommandId::Newline, "", 0};
-		return true;
-	case SDLK_ESCAPE:
-		k_prefix = false;
-		esc_meta       = true; // next key will be treated as Meta
-		out.hasCommand = false; // no immediate command for bare ESC in GUI
-		return true;
-	default:
-		break;
+		case SDLK_RIGHT:
+			k_prefix = false;
+			out = {true, CommandId::MoveRight, "", 0};
+			return true;
+		case SDLK_UP:
+			k_prefix = false;
+			out = {true, CommandId::MoveUp, "", 0};
+			return true;
+		case SDLK_DOWN:
+			k_prefix = false;
+			out = {true, CommandId::MoveDown, "", 0};
+			return true;
+		case SDLK_HOME:
+			k_prefix = false;
+			out = {true, CommandId::MoveHome, "", 0};
+			return true;
+		case SDLK_END:
+			k_prefix = false;
+			out = {true, CommandId::MoveEnd, "", 0};
+			return true;
+		case SDLK_PAGEUP:
+			k_prefix = false;
+			out = {true, CommandId::PageUp, "", 0};
+			return true;
+		case SDLK_PAGEDOWN:
+			k_prefix = false;
+			out = {true, CommandId::PageDown, "", 0};
+			return true;
+		case SDLK_DELETE:
+			k_prefix = false;
+			out = {true, CommandId::DeleteChar, "", 0};
+			return true;
+		case SDLK_BACKSPACE:
+			k_prefix = false;
+			out = {true, CommandId::Backspace, "", 0};
+			return true;
+		case SDLK_TAB:
+			// Insert a literal tab character when not interpreting a k-prefix suffix.
+			// If k-prefix is active, let the k-prefix handler below consume the key
+			// (so Tab doesn't leave k-prefix stuck).
+			if (!k_prefix) {
+				out = {true, CommandId::InsertText, std::string("\t"), 0};
+				return true;
+			}
+			break; // fall through so k-prefix handler can process
+		case SDLK_RETURN:
+		case SDLK_KP_ENTER:
+			out = {true, CommandId::Newline, "", 0};
+			return true;
+		case SDLK_ESCAPE:
+			k_prefix = false;
+			esc_meta       = true; // next key will be treated as Meta
+			out.hasCommand = false; // no immediate command for bare ESC in GUI
+			return true;
+		default:
+			break;
 	}
 
 	// If we are in k-prefix, interpret the very next key via the C-k keymap immediately.
@@ -295,284 +295,288 @@ GUIInputHandler::ProcessSDLEvent(const SDL_Event &e)
 	MappedInput mi;
 	bool produced = false;
 	switch (e.type) {
-	case SDL_MOUSEWHEEL: {
-		// Let ImGui handle mouse wheel when it wants to capture the mouse
-		// (e.g., when hovering the editor child window with scrollbars).
-		// This enables native vertical and horizontal scrolling behavior in GUI.
-		if (ImGui::GetIO().WantCaptureMouse)
-			return false;
-		// Otherwise, fallback to mapping vertical wheel to editor scroll commands.
-		int dy = e.wheel.y;
+		case SDL_MOUSEWHEEL: {
+			// Let ImGui handle mouse wheel when it wants to capture the mouse
+			// (e.g., when hovering the editor child window with scrollbars).
+			// This enables native vertical and horizontal scrolling behavior in GUI.
+			if (ImGui::GetIO().WantCaptureMouse)
+				return false;
+			// Otherwise, fallback to mapping vertical wheel to editor scroll commands.
+			int dy = e.wheel.y;
 #ifdef SDL_MOUSEWHEEL_FLIPPED
-		if (e.wheel.direction == SDL_MOUSEWHEEL_FLIPPED)
-			dy = -dy;
+			if (e.wheel.direction == SDL_MOUSEWHEEL_FLIPPED)
+				dy = -dy;
 #endif
-		if (dy != 0) {
-			int repeat   = dy > 0 ? dy : -dy;
-			CommandId id = dy > 0 ? CommandId::ScrollUp : CommandId::ScrollDown;
-			std::lock_guard<std::mutex> lk(mu_);
-			for (int i = 0; i < repeat; ++i) {
-				q_.push(MappedInput{true, id, std::string(), 0});
-			}
-			return true; // consumed
-		}
-		return false;
-	}
-	case SDL_KEYDOWN: {
-		// Remember state before mapping; used for TEXTINPUT suppression heuristics
-		const bool was_k_prefix = k_prefix_;
-		const bool was_esc_meta = esc_meta_;
-		SDL_Keymod mods         = SDL_Keymod(e.key.keysym.mod);
-		const SDL_Keycode key   = e.key.keysym.sym;
-
-		// Handle Paste: Ctrl+V (Windows/Linux) or Cmd+V (macOS)
-		// Note: SDL defines letter keycodes in lowercase only (e.g., SDLK_v). Shift does not change keycode.
-		if ((mods & (KMOD_CTRL | KMOD_GUI)) && (key == SDLK_v)) {
-			char *clip = SDL_GetClipboardText();
-			if (clip) {
-				std::string text(clip);
-				SDL_free(clip);
-				// Split on '\n' and enqueue as InsertText/Newline commands
+			if (dy != 0) {
+				int repeat   = dy > 0 ? dy : -dy;
+				CommandId id = dy > 0 ? CommandId::ScrollUp : CommandId::ScrollDown;
 				std::lock_guard<std::mutex> lk(mu_);
-				std::size_t start = 0;
-				while (start <= text.size()) {
-					std::size_t pos = text.find('\n', start);
-					std::string_view segment;
-					bool has_nl = (pos != std::string::npos);
-					if (has_nl) {
-						segment = std::string_view(text).substr(start, pos - start);
-					} else {
-						segment = std::string_view(text).substr(start);
-					}
-					if (!segment.empty()) {
-						MappedInput ins{true, CommandId::InsertText, std::string(segment), 0};
-						q_.push(ins);
-					}
-					if (has_nl) {
-						MappedInput nl{true, CommandId::Newline, std::string(), 0};
-						q_.push(nl);
-						start = pos + 1;
-					} else {
-						break;
-					}
+				for (int i = 0; i < repeat; ++i) {
+					q_.push(MappedInput{true, id, std::string(), 0});
 				}
-				// Suppress the corresponding TEXTINPUT that may follow
-				suppress_text_input_once_ = true;
 				return true; // consumed
 			}
+			return false;
 		}
+		case SDL_KEYDOWN: {
+			// Remember state before mapping; used for TEXTINPUT suppression heuristics
+			const bool was_k_prefix = k_prefix_;
+			const bool was_esc_meta = esc_meta_;
+			SDL_Keymod mods         = SDL_Keymod(e.key.keysym.mod);
+			const SDL_Keycode key   = e.key.keysym.sym;
 
-		produced = map_key(key, mods,
-		                   k_prefix_, esc_meta_,
-		                   uarg_active_, uarg_collecting_, uarg_negative_, uarg_had_digits_, uarg_value_,
-		                   uarg_text_,
-		                   mi);
+			// Handle Paste: Ctrl+V (Windows/Linux) or Cmd+V (macOS)
+			// Note: SDL defines letter keycodes in lowercase only (e.g., SDLK_v). Shift does not change keycode.
+			if ((mods & (KMOD_CTRL | KMOD_GUI)) && (key == SDLK_v)) {
+				char *clip = SDL_GetClipboardText();
+				if (clip) {
+					std::string text(clip);
+					SDL_free(clip);
+					// Split on '\n' and enqueue as InsertText/Newline commands
+					std::lock_guard<std::mutex> lk(mu_);
+					std::size_t start = 0;
+					while (start <= text.size()) {
+						std::size_t pos = text.find('\n', start);
+						std::string_view segment;
+						bool has_nl = (pos != std::string::npos);
+						if (has_nl) {
+							segment = std::string_view(text).substr(start, pos - start);
+						} else {
+							segment = std::string_view(text).substr(start);
+						}
+						if (!segment.empty()) {
+							MappedInput ins{
+								true, CommandId::InsertText, std::string(segment), 0
+							};
+							q_.push(ins);
+						}
+						if (has_nl) {
+							MappedInput nl{true, CommandId::Newline, std::string(), 0};
+							q_.push(nl);
+							start = pos + 1;
+						} else {
+							break;
+						}
+					}
+					// Suppress the corresponding TEXTINPUT that may follow
+					suppress_text_input_once_ = true;
+					return true; // consumed
+				}
+			}
 
-		// If we inserted a TAB on KEYDOWN, suppress any subsequent SDL_TEXTINPUT
-		// for this keystroke to avoid double insertion on platforms that emit it.
-		if (produced && mi.hasCommand && mi.id == CommandId::InsertText && mi.arg == "\t") {
-			suppress_text_input_once_ = true;
-		}
+			produced = map_key(key, mods,
+			                   k_prefix_, esc_meta_,
+			                   uarg_active_, uarg_collecting_, uarg_negative_, uarg_had_digits_,
+			                   uarg_value_,
+			                   uarg_text_,
+			                   mi);
 
-		// If we just consumed a universal-argument digit or '-' on KEYDOWN and emitted UArgStatus,
-		// suppress the subsequent SDL_TEXTINPUT for this keystroke to avoid duplicating the digit in status.
-		if (produced && mi.hasCommand && mi.id == CommandId::UArgStatus) {
-			// Digits without shift, or a plain '-'
-			const bool is_digit_key = (key >= SDLK_0 && key <= SDLK_9) && !(mods & KMOD_SHIFT);
-			const bool is_minus_key = (key == SDLK_MINUS);
-			if (uarg_active_ && uarg_collecting_ &&(is_digit_key || is_minus_key)) {
+			// Note: Do NOT suppress SDL_TEXTINPUT after inserting a TAB. Most platforms
+			// do not emit TEXTINPUT for Tab, and suppressing here would incorrectly
+			// eat the next character typed if no TEXTINPUT follows the Tab press.
+
+			// If we just consumed a universal-argument digit or '-' on KEYDOWN and emitted UArgStatus,
+			// suppress the subsequent SDL_TEXTINPUT for this keystroke to avoid duplicating the digit in status.
+			if (produced && mi.hasCommand && mi.id == CommandId::UArgStatus) {
+				// Digits without shift, or a plain '-'
+				const bool is_digit_key = (key >= SDLK_0 && key <= SDLK_9) && !(mods & KMOD_SHIFT);
+				const bool is_minus_key = (key == SDLK_MINUS);
+				if (uarg_active_ && uarg_collecting_ &&(is_digit_key || is_minus_key)) {
+					suppress_text_input_once_ = true;
+				}
+			}
+
+			// Suppress the immediate following SDL_TEXTINPUT when a printable KEYDOWN was used as a
+			// k-prefix suffix or Meta (Alt/ESC) chord, regardless of whether a command was produced.
+			const bool is_alt              = (mods & (KMOD_ALT | KMOD_LALT | KMOD_RALT)) != 0;
+			const bool is_printable_letter = (key >= SDLK_SPACE && key <= SDLK_z);
+			const bool is_non_text_key     =
+				key == SDLK_TAB || key == SDLK_RETURN || key == SDLK_KP_ENTER ||
+				key == SDLK_BACKSPACE || key == SDLK_DELETE || key == SDLK_ESCAPE ||
+				key == SDLK_LEFT || key == SDLK_RIGHT || key == SDLK_UP || key == SDLK_DOWN ||
+				key == SDLK_HOME || key == SDLK_END || key == SDLK_PAGEUP || key == SDLK_PAGEDOWN;
+
+			bool should_suppress = false;
+			if (!is_non_text_key) {
+				// Any k-prefix suffix that is printable should suppress TEXTINPUT, even if no
+				// command mapped (we report unknown via status instead of inserting text).
+				if (was_k_prefix && is_printable_letter) {
+					should_suppress = true;
+				}
+				// Alt/Meta + letter can also generate TEXTINPUT on some platforms
+				const bool is_meta_symbol = (
+					key == SDLK_COMMA || key == SDLK_PERIOD || key == SDLK_LESS || key ==
+					SDLK_GREATER);
+				if (is_alt && ((key >= SDLK_a && key <= SDLK_z) || is_meta_symbol)) {
+					should_suppress = true;
+				}
+				// ESC-as-meta followed by printable
+				if (was_esc_meta && (is_printable_letter || is_meta_symbol)) {
+					should_suppress = true;
+				}
+			}
+			if (should_suppress) {
 				suppress_text_input_once_ = true;
 			}
-		}
-
-		// Suppress the immediate following SDL_TEXTINPUT when a printable KEYDOWN was used as a
-		// k-prefix suffix or Meta (Alt/ESC) chord, regardless of whether a command was produced.
-		const bool is_alt              = (mods & (KMOD_ALT | KMOD_LALT | KMOD_RALT)) != 0;
-		const bool is_printable_letter = (key >= SDLK_SPACE && key <= SDLK_z);
-		const bool is_non_text_key     =
-			key == SDLK_TAB || key == SDLK_RETURN || key == SDLK_KP_ENTER ||
-			key == SDLK_BACKSPACE || key == SDLK_DELETE || key == SDLK_ESCAPE ||
-			key == SDLK_LEFT || key == SDLK_RIGHT || key == SDLK_UP || key == SDLK_DOWN ||
-			key == SDLK_HOME || key == SDLK_END || key == SDLK_PAGEUP || key == SDLK_PAGEDOWN;
-
-		bool should_suppress = false;
-		if (!is_non_text_key) {
-			// Any k-prefix suffix that is printable should suppress TEXTINPUT, even if no
-			// command mapped (we report unknown via status instead of inserting text).
-			if (was_k_prefix && is_printable_letter) {
-				should_suppress = true;
-			}
-			// Alt/Meta + letter can also generate TEXTINPUT on some platforms
-			const bool is_meta_symbol = (
-				key == SDLK_COMMA || key == SDLK_PERIOD || key == SDLK_LESS || key == SDLK_GREATER);
-			if (is_alt && ((key >= SDLK_a && key <= SDLK_z) || is_meta_symbol)) {
-				should_suppress = true;
-			}
-			// ESC-as-meta followed by printable
-			if (was_esc_meta && (is_printable_letter || is_meta_symbol)) {
-				should_suppress = true;
-			}
-		}
-		if (should_suppress) {
-			suppress_text_input_once_ = true;
-		}
-		break;
-	}
-	case SDL_TEXTINPUT: {
-		// If the previous KEYDOWN requested suppression of this TEXTINPUT (e.g.,
-		// we already handled a uarg digit/minus or a k-prefix printable), do it
-		// immediately before any other handling to avoid duplicates.
-		if (suppress_text_input_once_) {
-			suppress_text_input_once_ = false; // consume suppression
-			produced                  = true; // consumed event
 			break;
 		}
-
-		// If universal argument collection is active, consume digit/minus TEXTINPUT
-		if (uarg_active_ && uarg_collecting_) {
-			const char *txt = e.text.text;
-			if (txt && *txt) {
-				unsigned char c0 = static_cast<unsigned char>(txt[0]);
-				if (c0 >= '0' && c0 <= '9') {
-					int d = c0 - '0';
-					if (!uarg_had_digits_) {
-						uarg_value_      = 0;
-						uarg_had_digits_ = true;
-					}
-					if (uarg_value_ < 100000000) {
-						uarg_value_ = uarg_value_ * 10 + d;
-					}
-					uarg_text_.push_back(static_cast<char>(c0));
-					mi       = {true, CommandId::UArgStatus, uarg_text_, 0};
-					produced = true; // consumed and enqueued status update
-					break;
-				}
-				if (c0 == '-' && !uarg_had_digits_ && !uarg_negative_) {
-					uarg_negative_ = true;
-					uarg_text_     = "-";
-					mi             = {true, CommandId::UArgStatus, uarg_text_, 0};
-					produced       = true;
-					break;
-				}
+		case SDL_TEXTINPUT: {
+			// If the previous KEYDOWN requested suppression of this TEXTINPUT (e.g.,
+			// we already handled a uarg digit/minus or a k-prefix printable), do it
+			// immediately before any other handling to avoid duplicates.
+			if (suppress_text_input_once_) {
+				suppress_text_input_once_ = false; // consume suppression
+				produced                  = true; // consumed event
+				break;
 			}
-			// End collection and allow this TEXTINPUT to be processed normally below
-			uarg_collecting_ = false;
-		}
 
-		// If we are still in k-prefix and KEYDOWN path didn't handle the suffix,
-		// use TEXTINPUT's actual character (handles Shifted letters on macOS) to map the k-command.
-		if (k_prefix_) {
-			k_prefix_       = false;
-			esc_meta_       = false;
-			const char *txt = e.text.text;
-			if (txt && *txt) {
-				unsigned char c0 = static_cast<unsigned char>(txt[0]);
-				int ascii_key    = 0;
-				if (c0 < 0x80) {
-					ascii_key = static_cast<int>(c0);
-				}
-				if (ascii_key != 0) {
-					// Map via k-prefix table; do not pass Ctrl for TEXTINPUT case
-					CommandId id;
-					bool mapped = KLookupKCommand(ascii_key, false, id);
-					// Diagnostics: log any k-prefix TEXTINPUT suffix mapping
-					char disp = (ascii_key >= 0x20 && ascii_key <= 0x7e)
-						            ? static_cast<char>(ascii_key)
-						            : '?';
-					std::fprintf(stderr,
-					             "[kge] k-prefix TEXTINPUT suffix: ascii=%d '%c' mapped=%d id=%d\n",
-					             ascii_key, disp, mapped ? 1 : 0,
-					             mapped ? static_cast<int>(id) : -1);
-					std::fflush(stderr);
-					if (mapped) {
-						mi       = {true, id, "", 0};
-						produced = true;
-						break; // handled; do not insert text
-					} else {
-						// Unknown k-command via TEXTINPUT path
-						int shown = KLowerAscii(ascii_key);
-						char c    = (shown >= 0x20 && shown <= 0x7e)
-							         ? static_cast<char>(shown)
-							         : '?';
-						std::string arg(1, c);
-						mi       = {true, CommandId::UnknownKCommand, arg, 0};
-						produced = true;
+			// If universal argument collection is active, consume digit/minus TEXTINPUT
+			if (uarg_active_ && uarg_collecting_) {
+				const char *txt = e.text.text;
+				if (txt && *txt) {
+					unsigned char c0 = static_cast<unsigned char>(txt[0]);
+					if (c0 >= '0' && c0 <= '9') {
+						int d = c0 - '0';
+						if (!uarg_had_digits_) {
+							uarg_value_      = 0;
+							uarg_had_digits_ = true;
+						}
+						if (uarg_value_ < 100000000) {
+							uarg_value_ = uarg_value_ * 10 + d;
+						}
+						uarg_text_.push_back(static_cast<char>(c0));
+						mi       = {true, CommandId::UArgStatus, uarg_text_, 0};
+						produced = true; // consumed and enqueued status update
+						break;
+					}
+					if (c0 == '-' && !uarg_had_digits_ && !uarg_negative_) {
+						uarg_negative_ = true;
+						uarg_text_     = "-";
+						mi             = {true, CommandId::UArgStatus, uarg_text_, 0};
+						produced       = true;
 						break;
 					}
 				}
+				// End collection and allow this TEXTINPUT to be processed normally below
+				uarg_collecting_ = false;
 			}
-			// Consume even if no usable ascii was found
-			produced = true;
-			break;
-		}
-		// (suppression is handled at the top of this case)
-		// Handle ESC-as-meta fallback on TEXTINPUT: some platforms emit only TEXTINPUT
-		// for the printable part after ESC. If esc_meta_ is set, translate first char.
-		if (esc_meta_) {
-			esc_meta_       = false; // consume meta prefix
-			const char *txt = e.text.text;
-			if (txt && *txt) {
-				// Parse first UTF-8 codepoint (we care only about common ASCII cases)
-				unsigned char c0 = static_cast<unsigned char>(txt[0]);
-				// Map a few common symbols/letters used in our ESC map
-				int ascii_key = 0;
-				if (c0 < 0x80) {
-					// ASCII path
-					ascii_key = static_cast<int>(c0);
-					ascii_key = KLowerAscii(ascii_key);
-				} else {
-					// Basic handling for macOS Option combos that might produce ≤/≥
-					// Compare the UTF-8 prefix for these two symbols
-					std::string s(txt);
-					if (s.rfind("\xE2\x89\xA4", 0) == 0) {
-						// U+2264 '≤'
-						ascii_key = '<';
-					} else if (s.rfind("\xE2\x89\xA5", 0) == 0) {
-						// U+2265 '≥'
-						ascii_key = '>';
+
+			// If we are still in k-prefix and KEYDOWN path didn't handle the suffix,
+			// use TEXTINPUT's actual character (handles Shifted letters on macOS) to map the k-command.
+			if (k_prefix_) {
+				k_prefix_       = false;
+				esc_meta_       = false;
+				const char *txt = e.text.text;
+				if (txt && *txt) {
+					unsigned char c0 = static_cast<unsigned char>(txt[0]);
+					int ascii_key    = 0;
+					if (c0 < 0x80) {
+						ascii_key = static_cast<int>(c0);
+					}
+					if (ascii_key != 0) {
+						// Map via k-prefix table; do not pass Ctrl for TEXTINPUT case
+						CommandId id;
+						bool mapped = KLookupKCommand(ascii_key, false, id);
+						// Diagnostics: log any k-prefix TEXTINPUT suffix mapping
+						char disp = (ascii_key >= 0x20 && ascii_key <= 0x7e)
+							            ? static_cast<char>(ascii_key)
+							            : '?';
+						std::fprintf(stderr,
+						             "[kge] k-prefix TEXTINPUT suffix: ascii=%d '%c' mapped=%d id=%d\n",
+						             ascii_key, disp, mapped ? 1 : 0,
+						             mapped ? static_cast<int>(id) : -1);
+						std::fflush(stderr);
+						if (mapped) {
+							mi       = {true, id, "", 0};
+							produced = true;
+							break; // handled; do not insert text
+						} else {
+							// Unknown k-command via TEXTINPUT path
+							int shown = KLowerAscii(ascii_key);
+							char c    = (shown >= 0x20 && shown <= 0x7e)
+								         ? static_cast<char>(shown)
+								         : '?';
+							std::string arg(1, c);
+							mi       = {true, CommandId::UnknownKCommand, arg, 0};
+							produced = true;
+							break;
+						}
 					}
 				}
-				if (ascii_key != 0) {
-					CommandId id;
-					if (KLookupEscCommand(ascii_key, id)) {
-						mi       = {true, id, "", 0};
-						produced = true;
-						break;
-					}
-				}
-			}
-			// If we get here, swallow the TEXTINPUT (do not insert stray char)
-			produced = true;
-			break;
-		}
-		if (!k_prefix_ && e.text.text[0] != '\0') {
-			// Ensure InsertText never carries a newline; those must originate from KEYDOWN
-			std::string text(e.text.text);
-			// Strip any CR/LF that might slip through from certain platforms/IME behaviors
-			text.erase(std::remove(text.begin(), text.end(), '\n'), text.end());
-			text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
-			if (!text.empty()) {
-				mi.hasCommand = true;
-				mi.id         = CommandId::InsertText;
-				mi.arg        = std::move(text);
-				mi.count      = 0;
-				produced      = true;
-			} else {
-				// Nothing to insert after filtering; consume the event
+				// Consume even if no usable ascii was found
 				produced = true;
+				break;
 			}
-		} else {
-			produced = true; // consumed while k-prefix is active
+			// (suppression is handled at the top of this case)
+			// Handle ESC-as-meta fallback on TEXTINPUT: some platforms emit only TEXTINPUT
+			// for the printable part after ESC. If esc_meta_ is set, translate first char.
+			if (esc_meta_) {
+				esc_meta_       = false; // consume meta prefix
+				const char *txt = e.text.text;
+				if (txt && *txt) {
+					// Parse first UTF-8 codepoint (we care only about common ASCII cases)
+					unsigned char c0 = static_cast<unsigned char>(txt[0]);
+					// Map a few common symbols/letters used in our ESC map
+					int ascii_key = 0;
+					if (c0 < 0x80) {
+						// ASCII path
+						ascii_key = static_cast<int>(c0);
+						ascii_key = KLowerAscii(ascii_key);
+					} else {
+						// Basic handling for macOS Option combos that might produce ≤/≥
+						// Compare the UTF-8 prefix for these two symbols
+						std::string s(txt);
+						if (s.rfind("\xE2\x89\xA4", 0) == 0) {
+							// U+2264 '≤'
+							ascii_key = '<';
+						} else if (s.rfind("\xE2\x89\xA5", 0) == 0) {
+							// U+2265 '≥'
+							ascii_key = '>';
+						}
+					}
+					if (ascii_key != 0) {
+						CommandId id;
+						if (KLookupEscCommand(ascii_key, id)) {
+							mi       = {true, id, "", 0};
+							produced = true;
+							break;
+						}
+					}
+				}
+				// If we get here, swallow the TEXTINPUT (do not insert stray char)
+				produced = true;
+				break;
+			}
+			if (!k_prefix_ && e.text.text[0] != '\0') {
+				// Ensure InsertText never carries a newline; those must originate from KEYDOWN
+				std::string text(e.text.text);
+				// Strip any CR/LF that might slip through from certain platforms/IME behaviors
+				text.erase(std::remove(text.begin(), text.end(), '\n'), text.end());
+				text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+				if (!text.empty()) {
+					mi.hasCommand = true;
+					mi.id         = CommandId::InsertText;
+					mi.arg        = std::move(text);
+					mi.count      = 0;
+					produced      = true;
+				} else {
+					// Nothing to insert after filtering; consume the event
+					produced = true;
+				}
+			} else {
+				produced = true; // consumed while k-prefix is active
+			}
+			break;
 		}
-		break;
-	}
-	default:
-		break;
+		default:
+			break;
 	}
 
 	if (produced && mi.hasCommand) {
 		// Attach universal-argument count if present, then clear the state
 		if (uarg_active_ &&mi
+
+
 		
 		.
 		id != CommandId::UArgStatus
