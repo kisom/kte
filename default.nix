@@ -54,17 +54,23 @@ stdenv.mkDerivation {
 
     mkdir -p $out/bin
     cp kte $out/bin/
-
     installManPage ../docs/kte.1
 
-  ''
-  + lib.optionalString graphical ''
-    cp kge $out/bin/
-    installManPage ../docs/kge.1
-    mkdir -p $out/share/icons
-    cp ../kge.png $out/share/icons/
-  ''
-  + ''
+    ${lib.optionalString graphical ''
+      mkdir -p $out/bin
+  
+    ${if graphical-qt then ''
+        cp kge $out/bin/kge-qt
+      '' else ''
+        cp kge $out/bin/kge
+      ''}
+
+      installManPage ../docs/kge.1
+
+      mkdir -p $out/share/icons/hicolor/256x256/apps
+      cp ../kge.png $out/share/icons/hicolor/256x256/apps/kge.png
+    ''}
+
     runHook postInstall
   '';
 }
