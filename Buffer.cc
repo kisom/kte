@@ -2,6 +2,7 @@
 #include <sstream>
 #include <filesystem>
 #include <cstdlib>
+#include <limits>
 
 #include "Buffer.h"
 #include "UndoSystem.h"
@@ -29,13 +30,17 @@ Buffer::Buffer(const std::string &path)
 // Copy constructor/assignment: perform a deep copy of core fields; reinitialize undo for the new buffer.
 Buffer::Buffer(const Buffer &other)
 {
-	curx_           = other.curx_;
-	cury_           = other.cury_;
-	rx_             = other.rx_;
-	nrows_          = other.nrows_;
-	rowoffs_        = other.rowoffs_;
-	coloffs_        = other.coloffs_;
-	rows_           = other.rows_;
+	curx_    = other.curx_;
+	cury_    = other.cury_;
+	rx_      = other.rx_;
+	nrows_   = other.nrows_;
+	rowoffs_ = other.rowoffs_;
+	coloffs_ = other.coloffs_;
+	rows_    = other.rows_;
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	content_          = other.content_;
+	rows_cache_dirty_ = other.rows_cache_dirty_;
+#endif
 	filename_       = other.filename_;
 	is_file_backed_ = other.is_file_backed_;
 	dirty_          = other.dirty_;
@@ -77,13 +82,17 @@ Buffer::operator=(const Buffer &other)
 {
 	if (this == &other)
 		return *this;
-	curx_           = other.curx_;
-	cury_           = other.cury_;
-	rx_             = other.rx_;
-	nrows_          = other.nrows_;
-	rowoffs_        = other.rowoffs_;
-	coloffs_        = other.coloffs_;
-	rows_           = other.rows_;
+	curx_    = other.curx_;
+	cury_    = other.cury_;
+	rx_      = other.rx_;
+	nrows_   = other.nrows_;
+	rowoffs_ = other.rowoffs_;
+	coloffs_ = other.coloffs_;
+	rows_    = other.rows_;
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	content_          = other.content_;
+	rows_cache_dirty_ = other.rows_cache_dirty_;
+#endif
 	filename_       = other.filename_;
 	is_file_backed_ = other.is_file_backed_;
 	dirty_          = other.dirty_;
@@ -141,6 +150,10 @@ Buffer::Buffer(Buffer &&other) noexcept
 	syntax_enabled_ = other.syntax_enabled_;
 	filetype_       = std::move(other.filetype_);
 	highlighter_    = std::move(other.highlighter_);
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	content_          = std::move(other.content_);
+	rows_cache_dirty_ = other.rows_cache_dirty_;
+#endif
 	// Update UndoSystem's buffer reference to point to this object
 	if (undo_sys_) {
 		undo_sys_->UpdateBufferReference(*this);
@@ -178,6 +191,10 @@ Buffer::operator=(Buffer &&other) noexcept
 	filetype_       = std::move(other.filetype_);
 	highlighter_    = std::move(other.highlighter_);
 
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	content_          = std::move(other.content_);
+	rows_cache_dirty_ = other.rows_cache_dirty_;
+#endif
 	// Update UndoSystem's buffer reference to point to this object
 	if (undo_sys_) {
 		undo_sys_->UpdateBufferReference(*this);
@@ -229,6 +246,12 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		mark_set_  = false;
 		mark_curx_ = mark_cury_ = 0;
 
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+		// Empty PieceTable
+		content_.Clear();
+		rows_cache_dirty_ = true;
+#endif
+
 		return true;
 	}
 
@@ -238,6 +261,22 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		return false;
 	}
 
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	// Read entire file into PieceTable as-is
+	std::string data;
+	in.seekg(0, std::ios::end);
+	auto sz = in.tellg();
+	if (sz > 0) {
+		data.resize(static_cast<std::size_t>(sz));
+		in.seekg(0, std::ios::beg);
+		in.read(data.data(), static_cast<std::streamsize>(data.size()));
+	}
+	content_.Clear();
+	if (!data.empty())
+		content_.Append(data.data(), data.size());
+	rows_cache_dirty_ = true;
+	nrows_            = 0; // not used under adapter
+#else
 	// Detect if file ends with a newline so we can preserve a final empty line
 	// in our in-memory representation (mg-style semantics).
 	bool ends_with_nl = false;
@@ -278,7 +317,8 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		}
 	}
 
-	nrows_          = rows_.size();
+	nrows_ = rows_.size();
+#endif
 	filename_       = norm;
 	is_file_backed_ = true;
 	dirty_          = false;
@@ -313,6 +353,12 @@ Buffer::Save(std::string &err) const
 		err = "Failed to open for write: " + filename_;
 		return false;
 	}
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	const char *d = content_.Data();
+	std::size_t n = content_.Size();
+	if (d && n)
+		out.write(d, static_cast<std::streamsize>(n));
+#else
 	for (std::size_t i = 0; i < rows_.size(); ++i) {
 		const char *d = rows_[i].Data();
 		std::size_t n = rows_[i].Size();
@@ -322,6 +368,7 @@ Buffer::Save(std::string &err) const
 			out.put('\n');
 		}
 	}
+#endif
 	if (!out.good()) {
 		err = "Write error";
 		return false;
@@ -360,6 +407,14 @@ Buffer::SaveAs(const std::string &path, std::string &err)
 		err = "Failed to open for write: " + out_path;
 		return false;
 	}
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	{
+		const char *d = content_.Data();
+		std::size_t n = content_.Size();
+		if (d && n)
+			out.write(d, static_cast<std::streamsize>(n));
+	}
+#else
 	for (std::size_t i = 0; i < rows_.size(); ++i) {
 		const char *d = rows_[i].Data();
 		std::size_t n = rows_[i].Size();
@@ -369,6 +424,7 @@ Buffer::SaveAs(const std::string &path, std::string &err)
 			out.put('\n');
 		}
 	}
+#endif
 	if (!out.good()) {
 		err = "Write error";
 		return false;
@@ -389,7 +445,11 @@ Buffer::AsString() const
 	if (this->Dirty()) {
 		ss << "*";
 	}
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	ss << ">: " << content_.LineCount() << " lines";
+#else
 	ss << ">: " << rows_.size() << " lines";
+#endif
 	return ss.str();
 }
 
@@ -398,6 +458,19 @@ Buffer::AsString() const
 void
 Buffer::insert_text(int row, int col, std::string_view text)
 {
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	if (row < 0)
+		row = 0;
+	if (col < 0)
+		col = 0;
+	const std::size_t off = content_.LineColToByteOffset(static_cast<std::size_t>(row),
+	                                                     static_cast<std::size_t>(col));
+	if (!text.empty()) {
+		content_.Insert(off, text.data(), text.size());
+		rows_cache_dirty_ = true;
+	}
+	return;
+#else
 	if (row < 0)
 		row = 0;
 	if (static_cast<std::size_t>(row) > rows_.size())
@@ -409,8 +482,9 @@ Buffer::insert_text(int row, int col, std::string_view text)
 
 	auto y = static_cast<std::size_t>(row);
 	auto x = static_cast<std::size_t>(col);
-	if (x > rows_[y].size())
+	if (x > rows_[y].size()) {
 		x = rows_[y].size();
+	}
 
 	std::string remain(text);
 	while (true) {
@@ -432,12 +506,110 @@ Buffer::insert_text(int row, int col, std::string_view text)
 		remain.erase(0, pos + 1);
 	}
 	// Do not set dirty here; UndoSystem will manage state/dirty externally
+#endif
 }
+
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+// ===== Adapter helpers for PieceTable-backed Buffer =====
+void
+Buffer::ensure_rows_cache() const
+{
+	if (!rows_cache_dirty_)
+		return;
+	rows_.clear();
+	const std::size_t lc = content_.LineCount();
+	rows_.reserve(lc);
+	for (std::size_t i = 0; i < lc; ++i) {
+		rows_.emplace_back(content_.GetLine(i));
+	}
+	// Keep nrows_ in sync for any legacy code that still reads it
+	const_cast<Buffer *>(this)->nrows_ = rows_.size();
+	rows_cache_dirty_                  = false;
+}
+
+std::size_t
+Buffer::content_LineCount_() const
+{
+	return content_.LineCount();
+}
+#endif
 
 
 void
 Buffer::delete_text(int row, int col, std::size_t len)
 {
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	if (len == 0)
+		return;
+	if (row < 0)
+		row = 0;
+	if (col < 0)
+		col = 0;
+	std::size_t start = content_.LineColToByteOffset(static_cast<std::size_t>(row), static_cast<std::size_t>(col));
+	// Walk len logical characters across lines to compute end offset
+	std::size_t r                = static_cast<std::size_t>(row);
+	std::size_t c                = static_cast<std::size_t>(col);
+	std::size_t remaining        = len;
+	const std::size_t line_count = content_.LineCount();
+	while (remaining > 0 && r < line_count) {
+		auto range = content_.GetLineRange(r); // [start,end)
+		// Compute end of line excluding trailing '\n'
+		std::size_t line_end = range.second;
+		if (line_end > range.first) {
+			// If last char is '\n', don't count in-column span
+			std::string last = content_.GetRange(line_end - 1, 1);
+			if (!last.empty() && last[0] == '\n') {
+				line_end -= 1;
+			}
+		}
+		std::size_t cur_off = content_.LineColToByteOffset(r, c);
+		std::size_t in_line = (cur_off < line_end) ? (line_end - cur_off) : 0;
+		if (remaining <= in_line) {
+			// All within current line
+			std::size_t end = cur_off + remaining;
+			content_.Delete(start, end - start);
+			rows_cache_dirty_ = true;
+			return;
+		}
+		// Consume rest of line
+		remaining -= in_line;
+		std::size_t end = cur_off + in_line;
+		// If there is a next line and remaining > 0, consider consuming the newline as 1
+		if (r + 1 < line_count) {
+			if (remaining > 0) {
+				// newline
+				end += 1;
+				remaining -= 1;
+			}
+			// Move to next line
+			r += 1;
+			c = 0;
+			// Update start deletion length so far by postponing until we know final end; we keep start fixed
+			if (remaining == 0) {
+				content_.Delete(start, end - start);
+				rows_cache_dirty_ = true;
+				return;
+			}
+			// Continue loop with updated r/c; but also keep track of 'end' as current consumed position
+			// Rather than tracking incrementally, we will recompute cur_off at top of loop.
+			// However, we need to carry forward the consumed part; we can temporarily store 'end' in start_of_next
+			// To simplify, after loop finishes we will compute final end using current r/c using remaining.
+		} else {
+			// No next line; delete to file end
+			std::size_t total = content_.Size();
+			content_.Delete(start, total - start);
+			rows_cache_dirty_ = true;
+			return;
+		}
+	}
+	// If loop ended because remaining==0 at a line boundary
+	if (remaining == 0) {
+		std::size_t end = content_.LineColToByteOffset(r, c);
+		content_.Delete(start, end - start);
+		rows_cache_dirty_ = true;
+	}
+	return;
+#else
 	if (rows_.empty() || len == 0)
 		return;
 	if (row < 0)
@@ -470,12 +642,25 @@ Buffer::delete_text(int row, int col, std::size_t len)
 			break;
 		}
 	}
+#endif
 }
 
 
 void
 Buffer::split_line(int row, const int col)
 {
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	if (row < 0)
+		row = 0;
+	if (col < 0)
+		row = 0;
+	const std::size_t off = content_.LineColToByteOffset(static_cast<std::size_t>(row),
+	                                                     static_cast<std::size_t>(col));
+	const char nl = '\n';
+	content_.Insert(off, &nl, 1);
+	rows_cache_dirty_ = true;
+	return;
+#else
 	if (row < 0) {
 		row = 0;
 	}
@@ -488,12 +673,26 @@ Buffer::split_line(int row, const int col)
 	const auto tail = rows_[y].substr(x);
 	rows_[y].erase(x);
 	rows_.insert(rows_.begin() + static_cast<std::ptrdiff_t>(y + 1), Line(tail));
+#endif
 }
 
 
 void
 Buffer::join_lines(int row)
 {
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	if (row < 0)
+		row = 0;
+	std::size_t r = static_cast<std::size_t>(row);
+	if (r + 1 >= content_.LineCount())
+		return;
+	// Delete the newline between line r and r+1
+	std::size_t end_of_line = content_.LineColToByteOffset(r, std::numeric_limits<std::size_t>::max());
+	// end_of_line now equals line end (clamped before newline). The newline should be exactly at this position.
+	content_.Delete(end_of_line, 1);
+	rows_cache_dirty_ = true;
+	return;
+#else
 	if (row < 0) {
 		row = 0;
 	}
@@ -505,28 +704,57 @@ Buffer::join_lines(int row)
 
 	rows_[y] += rows_[y + 1];
 	rows_.erase(rows_.begin() + static_cast<std::ptrdiff_t>(y + 1));
+#endif
 }
 
 
 void
 Buffer::insert_row(int row, const std::string_view text)
 {
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	if (row < 0)
+		row = 0;
+	std::size_t off = content_.LineColToByteOffset(static_cast<std::size_t>(row), 0);
+	if (!text.empty())
+		content_.Insert(off, text.data(), text.size());
+	const char nl = '\n';
+	content_.Insert(off + text.size(), &nl, 1);
+	rows_cache_dirty_ = true;
+	return;
+#else
 	if (row < 0)
 		row = 0;
 	if (static_cast<std::size_t>(row) > rows_.size())
 		row = static_cast<int>(rows_.size());
 	rows_.insert(rows_.begin() + row, Line(std::string(text)));
+#endif
 }
 
 
 void
 Buffer::delete_row(int row)
 {
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	if (row < 0)
+		row = 0;
+	std::size_t r = static_cast<std::size_t>(row);
+	if (r >= content_.LineCount())
+		return;
+	auto range = content_.GetLineRange(r); // [start,end)
+	// If not last line, ensure we include the separating newline by using end as-is (which points to next line start)
+	// If last line, end may equal total_size_. We still delete [start,end) which removes the last line content.
+	std::size_t start = range.first;
+	std::size_t end   = range.second;
+	content_.Delete(start, end - start);
+	rows_cache_dirty_ = true;
+	return;
+#else
 	if (row < 0)
 		row = 0;
 	if (static_cast<std::size_t>(row) >= rows_.size())
 		return;
 	rows_.erase(rows_.begin() + row);
+#endif
 }
 
 

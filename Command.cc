@@ -83,7 +83,7 @@ ensure_cursor_visible(const Editor &ed, Buffer &buf)
 	}
 
 	// Clamp vertical offset to available content
-	const auto total_rows = buf.Rows().size();
+	const auto total_rows = buf.Nrows();
 	if (content_rows < total_rows) {
 		std::size_t max_rowoffs = total_rows - content_rows;
 		if (rowoffs > max_rowoffs)
@@ -115,8 +115,7 @@ cmd_center_on_cursor(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
-	const auto &rows    = buf->Rows();
-	std::size_t total   = rows.size();
+	std::size_t total   = buf->Nrows();
 	std::size_t content = ctx.editor.ContentRows();
 	if (content == 0)
 		content = 1;
@@ -139,8 +138,8 @@ cmd_center_on_cursor(CommandContext &ctx)
 static void
 ensure_at_least_one_line(Buffer &buf)
 {
-	if (buf.Rows().empty()) {
-		buf.Rows().emplace_back("");
+	if (buf.Nrows() == 0) {
+		buf.insert_row(0, "");
 		buf.SetDirty(true);
 	}
 }
@@ -254,33 +253,57 @@ extract_region_text(const Buffer &buf, std::size_t sx, std::size_t sy, std::size
 static void
 delete_region(Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::size_t ey)
 {
-	auto &rows = buf.Rows();
-	if (rows.empty())
+	std::size_t nrows = buf.Nrows();
+	if (nrows == 0)
 		return;
-	if (sy >= rows.size())
+	if (sy >= nrows)
 		return;
-	if (ey >= rows.size())
-		ey = rows.size() - 1;
+	if (ey >= nrows)
+		ey = nrows - 1;
 	if (sy == ey) {
-		auto &line     = rows[sy];
-		std::size_t xs = std::min(sx, line.size());
-		std::size_t xe = std::min(ex, line.size());
+		// Single line: delete text from xs to xe
+		const auto &rows = buf.Rows();
+		const auto &line = rows[sy];
+		std::size_t xs   = std::min(sx, line.size());
+		std::size_t xe   = std::min(ex, line.size());
 		if (xe < xs)
 			std::swap(xs, xe);
-		line.erase(xs, xe - xs);
+		buf.delete_text(static_cast<int>(sy), static_cast<int>(xs), xe - xs);
 	} else {
-		// Keep prefix of first and suffix of last then join
-		std::string prefix = rows[sy].substr(0, std::min(sx, rows[sy].size()));
-		std::string suffix;
-		{
-			const auto &last = rows[ey];
-			std::size_t xe   = std::min(ex, last.size());
-			suffix           = last.substr(xe);
+		// Multi-line: delete from (sx,sy) to (ex,ey)
+		// Strategy: 
+		// 1. Save suffix of last line (from ex to end)
+		// 2. Delete tail of first line (from sx to end)
+		// 3. Delete all lines from sy+1 to ey (inclusive)
+		// 4. Insert saved suffix at end of first line
+		// 5. Join if needed (no, suffix is appended directly)
+
+		const auto &rows           = buf.Rows();
+		std::size_t first_line_len = rows[sy].size();
+		std::size_t last_line_len  = rows[ey].size();
+		std::size_t xs             = std::min(sx, first_line_len);
+		std::size_t xe             = std::min(ex, last_line_len);
+
+		// Save suffix of last line before any modifications
+		std::string suffix = rows[ey].substr(xe);
+
+		// Delete tail of first line (from xs to end)
+		if (xs < first_line_len) {
+			buf.delete_text(static_cast<int>(sy), static_cast<int>(xs), first_line_len - xs);
 		}
-		rows[sy] = prefix + suffix;
-		// erase middle lines and the last line
-		rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(sy + 1),
-		           rows.begin() + static_cast<std::ptrdiff_t>(ey + 1));
+
+		// Delete lines from ey down to sy+1 (reverse order to preserve indices)
+		for (std::size_t i = ey; i > sy; --i) {
+			buf.delete_row(static_cast<int>(i));
+		}
+
+		// Append saved suffix to first line
+		if (!suffix.empty()) {
+			// Get current length of line sy after deletions
+			const auto &rows_after = buf.Rows();
+			std::size_t line_len   = rows_after[sy].size();
+			buf.insert_text(static_cast<int>(sy), static_cast<int>(line_len), suffix);
+		}
 	}
 	buf.SetCursor(sx, sy);
 	buf.SetDirty(true);
@@ -291,15 +314,19 @@ delete_region(Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::
 static void
 insert_text_at_cursor(Buffer &buf, const std::string &text)
 {
-	auto &rows    = buf.Rows();
-	std::size_t y = buf.Cury();
-	std::size_t x = buf.Curx();
-	if (y > rows.size())
-		y = rows.size();
-	if (rows.empty())
-		rows.emplace_back("");
-	if (y >= rows.size())
-		rows.emplace_back("");
+	std::size_t nrows = buf.Nrows();
+	std::size_t y     = buf.Cury();
+	std::size_t x     = buf.Curx();
+	if (y > nrows)
+		y = nrows;
+	if (nrows == 0) {
+		buf.insert_row(0, "");
+		nrows = 1;
+	}
+	if (y >= nrows) {
+		buf.insert_row(static_cast<int>(nrows), "");
+		nrows = buf.Nrows();
+	}
 
 	std::size_t cur_y = y;
 	std::size_t cur_x = x;
@@ -309,25 +336,28 @@ insert_text_at_cursor(Buffer &buf, const std::string &text)
 		auto pos = remain.find('\n');
 		if (pos == std::string::npos) {
 			// insert remaining into current line
-			if (cur_y >= rows.size())
-				rows.emplace_back("");
+			nrows = buf.Nrows();
+			if (cur_y >= nrows) {
+				buf.insert_row(static_cast<int>(nrows), "");
+			}
+			const auto &rows = buf.Rows();
 			if (cur_x > rows[cur_y].size())
 				cur_x = rows[cur_y].size();
-			rows[cur_y].insert(cur_x, remain);
+			buf.insert_text(static_cast<int>(cur_y), static_cast<int>(cur_x), remain);
 			cur_x += remain.size();
 			break;
 		}
 		// insert segment before newline
 		std::string seg = remain.substr(0, pos);
-		if (cur_x > rows[cur_y].size())
-			cur_x = rows[cur_y].size();
-		rows[cur_y].insert(cur_x, seg);
+		{
+			const auto &rows = buf.Rows();
+			if (cur_x > rows[cur_y].size())
+				cur_x = rows[cur_y].size();
+		}
+		buf.insert_text(static_cast<int>(cur_y), static_cast<int>(cur_x), seg);
 		// split line at cur_x + seg.size()
 		cur_x += seg.size();
-		std::string after = rows[cur_y].substr(cur_x);
-		rows[cur_y].erase(cur_x);
-		// create new line after current with the 'after' tail
-		rows.insert(rows.begin() + static_cast<std::ptrdiff_t>(cur_y + 1), Buffer::Line(after));
+		buf.split_line(static_cast<int>(cur_y), static_cast<int>(cur_x));
 		// move to start of next line
 		cur_y += 1;
 		cur_x = 0;
@@ -410,10 +440,8 @@ cmd_move_cursor_to(CommandContext &ctx)
 					std::size_t bco = buf->Coloffs();
 					std::size_t by  = bro + vy;
 					// Clamp by to existing lines later
-					auto &lines2 = buf->Rows();
-					if (lines2.empty()) {
-						lines2.emplace_back("");
-					}
+					ensure_at_least_one_line(*buf);
+					const auto &lines2 = buf->Rows();
 					if (by >= lines2.size())
 						by = lines2.size() - 1;
 					std::string line2     = static_cast<std::string>(lines2[by]);
@@ -430,10 +458,8 @@ cmd_move_cursor_to(CommandContext &ctx)
 			}
 		}
 	}
-	auto &lines = buf->Rows();
-	if (lines.empty()) {
-		lines.emplace_back("");
-	}
+	ensure_at_least_one_line(*buf);
+	const auto &lines = buf->Rows();
 	if (row >= lines.size())
 		row = lines.size() - 1;
 	std::string line = static_cast<std::string>(lines[row]);
@@ -2122,20 +2148,24 @@ cmd_show_help(CommandContext &ctx)
 	};
 
 	auto populate_from_text = [](Buffer &b, const std::string &text) {
-		auto &rows = b.Rows();
-		rows.clear();
+		// Clear existing rows
+		while (b.Nrows() > 0) {
+			b.delete_row(0);
+		}
+		// Parse text and insert rows
 		std::string line;
 		line.reserve(128);
+		int row_idx = 0;
 		for (char ch: text) {
 			if (ch == '\n') {
-				rows.emplace_back(line);
+				b.insert_row(row_idx++, line);
 				line.clear();
 			} else if (ch != '\r') {
 				line.push_back(ch);
 			}
 		}
 		// Add last line (even if empty)
-		rows.emplace_back(line);
+		b.insert_row(row_idx, line);
 		b.SetDirty(false);
 		b.SetCursor(0, 0);
 		b.SetOffsets(0, 0);

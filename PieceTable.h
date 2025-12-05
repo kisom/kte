@@ -68,6 +68,30 @@ public:
 		return materialized_.capacity();
 	}
 
+
+	// ===== New buffer-wide API (Phase 1) =====
+	// Byte-based editing operations
+	void Insert(std::size_t byte_offset, const char *text, std::size_t len);
+
+	void Delete(std::size_t byte_offset, std::size_t len);
+
+	// Line-based queries
+	[[nodiscard]] std::size_t LineCount() const; // number of logical lines
+	[[nodiscard]] std::string GetLine(std::size_t line_num) const;
+
+	[[nodiscard]] std::pair<std::size_t, std::size_t> GetLineRange(std::size_t line_num) const; // [start,end)
+
+	// Position conversion
+	[[nodiscard]] std::pair<std::size_t, std::size_t> ByteOffsetToLineCol(std::size_t byte_offset) const;
+
+	[[nodiscard]] std::size_t LineColToByteOffset(std::size_t row, std::size_t col) const;
+
+	// Substring extraction
+	[[nodiscard]] std::string GetRange(std::size_t byte_offset, std::size_t len) const;
+
+	// Simple search utility; returns byte offset or npos
+	[[nodiscard]] std::size_t Find(const std::string &needle, std::size_t start = 0) const;
+
 private:
 	enum class Source : unsigned char { Original, Add };
 
@@ -83,6 +107,17 @@ private:
 
 	void materialize() const;
 
+	// Helper: locate piece index and inner offset for a global byte offset
+	[[nodiscard]] std::pair<std::size_t, std::size_t> locate(std::size_t byte_offset) const;
+
+	// Helper: try to coalesce neighboring pieces around index
+	void coalesceNeighbors(std::size_t index);
+
+	// Line index support (rebuilt lazily on demand)
+	void InvalidateLineIndex() const;
+
+	void RebuildLineIndex() const;
+
 	// Underlying storages
 	std::string original_; // unused for builder use-case, but kept for API symmetry
 	std::string add_;
@@ -91,4 +126,8 @@ private:
 	mutable std::string materialized_;
 	mutable bool dirty_     = true;
 	std::size_t total_size_ = 0;
+
+	// Cached line index: starting byte offset of each line (always contains at least 1 entry: 0)
+	mutable std::vector<std::size_t> line_index_;
+	mutable bool line_index_dirty_ = true;
 };

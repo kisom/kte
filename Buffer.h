@@ -10,6 +10,9 @@
 #include <string_view>
 
 #include "AppendBuffer.h"
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+#include "PieceTable.h"
+#endif
 #include "UndoSystem.h"
 #include <cstdint>
 #include <memory>
@@ -63,7 +66,11 @@ public:
 
 	[[nodiscard]] std::size_t Nrows() const
 	{
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+		return content_LineCount_();
+#else
 		return nrows_;
+#endif
 	}
 
 
@@ -255,13 +262,23 @@ public:
 
 	[[nodiscard]] const std::vector<Line> &Rows() const
 	{
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+		ensure_rows_cache();
 		return rows_;
+#else
+		return rows_;
+#endif
 	}
 
 
 	[[nodiscard]] std::vector<Line> &Rows()
 	{
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+		ensure_rows_cache();
 		return rows_;
+#else
+		return rows_;
+#endif
 	}
 
 
@@ -460,7 +477,22 @@ private:
 	std::size_t rx_      = 0; // render x (tabs expanded)
 	std::size_t nrows_   = 0; // number of rows
 	std::size_t rowoffs_ = 0, coloffs_ = 0; // viewport offsets
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	mutable std::vector<Line> rows_; // materialized cache of rows (without trailing newlines)
+#else
 	std::vector<Line> rows_; // buffer rows (without trailing newlines)
+#endif
+#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	// When using the adapter, PieceTable is the source of truth.
+	PieceTable content_{};
+	mutable bool rows_cache_dirty_ = true; // invalidate on edits / I/O
+
+	// Helper to rebuild rows_ from content_
+	void ensure_rows_cache() const;
+
+	// Helper to query content_.LineCount() while keeping header minimal
+	std::size_t content_LineCount_() const;
+#endif
 	std::string filename_;
 	bool is_file_backed_   = false;
 	bool dirty_            = false;
