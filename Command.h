@@ -106,6 +106,8 @@ enum class CommandId {
 	// Syntax highlighting
 	Syntax, // ":syntax on|off|reload"
 	SetOption, // generic ":set key=value" (v1: filetype=<lang>)
+	// Viewport control
+	CenterOnCursor, // center the viewport on the current cursor line (C-k k)
 };
 
 

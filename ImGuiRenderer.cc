@@ -140,7 +140,8 @@ ImGuiRenderer::Draw(Editor &ed)
 		prev_buf_coloffs = buf_coloffs;
 
 		// Synchronize cursor and scrolling.
-		// Ensure the cursor is visible even on the first frame or when it didn't move.
+		// Ensure the cursor is visible, but avoid aggressive centering so that
+		// the same lines remain visible until the cursor actually goes off-screen.
 		{
 			// Compute visible row range using the child window height
 			float child_h  = ImGui::GetWindowHeight();
@@ -151,15 +152,30 @@ ImGuiRenderer::Draw(Editor &ed)
 			long last_row = first_row + vis_rows - 1;
 
 			long cyr = static_cast<long>(cy);
-			if (cyr < first_row || cyr > last_row) {
-				float target = (static_cast<float>(cyr) - std::max(0L, vis_rows / 2)) * row_h;
+			if (cyr < first_row) {
+				// Scroll just enough to bring the cursor line to the top
+				float target = static_cast<float>(cyr) * row_h;
+				if (target < 0.f)
+					target = 0.f;
+				float max_y = ImGui::GetScrollMaxY();
+				if (max_y >= 0.f && target > max_y)
+					target = max_y;
+				ImGui::SetScrollY(target);
+				scroll_y  = ImGui::GetScrollY();
+				first_row = static_cast<long>(scroll_y / row_h);
+				last_row  = first_row + vis_rows - 1;
+			} else if (cyr > last_row) {
+				// Scroll just enough to bring the cursor line to the bottom
+				long new_first = cyr - vis_rows + 1;
+				if (new_first < 0)
+					new_first = 0;
+				float target = static_cast<float>(new_first) * row_h;
 				float max_y  = ImGui::GetScrollMaxY();
 				if (target < 0.f)
 					target = 0.f;
 				if (max_y >= 0.f && target > max_y)
 					target = max_y;
 				ImGui::SetScrollY(target);
-				// refresh local variables
 				scroll_y  = ImGui::GetScrollY();
 				first_row = static_cast<long>(scroll_y / row_h);
 				last_row  = first_row + vis_rows - 1;

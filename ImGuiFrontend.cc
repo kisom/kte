@@ -272,10 +272,11 @@ GUIFrontend::Step(Editor &ed, bool &running)
 		float disp_w = io.DisplaySize.x > 0 ? io.DisplaySize.x : static_cast<float>(width_);
 		float disp_h = io.DisplaySize.y > 0 ? io.DisplaySize.y : static_cast<float>(height_);
 
-		// Account for the GUI window padding and the status bar height used in GUIRenderer
-		const ImGuiStyle &style = ImGui::GetStyle();
-		float pad_x             = style.WindowPadding.x;
-		float pad_y             = style.WindowPadding.y;
+		// Account for the GUI window padding and the status bar height used in ImGuiRenderer.
+		// ImGuiRenderer pushes WindowPadding = (6,6) every frame, so use the same constants here
+		// to avoid mismatches that would cause premature scrolling.
+		const float pad_x = 6.0f;
+		const float pad_y = 6.0f;
 		// Status bar reserves one frame height (with spacing) inside the window
 		float status_h = ImGui::GetFrameHeightWithSpacing();
 

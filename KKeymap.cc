@@ -42,6 +42,9 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 	case 'a':
 		out = CommandId::MarkAllAndJumpEnd;
 		return true;
+	case 'k':
+		out = CommandId::CenterOnCursor; // C-k k center current line
+		return true;
 	case 'b':
 		out = CommandId::BufferSwitchStart;
 		return true;

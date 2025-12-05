@@ -20,9 +20,10 @@ cmake -S . -B cmake-build-release -DBUILD_GUI=ON -DCMAKE_BUILD_TYPE=Release -DEN
 
 cd cmake-build-release-qt
 make clean
-rm -fr kge.app*
+rm -fr kge.app* kge-qt.app*
 make
-zip -r kge.app.zip kge.app 
-sha256sum kge.app.zip
+mv kge.app kge-qt.app
+zip -r kge-qt.app.zip kge-qt.app 
+sha256sum kge-qt.app.zip
 open .
 cd ..

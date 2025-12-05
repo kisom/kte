@@ -109,6 +109,33 @@ ensure_cursor_visible(const Editor &ed, Buffer &buf)
 }
 
 
+static bool
+cmd_center_on_cursor(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	const auto &rows    = buf->Rows();
+	std::size_t total   = rows.size();
+	std::size_t content = ctx.editor.ContentRows();
+	if (content == 0)
+		content = 1;
+	std::size_t cy          = buf->Cury();
+	std::size_t half        = content / 2;
+	std::size_t new_rowoffs = (cy > half) ? (cy - half) : 0;
+	// Clamp to valid range
+	if (total > content) {
+		std::size_t max_rowoffs = total - content;
+		if (new_rowoffs > max_rowoffs)
+			new_rowoffs = max_rowoffs;
+	} else {
+		new_rowoffs = 0;
+	}
+	buf->SetOffsets(new_rowoffs, buf->Coloffs());
+	return true;
+}
+
+
 static void
 ensure_at_least_one_line(Buffer &buf)
 {
@@ -4445,6 +4472,11 @@ InstallDefaultCommands()
 	// Syntax highlighting (public commands)
 	CommandRegistry::Register({CommandId::Syntax, "syntax", "Syntax: on|off|reload", cmd_syntax, true});
 	CommandRegistry::Register({CommandId::SetOption, "set", "Set option: key=value", cmd_set_option, true});
+	// Viewport control
+	CommandRegistry::Register({
+		CommandId::CenterOnCursor, "center-on-cursor", "Center viewport on current line", cmd_center_on_cursor,
+		false, false
+	});
 }
 
 
