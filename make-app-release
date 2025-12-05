@@ -14,3 +14,15 @@ zip -r kge.app.zip kge.app
 sha256sum kge.app.zip
 open .
 cd ..
+
+mkdir -p cmake-build-release-qt
+cmake -S . -B cmake-build-release -DBUILD_GUI=ON -DCMAKE_BUILD_TYPE=Release -DENABLE_ASAN=OFF
+
+cd cmake-build-release-qt
+make clean
+rm -fr kge.app*
+make
+zip -r kge.app.zip kge.app 
+sha256sum kge.app.zip
+open .
+cd ..
