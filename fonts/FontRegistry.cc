@@ -17,11 +17,21 @@ InstallDefaultFonts()
 	));
 	FontRegistry::Instance().Register(std::make_unique<Font>(
 		"brassmono",
-		BrassMono::DefaultFontBoldCompressedData,
-		BrassMono::DefaultFontBoldCompressedSize
+		BrassMono::DefaultFontRegularCompressedData,
+		BrassMono::DefaultFontRegularCompressedSize
 	));
 	FontRegistry::Instance().Register(std::make_unique<Font>(
-		"brassmonocode",
+	    "brassmono-bold",
+	    BrassMono::DefaultFontBoldCompressedData,
+	    BrassMono::DefaultFontBoldCompressedSize
+	));
+	FontRegistry::Instance().Register(std::make_unique<Font>(
+	    "brassmonocode",
+	    BrassMonoCode::DefaultFontRegularCompressedData,
+	    BrassMonoCode::DefaultFontRegularCompressedSize
+	));
+	FontRegistry::Instance().Register(std::make_unique<Font>(
+		"brassmonocode-bold",
 		BrassMonoCode::DefaultFontBoldCompressedData,
 		BrassMonoCode::DefaultFontBoldCompressedSize
 	));
