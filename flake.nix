@@ -13,9 +13,9 @@
       packages = eachSystem (system: rec {
         default = kte;
         full = kge;
-        kte = (pkgsFor system).callPackage ./default.nix { graphical = false; };
-        kge = (pkgsFor system).callPackage ./default.nix { graphical = true; };
-        qt  = (pkgsFor system).callPackage ./default.nix { graphical-qt = true; };
+        kte = (pkgsFor system).callPackage ./default.nix { graphical = false; graphical-qt = false; };
+        kge = (pkgsFor system).callPackage ./default.nix { graphical = true;  graphical-qt = false; };
+        qt  = (pkgsFor system).callPackage ./default.nix { graphical = true;  graphical-qt = true;  };
       });
     };
 }

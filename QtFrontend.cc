@@ -142,9 +142,11 @@ protected:
 				p.save();
 				p.setClipRect(viewport);
 
-				// Iterate visible lines
-				for (std::size_t i = rowoffs, vis_idx = 0; i < last_row; ++i, ++vis_idx) {
-					const auto &line   = static_cast<const std::string &>(lines[i]);
+    // Iterate visible lines
+    for (std::size_t i = rowoffs, vis_idx = 0; i < last_row; ++i, ++vis_idx) {
+        // Materialize the Buffer::Line into a std::string for
+        // regex/iterator usage and general string ops.
+        const std::string line = static_cast<std::string>(lines[i]);
 					const int y        = viewport.y() + static_cast<int>(vis_idx) * line_h;
 					const int baseline = y + fm.ascent();
 
