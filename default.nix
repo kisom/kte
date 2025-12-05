@@ -9,6 +9,7 @@
   installShellFiles,
 
   graphical ? false,
+  graphical-qt ? false,
   ...
 }:
 let
@@ -34,10 +35,15 @@ stdenv.mkDerivation {
     SDL2
     libGL
     xorg.libX11
+  ]
+  ++ lib.optionals graphical-qt [
+    qt5Full
+    qtcreator ## not sure if this is actually needed
   ];
 
   cmakeFlags = [
-    "-DBUILD_GUI=${if graphical then "ON" else "OFF"}"
+    "-DBUILD_GUI=${if graphical or graphical-qt then "ON" else "OFF"}"
+    "-DKTE_USE_QT=${if graphical-qt then "ON" else "OFF"}"
     "-DCMAKE_BUILD_TYPE=Debug"
   ];
 

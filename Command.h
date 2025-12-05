@@ -27,6 +27,8 @@ enum class CommandId {
 	SearchReplace, // begin search & replace (two-step prompt)
 	OpenFileStart, // begin open-file prompt
 	VisualFilePickerToggle,
+	// GUI-only: toggle/show a visual font selector dialog
+	VisualFontPickerToggle,
 	// Buffers
 	BufferSwitchStart, // begin buffer switch prompt
 	BufferClose,

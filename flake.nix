@@ -15,6 +15,7 @@
         full = kge;
         kte = (pkgsFor system).callPackage ./default.nix { graphical = false; };
         kge = (pkgsFor system).callPackage ./default.nix { graphical = true; };
+        qt  = (pkgsFor system).callPackage ./default.nix { graphical-qt = true; }
       });
     };
 }

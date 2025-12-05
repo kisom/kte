@@ -1,11 +1,307 @@
-// GUITheme.h — ImGui theming helpers and background mode
+// GUITheme.h — theming helpers and background mode
 #pragma once
+
+#include <cstddef>
+#include <string>
+#include <algorithm>
+#include <cctype>
+
+#include "Highlight.h"
+
+// Cross-frontend theme change request hook: declared here, defined in Command.cc
+namespace kte {
+extern bool gThemeChangePending;
+extern std::string gThemeChangeRequest; // raw user-provided name
+// Qt GUI: cross-frontend font change hooks and current font state
+extern bool gFontChangePending;
+extern std::string gFontFamilyRequest; // requested family (case-insensitive)
+extern float gFontSizeRequest; // <= 0 means keep size
+extern std::string gCurrentFontFamily; // last applied family (Qt)
+extern float gCurrentFontSize; // last applied size (Qt)
+// Qt GUI: request to show a visual font dialog (set by command handler)
+extern bool gFontDialogRequested;
+}
+
+#if defined(KTE_USE_QT)
+// Qt build: avoid hard dependency on ImGui headers/types.
+// Provide a lightweight color vector matching ImVec4 fields used by renderers.
+struct KteColor {
+	float x{0}, y{0}, z{0}, w{1};
+};
+
+static inline KteColor
+RGBA(unsigned int rgb, float a = 1.0f)
+{
+	const float r = static_cast<float>((rgb >> 16) & 0xFF) / 255.0f;
+	const float g = static_cast<float>((rgb >> 8) & 0xFF) / 255.0f;
+	const float b = static_cast<float>(rgb & 0xFF) / 255.0f;
+	return {r, g, b, a};
+}
+
+namespace kte {
+// Background mode selection for light/dark palettes
+enum class BackgroundMode { Light, Dark };
+
+// Global background mode; default to Dark to match prior defaults
+static inline auto gBackgroundMode = BackgroundMode::Dark;
+
+
+static inline void
+SetBackgroundMode(const BackgroundMode m)
+{
+	gBackgroundMode = m;
+}
+
+
+static inline BackgroundMode
+GetBackgroundMode()
+{
+	return gBackgroundMode;
+}
+
+
+// Minimal GUI palette for Qt builds. This mirrors the defaults used in the ImGui
+// frontend (Nord-ish) and switches for light/dark background mode.
+struct Palette {
+	KteColor bg; // editor background
+	KteColor fg; // default foreground text
+	KteColor sel_bg; // selection background
+	KteColor cur_bg; // cursor cell background
+	KteColor status_bg; // status bar background
+	KteColor status_fg; // status bar foreground
+};
+
+// Optional theme override (Qt): when set, GetPalette() will return this instead
+// of the generic light/dark defaults. This allows honoring theme names in kge.ini.
+static inline bool gPaletteOverride = false;
+static inline Palette gOverridePalette{};
+static inline std::string gOverrideThemeName = ""; // lowercased name
+
+static inline Palette
+GetPalette()
+{
+	const bool dark = (GetBackgroundMode() == BackgroundMode::Dark);
+	if (gPaletteOverride) {
+		return gOverridePalette;
+	}
+	if (dark) {
+		return Palette{
+			/*bg*/ RGBA(0x1C1C1E),
+			/*fg*/ RGBA(0xDCDCDC),
+			/*sel_bg*/ RGBA(0xC8C800, 0.35f),
+			/*cur_bg*/ RGBA(0xC8C8FF, 0.50f),
+			/*status_bg*/ RGBA(0x28282C),
+			/*status_fg*/ RGBA(0xB4B48C)
+		};
+	} else {
+		// Light palette tuned for readability
+		return Palette{
+			/*bg*/ RGBA(0xFBFBFC),
+			/*fg*/ RGBA(0x30343A),
+			/*sel_bg*/ RGBA(0x268BD2, 0.22f),
+			/*cur_bg*/ RGBA(0x000000, 0.15f),
+			/*status_bg*/ RGBA(0xE6E8EA),
+			/*status_fg*/ RGBA(0x50555A)
+		};
+	}
+}
+
+
+// A few named palettes to provide visible differences between themes in Qt.
+// These are approximate and palette-based (no widget style changes like ImGuiStyle).
+static inline Palette
+NordDark()
+{
+	return {
+		/*bg*/RGBA(0x2E3440), /*fg*/RGBA(0xD8DEE9), /*sel_bg*/RGBA(0x88C0D0, 0.25f),
+		/*cur_bg*/RGBA(0x81A1C1, 0.35f), /*status_bg*/RGBA(0x3B4252), /*status_fg*/RGBA(0xE5E9F0)
+	};
+}
+
+
+static inline Palette
+NordLight()
+{
+	return {
+		/*bg*/RGBA(0xECEFF4), /*fg*/RGBA(0x2E3440), /*sel_bg*/RGBA(0x5E81AC, 0.22f),
+		/*cur_bg*/RGBA(0x000000, 0.12f), /*status_bg*/RGBA(0xE5E9F0), /*status_fg*/RGBA(0x4C566A)
+	};
+}
+
+
+static inline Palette
+SolarizedDark()
+{
+	return {
+		/*bg*/RGBA(0x002b36), /*fg*/RGBA(0x93a1a1), /*sel_bg*/RGBA(0x586e75, 0.40f),
+		/*cur_bg*/RGBA(0x657b83, 0.35f), /*status_bg*/RGBA(0x073642), /*status_fg*/RGBA(0xeee8d5)
+	};
+}
+
+
+static inline Palette
+SolarizedLight()
+{
+	return {
+		/*bg*/RGBA(0xfdf6e3), /*fg*/RGBA(0x586e75), /*sel_bg*/RGBA(0x268bd2, 0.25f),
+		/*cur_bg*/RGBA(0x000000, 0.10f), /*status_bg*/RGBA(0xeee8d5), /*status_fg*/RGBA(0x657b83)
+	};
+}
+
+
+static inline Palette
+GruvboxDark()
+{
+	return {
+		/*bg*/RGBA(0x282828), /*fg*/RGBA(0xebdbb2), /*sel_bg*/RGBA(0xd79921, 0.35f),
+		/*cur_bg*/RGBA(0x458588, 0.40f), /*status_bg*/RGBA(0x3c3836), /*status_fg*/RGBA(0xd5c4a1)
+	};
+}
+
+
+static inline Palette
+GruvboxLight()
+{
+	return {
+		/*bg*/RGBA(0xfbf1c7), /*fg*/RGBA(0x3c3836), /*sel_bg*/RGBA(0x076678, 0.22f),
+		/*cur_bg*/RGBA(0x000000, 0.10f), /*status_bg*/RGBA(0xebdbb2), /*status_fg*/RGBA(0x504945)
+	};
+}
+
+
+static inline Palette
+EInk()
+{
+	return {
+		/*bg*/RGBA(0xffffff), /*fg*/RGBA(0x000000), /*sel_bg*/RGBA(0x000000, 0.10f),
+		/*cur_bg*/RGBA(0x000000, 0.12f), /*status_bg*/RGBA(0x000000), /*status_fg*/RGBA(0xffffff)
+	};
+}
+
+
+// Apply a Qt theme by name. Returns true on success. Name matching is case-insensitive and
+// supports common aliases (e.g., "solarized-light" or "solarized light"). If the name conveys
+// a background (light/dark), BackgroundMode is updated to keep SyntaxInk consistent.
+static inline bool
+ApplyQtThemeByName(std::string name)
+{
+	// normalize
+	std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+		return (char) std::tolower(c);
+	});
+	auto has = [&](const std::string &s) {
+		return name.find(s) != std::string::npos;
+	};
+
+	if (name.empty() || name == "default" || name == "nord") {
+		// Choose variant by current background mode
+		if (GetBackgroundMode() == BackgroundMode::Dark) {
+			gOverridePalette = NordDark();
+		} else {
+			gOverridePalette = NordLight();
+		}
+		gPaletteOverride   = true;
+		gOverrideThemeName = "nord";
+		return true;
+	}
+
+	if (has("solarized")) {
+		if (has("light")) {
+			SetBackgroundMode(BackgroundMode::Light);
+			gOverridePalette = SolarizedLight();
+		} else if (has("dark")) {
+			SetBackgroundMode(BackgroundMode::Dark);
+			gOverridePalette = SolarizedDark();
+		} else {
+			// pick from current background
+			gOverridePalette = (GetBackgroundMode() == BackgroundMode::Dark)
+				                   ? SolarizedDark()
+				                   : SolarizedLight();
+		}
+		gPaletteOverride   = true;
+		gOverrideThemeName = "solarized";
+		return true;
+	}
+
+	if (has("gruvbox")) {
+		if (has("light")) {
+			SetBackgroundMode(BackgroundMode::Light);
+			gOverridePalette = GruvboxLight();
+		} else if (has("dark")) {
+			SetBackgroundMode(BackgroundMode::Dark);
+			gOverridePalette = GruvboxDark();
+		} else {
+			gOverridePalette = (GetBackgroundMode() == BackgroundMode::Dark)
+				                   ? GruvboxDark()
+				                   : GruvboxLight();
+		}
+		gPaletteOverride   = true;
+		gOverrideThemeName = "gruvbox";
+		return true;
+	}
+
+	if (has("eink") || has("e-ink") || has("paper")) {
+		SetBackgroundMode(BackgroundMode::Light);
+		gOverridePalette   = EInk();
+		gPaletteOverride   = true;
+		gOverrideThemeName = "eink";
+		return true;
+	}
+
+	// Unknown -> clear override so default light/dark applies; return false.
+	gPaletteOverride = false;
+	gOverrideThemeName.clear();
+	return false;
+}
+
+
+// Minimal SyntaxInk mapping for Qt builds, returning KteColor
+[[maybe_unused]] static KteColor
+SyntaxInk(const TokenKind k)
+{
+	const bool dark    = (GetBackgroundMode() == BackgroundMode::Dark);
+	const KteColor def = dark ? RGBA(0xD8DEE9) : RGBA(0x2E3440);
+	switch (k) {
+	case TokenKind::Keyword:
+		return dark ? RGBA(0x81A1C1) : RGBA(0x5E81AC);
+	case TokenKind::Type:
+		return dark ? RGBA(0x8FBCBB) : RGBA(0x4C566A);
+	case TokenKind::String:
+		return dark ? RGBA(0xA3BE8C) : RGBA(0x6C8E5E);
+	case TokenKind::Char:
+		return dark ? RGBA(0xA3BE8C) : RGBA(0x6C8E5E);
+	case TokenKind::Comment:
+		return dark ? RGBA(0x616E88) : RGBA(0x7A869A);
+	case TokenKind::Number:
+		return dark ? RGBA(0xEBCB8B) : RGBA(0xB58900);
+	case TokenKind::Preproc:
+		return dark ? RGBA(0xD08770) : RGBA(0xAF3A03);
+	case TokenKind::Constant:
+		return dark ? RGBA(0xB48EAD) : RGBA(0x7B4B7F);
+	case TokenKind::Function:
+		return dark ? RGBA(0x88C0D0) : RGBA(0x3465A4);
+	case TokenKind::Operator:
+		return dark ? RGBA(0x2E3440) : RGBA(0x2E3440);
+	case TokenKind::Punctuation:
+		return dark ? RGBA(0xECEFF4) : RGBA(0x2E3440);
+	case TokenKind::Identifier:
+		return def;
+	case TokenKind::Whitespace:
+		return def;
+	case TokenKind::Error:
+		return dark ? RGBA(0xBF616A) : RGBA(0xCC0000);
+	case TokenKind::Default: default:
+		return def;
+	}
+}
+} // namespace kte
+
+#else
 
 #include <imgui.h>
 #include <vector>
 #include <memory>
 #include <string>
-#include <cstddef>
 #include <algorithm>
 #include <cctype>
 
@@ -645,3 +941,5 @@ SyntaxInk(const TokenKind k)
 	}
 }
 } // namespace kte
+
+#endif // KTE_USE_QT

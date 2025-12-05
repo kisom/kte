@@ -18,10 +18,30 @@
 #include "syntax/HighlighterEngine.h"
 #include "syntax/CppHighlighter.h"
 #ifdef KTE_BUILD_GUI
-#include "GUITheme.h"
-#include "fonts/FontRegistry.h"
-#include "imgui.h"
+#  include "GUITheme.h"
+#  if !defined(KTE_USE_QT)
+#    include "fonts/FontRegistry.h"
+#    include "imgui.h"
+#  endif
+#  if defined(KTE_USE_QT)
+#    include <QFontDatabase>
+#    include <QStringList>
+#  endif
 #endif
+
+// Define cross-frontend theme change flags declared in GUITheme.h
+namespace kte {
+bool gThemeChangePending = false;
+std::string gThemeChangeRequest;
+// Qt font change globals
+bool gFontChangePending = false;
+std::string gFontFamilyRequest;
+float gFontSizeRequest = 0.0f;
+std::string gCurrentFontFamily;
+float gCurrentFontSize = 0.0f;
+// Request Qt visual font dialog
+bool gFontDialogRequested = false;
+}
 
 
 // Keep buffer viewport offsets so that the cursor stays within the visible
@@ -104,24 +124,24 @@ static bool
 is_mutating_command(CommandId id)
 {
 	switch (id) {
-		case CommandId::InsertText:
-		case CommandId::Newline:
-		case CommandId::Backspace:
-		case CommandId::DeleteChar:
-		case CommandId::KillToEOL:
-		case CommandId::KillLine:
-		case CommandId::Yank:
-		case CommandId::DeleteWordPrev:
-		case CommandId::DeleteWordNext:
-		case CommandId::IndentRegion:
-		case CommandId::UnindentRegion:
-		case CommandId::ReflowParagraph:
-		case CommandId::KillRegion:
-		case CommandId::Undo:
-		case CommandId::Redo:
-			return true;
-		default:
-			return false;
+	case CommandId::InsertText:
+	case CommandId::Newline:
+	case CommandId::Backspace:
+	case CommandId::DeleteChar:
+	case CommandId::KillToEOL:
+	case CommandId::KillLine:
+	case CommandId::Yank:
+	case CommandId::DeleteWordPrev:
+	case CommandId::DeleteWordNext:
+	case CommandId::IndentRegion:
+	case CommandId::UnindentRegion:
+	case CommandId::ReflowParagraph:
+	case CommandId::KillRegion:
+	case CommandId::Undo:
+	case CommandId::Redo:
+		return true;
+	default:
+		return false;
 	}
 }
 
@@ -914,8 +934,8 @@ cmd_set_option(CommandContext &ctx)
 }
 
 
-// GUI theme cycling commands (available in GUI build; show message otherwise)
-#ifdef KTE_BUILD_GUI
+// GUI theme cycling commands (available in GUI build; ImGui-only for now)
+#if defined(KTE_BUILD_GUI) && !defined(KTE_USE_QT)
 static bool
 cmd_theme_next(CommandContext &ctx)
 {
@@ -951,7 +971,7 @@ cmd_theme_prev(CommandContext &ctx)
 
 
 // Theme set by name command
-#ifdef KTE_BUILD_GUI
+#if defined(KTE_BUILD_GUI) && !defined(KTE_USE_QT)
 static bool
 cmd_theme_set_by_name(const CommandContext &ctx)
 {
@@ -995,15 +1015,41 @@ cmd_theme_set_by_name(const CommandContext &ctx)
 static bool
 cmd_theme_set_by_name(CommandContext &ctx)
 {
+#  if defined(KTE_BUILD_GUI) && defined(KTE_USE_QT)
+	// Qt GUI build: schedule theme change for frontend
+	std::string name = ctx.arg;
+	// trim spaces
+	auto ltrim = [](std::string &s) {
+		s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}));
+	};
+	auto rtrim = [](std::string &s) {
+		s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}).base(), s.end());
+	};
+	ltrim(name);
+	rtrim(name);
+	if (name.empty()) {
+		ctx.editor.SetStatus("theme: provide a name (e.g., nord, solarized-dark, gruvbox-light, eink)");
+		return true;
+	}
+	kte::gThemeChangeRequest = name;
+	kte::gThemeChangePending = true;
+	ctx.editor.SetStatus(std::string("Theme requested: ") + name);
+	return true;
+#  else
 	(void) ctx;
 	// No-op in terminal build
 	return true;
+#  endif
 }
 #endif
 
 
 // Font set by name (GUI)
-#ifdef KTE_BUILD_GUI
+#if defined(KTE_BUILD_GUI) && !defined(KTE_USE_QT)
 static bool
 cmd_font_set_by_name(const CommandContext &ctx)
 {
@@ -1056,14 +1102,38 @@ cmd_font_set_by_name(const CommandContext &ctx)
 static bool
 cmd_font_set_by_name(CommandContext &ctx)
 {
-	(void) ctx;
+	// Qt build: queue font family change
+	std::string name = ctx.arg;
+	// trim
+	auto ltrim = [](std::string &s) {
+		s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}));
+	};
+	auto rtrim = [](std::string &s) {
+		s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}).base(), s.end());
+	};
+	ltrim(name);
+	rtrim(name);
+	if (name.empty()) {
+		// Show current font when no argument provided
+		std::string cur = kte::gCurrentFontFamily.empty() ? std::string("default") : kte::gCurrentFontFamily;
+		ctx.editor.SetStatus(std::string("Current font: ") + cur);
+		return true;
+	}
+	kte::gFontFamilyRequest = name;
+	// Keep size if not specified by user; signal change
+	kte::gFontChangePending = true;
+	ctx.editor.SetStatus(std::string("Font requested: ") + name);
 	return true;
 }
 #endif
 
 
-// Font size set (GUI)
-#ifdef KTE_BUILD_GUI
+// Font size set (GUI, ImGui-only for now)
+#if defined(KTE_BUILD_GUI) && !defined(KTE_USE_QT)
 static bool
 cmd_font_set_size(const CommandContext &ctx)
 {
@@ -1122,14 +1192,45 @@ cmd_font_set_size(const CommandContext &ctx)
 static bool
 cmd_font_set_size(CommandContext &ctx)
 {
-	(void) ctx;
+	// Qt build: parse size and queue change
+	std::string a = ctx.arg;
+	auto ltrim    = [](std::string &s) {
+		s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}));
+	};
+	auto rtrim = [](std::string &s) {
+		s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}).base(), s.end());
+	};
+	ltrim(a);
+	rtrim(a);
+	if (a.empty()) {
+		float cur = (kte::gCurrentFontSize > 0.0f) ? kte::gCurrentFontSize : 18.0f;
+		ctx.editor.SetStatus(std::string("Current font size: ") + std::to_string((int) std::round(cur)));
+		return true;
+	}
+	char *endp = nullptr;
+	float size = strtof(a.c_str(), &endp);
+	if (endp == a.c_str() || !std::isfinite(size)) {
+		ctx.editor.SetStatus("font-size: expected number");
+		return true;
+	}
+	if (size < 6.0f)
+		size = 6.0f;
+	if (size > 96.0f)
+		size = 96.0f;
+	kte::gFontSizeRequest   = size;
+	kte::gFontChangePending = true;
+	ctx.editor.SetStatus(std::string("Font size requested: ") + std::to_string((int) std::round(size)));
 	return true;
 }
 #endif
 
 
-// Background set command (GUI)
-#ifdef KTE_BUILD_GUI
+// Background set command (GUI, ImGui-only for now)
+#if defined(KTE_BUILD_GUI) && !defined(KTE_USE_QT)
 static bool
 cmd_background_set(const CommandContext &ctx)
 {
@@ -1294,6 +1395,20 @@ cmd_visual_file_picker_toggle(const CommandContext &ctx)
 	} else {
 		ctx.editor.SetStatus("Closed file picker");
 	}
+	return true;
+}
+
+
+// GUI: request visual font picker (Qt frontend will consume flag)
+static bool
+cmd_visual_font_picker_toggle(const CommandContext &ctx)
+{
+#ifdef KTE_BUILD_GUI
+	kte::gFontDialogRequested = true;
+	ctx.editor.SetStatus("Font chooser");
+#else
+	ctx.editor.SetStatus("Font chooser not available in terminal");
+#endif
 	return true;
 }
 
@@ -1599,12 +1714,74 @@ cmd_insert_text(CommandContext &ctx)
 					std::string argprefix = text.substr(sp + 1);
 					// Only special-case argument completion for certain commands
 					if (cmd == "theme") {
-#ifdef KTE_BUILD_GUI
+#if defined(KTE_BUILD_GUI)
+#  if !defined(KTE_USE_QT)
 						std::vector<std::string> cands;
 						const auto &reg = kte::ThemeRegistry();
 						for (const auto &t: reg) {
 							std::string n = t->Name();
 							if (argprefix.empty() || n.rfind(argprefix, 0) == 0)
+								cands.push_back(n);
+						}
+#  else
+						// Qt: offer known theme names handled by ApplyQtThemeByName
+						static const char *qt_themes[] = {
+							"nord",
+							"solarized-dark",
+							"solarized-light",
+							"gruvbox-dark",
+							"gruvbox-light",
+							"eink"
+						};
+						std::vector<std::string> cands;
+						for (const char *t: qt_themes) {
+							std::string n(t);
+							if (argprefix.empty() || n.rfind(argprefix, 0) == 0)
+								cands.push_back(n);
+						}
+#  endif
+						if (cands.empty()) {
+							// no change
+						} else if (cands.size() == 1) {
+							ctx.editor.SetPromptText(cmd + std::string(" ") + cands[0]);
+						} else {
+							std::string lcp = cands[0];
+							for (size_t i = 1; i < cands.size(); ++i) {
+								const std::string &s = cands[i];
+								size_t j             = 0;
+								while (j < lcp.size() && j < s.size() && lcp[j] == s[j])
+									++j;
+								lcp.resize(j);
+								if (lcp.empty())
+									break;
+							}
+							if (!lcp.empty() && lcp != argprefix)
+								ctx.editor.SetPromptText(cmd + std::string(" ") + lcp);
+						}
+						ctx.editor.SetStatus(std::string(": ") + ctx.editor.PromptText());
+						return true;
+#else
+						(void) argprefix; // no completion in non-GUI build
+#endif
+					}
+					if (cmd == "font") {
+#if defined(KTE_BUILD_GUI) && defined(KTE_USE_QT)
+						// Complete against installed font families (case-insensitive prefix)
+						std::vector<std::string> cands;
+						QStringList fams       = QFontDatabase::families();
+						std::string apfx_lower = argprefix;
+						std::transform(apfx_lower.begin(), apfx_lower.end(), apfx_lower.begin(),
+						               [](unsigned char c) {
+							               return (char) std::tolower(c);
+						               });
+						for (const auto &fam: fams) {
+							std::string n      = fam.toStdString();
+							std::string nlower = n;
+							std::transform(nlower.begin(), nlower.end(), nlower.begin(),
+							               [](unsigned char c) {
+								               return (char) std::tolower(c);
+							               });
+							if (apfx_lower.empty() || nlower.rfind(apfx_lower, 0) == 0)
 								cands.push_back(n);
 						}
 						if (cands.empty()) {
@@ -1628,7 +1805,7 @@ cmd_insert_text(CommandContext &ctx)
 						ctx.editor.SetStatus(std::string(": ") + ctx.editor.PromptText());
 						return true;
 #else
-						(void) argprefix; // no completion in non-GUI build
+						(void) argprefix;
 #endif
 					}
 					// default: no special arg completion
@@ -3770,11 +3947,11 @@ cmd_reflow_paragraph(CommandContext &ctx)
 	if (!buf)
 		return false;
 	ensure_at_least_one_line(*buf);
-	auto &rows             = buf->Rows();
-	std::size_t y          = buf->Cury();
+	auto &rows    = buf->Rows();
+	std::size_t y = buf->Cury();
 	// Treat a universal-argument count of 1 as "no width specified".
 	// Editor::UArgGet() returns 1 when no explicit count was provided.
-	int width = ctx.count > 1 ? ctx.count : 72;
+	int width              = ctx.count > 1 ? ctx.count : 72;
 	std::size_t para_start = y;
 	while (para_start > 0 && !rows[para_start - 1].empty())
 		--para_start;
@@ -4201,9 +4378,9 @@ InstallDefaultCommands()
 	CommandRegistry::Register(
 		{CommandId::UnindentRegion, "unindent-region", "Unindent region", cmd_unindent_region});
 	CommandRegistry::Register({
-				      CommandId::ReflowParagraph, "reflow-paragraph",
-				      "Reflow paragraph to column width", cmd_reflow_paragraph
-				  });
+		CommandId::ReflowParagraph, "reflow-paragraph",
+		"Reflow paragraph to column width", cmd_reflow_paragraph
+	});
 	// Read-only
 	CommandRegistry::Register({
 		CommandId::ToggleReadOnly, "toggle-read-only", "Toggle buffer read-only", cmd_toggle_read_only
@@ -4248,6 +4425,10 @@ InstallDefaultCommands()
 	CommandRegistry::Register({
 		CommandId::VisualFilePickerToggle, "file-picker-toggle", "Toggle visual file picker",
 		cmd_visual_file_picker_toggle, false, false
+	});
+	CommandRegistry::Register({
+		CommandId::VisualFontPickerToggle, "font-picker-toggle", "Show visual font picker",
+		cmd_visual_font_picker_toggle, false, false
 	});
 	// Working directory
 	CommandRegistry::Register({

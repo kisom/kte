@@ -114,3 +114,11 @@ C++ projects than GTK (which is C-based, though `gtkmm` exists).
    command or draw directly to the widget's paint buffer.
 4. **Refactor `main.cc`** to instantiate `QApplication` instead of the
    current manual loop.
+
+---
+
+Note (2025-12): The Qt frontend defers all key processing to the
+existing command subsystem and keymaps, mirroring the ImGui path. There
+are no Qt-only keybindings; `QtInputHandler` translates Qt key events
+into the shared keymap flow (C-k prefix, Ctrl chords, ESC/Meta,
+universal-argument digits, printable insertion).

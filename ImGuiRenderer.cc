@@ -9,7 +9,7 @@
 #include <imgui.h>
 #include <regex>
 
-#include "GUIRenderer.h"
+#include "ImGuiRenderer.h"
 #include "Highlight.h"
 #include "GUITheme.h"
 #include "Buffer.h"
@@ -30,7 +30,7 @@
 
 
 void
-GUIRenderer::Draw(Editor &ed)
+ImGuiRenderer::Draw(Editor &ed)
 {
 	// Make the editor window occupy the entire GUI container/viewport
 	ImGuiViewport *vp = ImGui::GetMainViewport();
@@ -461,10 +461,10 @@ GUIRenderer::Draw(Editor &ed)
 				float cursor_px = 0.0f;
 				if (rx_viewport > 0 && coloffs_now < expanded.size()) {
 					std::size_t start = coloffs_now;
-					std::size_t end = std::min(expanded.size(), start + rx_viewport);
+					std::size_t end   = std::min(expanded.size(), start + rx_viewport);
 					// Measure substring width in pixels
 					ImVec2 sz = ImGui::CalcTextSize(expanded.c_str() + start,
-									expanded.c_str() + end);
+					                                expanded.c_str() + end);
 					cursor_px = sz.x;
 				}
 				ImVec2 p0 = ImVec2(line_pos.x + cursor_px, line_pos.y);

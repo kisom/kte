@@ -21,7 +21,11 @@
 #include "TerminalFrontend.h"
 
 #if defined(KTE_BUILD_GUI)
-#include "GUIFrontend.h"
+#if defined(KTE_USE_QT)
+#include "QtFrontend.h"
+#else
+#include "ImGuiFrontend.h"
+#endif
 #endif
 
 
@@ -131,33 +135,33 @@ main(int argc, const char *argv[])
 	unsigned stress_seconds = 0;
 	while ((opt = getopt_long(argc, const_cast<char *const *>(argv), "gthV", long_opts, &long_index)) != -1) {
 		switch (opt) {
-			case 'g':
-				req_gui = true;
-				break;
-			case 't':
-				req_term = true;
-				break;
-			case 'h':
-				show_help = true;
-				break;
-			case 'V':
-				show_version = true;
-				break;
-			case 1000: {
-				stress_seconds = 5; // default
-				if (optarg && *optarg) {
-					try {
-						unsigned v = static_cast<unsigned>(std::stoul(optarg));
-						if (v > 0 && v < 36000)
-							stress_seconds = v;
-					} catch (...) {}
-				}
-				break;
+		case 'g':
+			req_gui = true;
+			break;
+		case 't':
+			req_term = true;
+			break;
+		case 'h':
+			show_help = true;
+			break;
+		case 'V':
+			show_version = true;
+			break;
+		case 1000: {
+			stress_seconds = 5; // default
+			if (optarg && *optarg) {
+				try {
+					unsigned v = static_cast<unsigned>(std::stoul(optarg));
+					if (v > 0 && v < 36000)
+						stress_seconds = v;
+				} catch (...) {}
 			}
-			case '?':
-			default:
-				PrintUsage(argv[0]);
-				return 2;
+			break;
+		}
+		case '?':
+		default:
+			PrintUsage(argv[0]);
+			return 2;
 		}
 	}
 

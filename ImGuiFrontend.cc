@@ -11,7 +11,7 @@
 #include <backends/imgui_impl_opengl3.h>
 #include <backends/imgui_impl_sdl2.h>
 
-#include "GUIFrontend.h"
+#include "ImGuiFrontend.h"
 #include "Command.h"
 #include "Editor.h"
 #include "GUIConfig.h"
@@ -224,17 +224,17 @@ GUIFrontend::Step(Editor &ed, bool &running)
 	while (SDL_PollEvent(&e)) {
 		ImGui_ImplSDL2_ProcessEvent(&e);
 		switch (e.type) {
-			case SDL_QUIT:
-				running = false;
-				break;
-			case SDL_WINDOWEVENT:
-				if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-					width_  = e.window.data1;
-					height_ = e.window.data2;
-				}
-				break;
-			default:
-				break;
+		case SDL_QUIT:
+			running = false;
+			break;
+		case SDL_WINDOWEVENT:
+			if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+				width_  = e.window.data1;
+				height_ = e.window.data2;
+			}
+			break;
+		default:
+			break;
 		}
 		// Map input to commands
 		input_.ProcessSDLEvent(e);

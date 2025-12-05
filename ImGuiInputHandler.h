@@ -1,5 +1,5 @@
 /*
- * GUIInputHandler - ImGui/SDL2-based input mapping for GUI mode
+ * ImGuiInputHandler - ImGui/SDL2-based input mapping for GUI mode
  */
 #pragma once
 #include <mutex>
@@ -10,11 +10,11 @@
 
 union SDL_Event; // fwd decl to avoid including SDL here (SDL defines SDL_Event as a union)
 
-class GUIInputHandler final : public InputHandler {
+class ImGuiInputHandler final : public InputHandler {
 public:
-	GUIInputHandler() = default;
+	ImGuiInputHandler() = default;
 
-	~GUIInputHandler() override = default;
+	~ImGuiInputHandler() override = default;
 
 
 	void Attach(Editor *ed) override

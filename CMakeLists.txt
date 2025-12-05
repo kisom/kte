@@ -9,6 +9,7 @@ set(KTE_VERSION "1.3.9")
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
 set(BUILD_GUI ON CACHE BOOL "Enable building the graphical version.")
+set(KTE_USE_QT OFF CACHE BOOL "Build the QT frontend instead of ImGui.")
 set(BUILD_TESTS OFF CACHE BOOL "Enable building test programs.")
 option(KTE_USE_PIECE_TABLE "Use PieceTable instead of GapBuffer implementation" ON)
 set(KTE_FONT_SIZE "18.0" CACHE STRING "Default font size for GUI")
@@ -101,14 +102,30 @@ set(FONT_SOURCES
         fonts/FontRegistry.cc
 )
 
-set(GUI_SOURCES
-        ${FONT_SOURCES}
-        GUIConfig.cc
-        GUIRenderer.cc
-        GUIInputHandler.cc
-        GUIFrontend.cc
-)
-
+if (BUILD_GUI)
+    set(GUI_SOURCES
+            GUIConfig.cc
+    )
+    if (KTE_USE_QT)
+        find_package(Qt6 COMPONENTS Widgets REQUIRED)
+        set(GUI_SOURCES
+                ${GUI_SOURCES}
+                QtFrontend.cc
+                QtInputHandler.cc
+                QtRenderer.cc
+        )
+        # Expose preprocessor switch so sources can exclude ImGui-specific code
+        add_compile_definitions(KTE_USE_QT)
+    else ()
+        set(GUI_SOURCES
+                ${GUI_SOURCES}
+                ${FONT_SOURCES}
+                ImGuiFrontend.cc
+                ImGuiInputHandler.cc
+                ImGuiRenderer.cc
+        )
+    endif ()
+endif ()
 
 set(COMMON_SOURCES
         GapBuffer.cc
@@ -222,14 +239,29 @@ set(COMMON_HEADERS
         ${SYNTAX_HEADERS}
 )
 
-set(GUI_HEADERS
-        ${THEME_HEADERS}
-        ${FONT_HEADERS}
-        GUIConfig.h
-        GUIRenderer.h
-        GUIInputHandler.h
-        GUIFrontend.h
-)
+if (BUILD_GUI)
+    set(GUI_HEADERS
+            GUIConfig.h
+    )
+
+    if (KTE_USE_QT)
+        set(GUI_HEADERS
+                ${GUI_HEADERS}
+                QtFrontend.h
+                QtInputHandler.h
+                QtRenderer.h
+        )
+    else ()
+        set(GUI_HEADERS
+                ${GUI_HEADERS}
+                ${THEME_HEADERS}
+                ${FONT_HEADERS}
+                ImGuiFrontend.h
+                ImGuiInputHandler.h
+                ImGuiRenderer.h
+        )
+    endif ()
+endif ()
 
 # kte (terminal-first) executable
 add_executable(kte
@@ -319,10 +351,17 @@ if (${BUILD_GUI})
 
     )
     target_compile_definitions(kge PRIVATE KTE_BUILD_GUI=1 KTE_DEFAULT_GUI=1 KTE_FONT_SIZE=${KTE_FONT_SIZE})
+    if (KTE_USE_QT)
+        target_compile_definitions(kge PRIVATE KTE_USE_QT=1)
+    endif ()
     if (KTE_UNDO_DEBUG)
         target_compile_definitions(kge PRIVATE KTE_UNDO_DEBUG=1)
     endif ()
-    target_link_libraries(kge ${CURSES_LIBRARIES} imgui)
+    if (KTE_USE_QT)
+        target_link_libraries(kge ${CURSES_LIBRARIES} Qt6::Widgets)
+    else ()
+        target_link_libraries(kge ${CURSES_LIBRARIES} imgui)
+    endif ()
 
     # On macOS, build kge as a proper .app bundle
     if (APPLE)
