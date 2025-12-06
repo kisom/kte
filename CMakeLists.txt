@@ -4,15 +4,13 @@ project(kte)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 20)
-set(KTE_VERSION "1.4.1")
+set(KTE_VERSION "1.4.2")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
 set(BUILD_GUI ON CACHE BOOL "Enable building the graphical version.")
 set(KTE_USE_QT OFF CACHE BOOL "Build the QT frontend instead of ImGui.")
 set(BUILD_TESTS OFF CACHE BOOL "Enable building test programs.")
-option(KTE_USE_PIECE_TABLE "Use PieceTable instead of GapBuffer implementation" ON)
-option(KTE_USE_BUFFER_PIECE_TABLE "Use PieceTable inside Buffer adapter (Phase 2)" OFF)
 set(KTE_FONT_SIZE "18.0" CACHE STRING "Default font size for GUI")
 option(KTE_UNDO_DEBUG "Enable undo instrumentation logs" OFF)
 option(KTE_ENABLE_TREESITTER "Enable optional Tree-sitter highlighter adapter" OFF)
@@ -129,7 +127,6 @@ if (BUILD_GUI)
 endif ()
 
 set(COMMON_SOURCES
-        GapBuffer.cc
         PieceTable.cc
         Buffer.cc
         Editor.cc
@@ -214,11 +211,9 @@ set(FONT_HEADERS
 )
 
 set(COMMON_HEADERS
-        GapBuffer.h
         PieceTable.h
         Buffer.h
         Editor.h
-        AppendBuffer.h
         Command.h
         HelpText.h
         KKeymap.h
@@ -271,12 +266,6 @@ add_executable(kte
         ${COMMON_HEADERS}
 )
 
-if (KTE_USE_PIECE_TABLE)
-    target_compile_definitions(kte PRIVATE KTE_USE_PIECE_TABLE=1)
-endif ()
-if (KTE_USE_BUFFER_PIECE_TABLE)
-    target_compile_definitions(kte PRIVATE KTE_USE_BUFFER_PIECE_TABLE=1)
-endif ()
 if (KTE_UNDO_DEBUG)
     target_compile_definitions(kte PRIVATE KTE_UNDO_DEBUG=1)
 endif ()
@@ -309,13 +298,6 @@ if (BUILD_TESTS)
             ${COMMON_SOURCES}
             ${COMMON_HEADERS}
     )
-
-    if (KTE_USE_PIECE_TABLE)
-        target_compile_definitions(test_undo PRIVATE KTE_USE_PIECE_TABLE=1)
-    endif ()
-    if (KTE_USE_BUFFER_PIECE_TABLE)
-        target_compile_definitions(test_undo PRIVATE KTE_USE_BUFFER_PIECE_TABLE=1)
-    endif ()
 
     if (KTE_UNDO_DEBUG)
         target_compile_definitions(test_undo PRIVATE KTE_UNDO_DEBUG=1)
@@ -363,9 +345,6 @@ if (${BUILD_GUI})
     endif ()
     if (KTE_UNDO_DEBUG)
         target_compile_definitions(kge PRIVATE KTE_UNDO_DEBUG=1)
-    endif ()
-    if (KTE_USE_BUFFER_PIECE_TABLE)
-        target_compile_definitions(kge PRIVATE KTE_USE_BUFFER_PIECE_TABLE=1)
     endif ()
     if (KTE_USE_QT)
         target_link_libraries(kge ${CURSES_LIBRARIES} Qt6::Widgets)

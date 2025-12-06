@@ -30,24 +30,22 @@ Buffer::Buffer(const std::string &path)
 // Copy constructor/assignment: perform a deep copy of core fields; reinitialize undo for the new buffer.
 Buffer::Buffer(const Buffer &other)
 {
-	curx_    = other.curx_;
-	cury_    = other.cury_;
-	rx_      = other.rx_;
-	nrows_   = other.nrows_;
-	rowoffs_ = other.rowoffs_;
-	coloffs_ = other.coloffs_;
-	rows_    = other.rows_;
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	curx_             = other.curx_;
+	cury_             = other.cury_;
+	rx_               = other.rx_;
+	nrows_            = other.nrows_;
+	rowoffs_          = other.rowoffs_;
+	coloffs_          = other.coloffs_;
+	rows_             = other.rows_;
 	content_          = other.content_;
 	rows_cache_dirty_ = other.rows_cache_dirty_;
-#endif
-	filename_       = other.filename_;
-	is_file_backed_ = other.is_file_backed_;
-	dirty_          = other.dirty_;
-	read_only_      = other.read_only_;
-	mark_set_       = other.mark_set_;
-	mark_curx_      = other.mark_curx_;
-	mark_cury_      = other.mark_cury_;
+	filename_         = other.filename_;
+	is_file_backed_   = other.is_file_backed_;
+	dirty_            = other.dirty_;
+	read_only_        = other.read_only_;
+	mark_set_         = other.mark_set_;
+	mark_curx_        = other.mark_curx_;
+	mark_cury_        = other.mark_cury_;
 	// Copy syntax/highlighting flags
 	version_        = other.version_;
 	syntax_enabled_ = other.syntax_enabled_;
@@ -82,27 +80,25 @@ Buffer::operator=(const Buffer &other)
 {
 	if (this == &other)
 		return *this;
-	curx_    = other.curx_;
-	cury_    = other.cury_;
-	rx_      = other.rx_;
-	nrows_   = other.nrows_;
-	rowoffs_ = other.rowoffs_;
-	coloffs_ = other.coloffs_;
-	rows_    = other.rows_;
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	curx_             = other.curx_;
+	cury_             = other.cury_;
+	rx_               = other.rx_;
+	nrows_            = other.nrows_;
+	rowoffs_          = other.rowoffs_;
+	coloffs_          = other.coloffs_;
+	rows_             = other.rows_;
 	content_          = other.content_;
 	rows_cache_dirty_ = other.rows_cache_dirty_;
-#endif
-	filename_       = other.filename_;
-	is_file_backed_ = other.is_file_backed_;
-	dirty_          = other.dirty_;
-	read_only_      = other.read_only_;
-	mark_set_       = other.mark_set_;
-	mark_curx_      = other.mark_curx_;
-	mark_cury_      = other.mark_cury_;
-	version_        = other.version_;
-	syntax_enabled_ = other.syntax_enabled_;
-	filetype_       = other.filetype_;
+	filename_         = other.filename_;
+	is_file_backed_   = other.is_file_backed_;
+	dirty_            = other.dirty_;
+	read_only_        = other.read_only_;
+	mark_set_         = other.mark_set_;
+	mark_curx_        = other.mark_curx_;
+	mark_cury_        = other.mark_cury_;
+	version_          = other.version_;
+	syntax_enabled_   = other.syntax_enabled_;
+	filetype_         = other.filetype_;
 	// Recreate undo system for this instance
 	undo_tree_ = std::make_unique<UndoTree>();
 	undo_sys_  = std::make_unique<UndoSystem>(*this, *undo_tree_);
@@ -146,14 +142,12 @@ Buffer::Buffer(Buffer &&other) noexcept
 	  undo_sys_(std::move(other.undo_sys_))
 {
 	// Move syntax/highlighting state
-	version_        = other.version_;
-	syntax_enabled_ = other.syntax_enabled_;
-	filetype_       = std::move(other.filetype_);
-	highlighter_    = std::move(other.highlighter_);
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	version_          = other.version_;
+	syntax_enabled_   = other.syntax_enabled_;
+	filetype_         = std::move(other.filetype_);
+	highlighter_      = std::move(other.highlighter_);
 	content_          = std::move(other.content_);
 	rows_cache_dirty_ = other.rows_cache_dirty_;
-#endif
 	// Update UndoSystem's buffer reference to point to this object
 	if (undo_sys_) {
 		undo_sys_->UpdateBufferReference(*this);
@@ -186,15 +180,12 @@ Buffer::operator=(Buffer &&other) noexcept
 	undo_sys_       = std::move(other.undo_sys_);
 
 	// Move syntax/highlighting state
-	version_        = other.version_;
-	syntax_enabled_ = other.syntax_enabled_;
-	filetype_       = std::move(other.filetype_);
-	highlighter_    = std::move(other.highlighter_);
-
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
+	version_          = other.version_;
+	syntax_enabled_   = other.syntax_enabled_;
+	filetype_         = std::move(other.filetype_);
+	highlighter_      = std::move(other.highlighter_);
 	content_          = std::move(other.content_);
 	rows_cache_dirty_ = other.rows_cache_dirty_;
-#endif
 	// Update UndoSystem's buffer reference to point to this object
 	if (undo_sys_) {
 		undo_sys_->UpdateBufferReference(*this);
@@ -246,11 +237,9 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		mark_set_  = false;
 		mark_curx_ = mark_cury_ = 0;
 
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
 		// Empty PieceTable
 		content_.Clear();
 		rows_cache_dirty_ = true;
-#endif
 
 		return true;
 	}
@@ -261,7 +250,6 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		return false;
 	}
 
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
 	// Read entire file into PieceTable as-is
 	std::string data;
 	in.seekg(0, std::ios::end);
@@ -275,53 +263,10 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 	if (!data.empty())
 		content_.Append(data.data(), data.size());
 	rows_cache_dirty_ = true;
-	nrows_            = 0; // not used under adapter
-#else
-	// Detect if file ends with a newline so we can preserve a final empty line
-	// in our in-memory representation (mg-style semantics).
-	bool ends_with_nl = false;
-	{
-		in.seekg(0, std::ios::end);
-		std::streamoff sz = in.tellg();
-		if (sz > 0) {
-			in.seekg(-1, std::ios::end);
-			char last = 0;
-			in.read(&last, 1);
-			ends_with_nl = (last == '\n');
-		} else {
-			in.clear();
-		}
-		// Rewind to start for line-by-line read
-		in.clear();
-		in.seekg(0, std::ios::beg);
-	}
-
-	rows_.clear();
-	std::string line;
-	while (std::getline(in, line)) {
-		// std::getline strips the '\n', keep raw line content only
-		// Handle potential Windows CRLF: strip trailing '\r'
-		if (!line.empty() && line.back() == '\r') {
-			line.pop_back();
-		}
-		rows_.emplace_back(line);
-	}
-
-	// If the file ended with a newline and we didn't already get an
-	// empty final row from getline (e.g., when the last textual line
-	// had content followed by '\n'), append an empty row to represent
-	// the cursor position past the last newline.
-	if (ends_with_nl) {
-		if (rows_.empty() || !rows_.back().empty()) {
-			rows_.emplace_back(std::string());
-		}
-	}
-
-	nrows_ = rows_.size();
-#endif
-	filename_       = norm;
-	is_file_backed_ = true;
-	dirty_          = false;
+	nrows_            = 0; // not used under PieceTable
+	filename_         = norm;
+	is_file_backed_   = true;
+	dirty_            = false;
 
 	// Reset/initialize undo system for this loaded file
 	if (!undo_tree_)
@@ -353,22 +298,10 @@ Buffer::Save(std::string &err) const
 		err = "Failed to open for write: " + filename_;
 		return false;
 	}
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
 	const char *d = content_.Data();
 	std::size_t n = content_.Size();
 	if (d && n)
 		out.write(d, static_cast<std::streamsize>(n));
-#else
-	for (std::size_t i = 0; i < rows_.size(); ++i) {
-		const char *d = rows_[i].Data();
-		std::size_t n = rows_[i].Size();
-		if (d && n)
-			out.write(d, static_cast<std::streamsize>(n));
-		if (i + 1 < rows_.size()) {
-			out.put('\n');
-		}
-	}
-#endif
 	if (!out.good()) {
 		err = "Write error";
 		return false;
@@ -407,24 +340,12 @@ Buffer::SaveAs(const std::string &path, std::string &err)
 		err = "Failed to open for write: " + out_path;
 		return false;
 	}
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
 	{
 		const char *d = content_.Data();
 		std::size_t n = content_.Size();
 		if (d && n)
 			out.write(d, static_cast<std::streamsize>(n));
 	}
-#else
-	for (std::size_t i = 0; i < rows_.size(); ++i) {
-		const char *d = rows_[i].Data();
-		std::size_t n = rows_[i].Size();
-		if (d && n)
-			out.write(d, static_cast<std::streamsize>(n));
-		if (i + 1 < rows_.size()) {
-			out.put('\n');
-		}
-	}
-#endif
 	if (!out.good()) {
 		err = "Write error";
 		return false;
@@ -445,11 +366,7 @@ Buffer::AsString() const
 	if (this->Dirty()) {
 		ss << "*";
 	}
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
 	ss << ">: " << content_.LineCount() << " lines";
-#else
-	ss << ">: " << rows_.size() << " lines";
-#endif
 	return ss.str();
 }
 
@@ -458,7 +375,6 @@ Buffer::AsString() const
 void
 Buffer::insert_text(int row, int col, std::string_view text)
 {
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
 	if (row < 0)
 		row = 0;
 	if (col < 0)
@@ -469,47 +385,9 @@ Buffer::insert_text(int row, int col, std::string_view text)
 		content_.Insert(off, text.data(), text.size());
 		rows_cache_dirty_ = true;
 	}
-	return;
-#else
-	if (row < 0)
-		row = 0;
-	if (static_cast<std::size_t>(row) > rows_.size())
-		row = static_cast<int>(rows_.size());
-	if (rows_.empty())
-		rows_.emplace_back("");
-	if (static_cast<std::size_t>(row) >= rows_.size())
-		rows_.emplace_back("");
-
-	auto y = static_cast<std::size_t>(row);
-	auto x = static_cast<std::size_t>(col);
-	if (x > rows_[y].size()) {
-		x = rows_[y].size();
-	}
-
-	std::string remain(text);
-	while (true) {
-		auto pos = remain.find('\n');
-		if (pos == std::string::npos) {
-			rows_[y].insert(x, remain);
-			break;
-		}
-		// Insert up to newline
-		std::string seg = remain.substr(0, pos);
-		rows_[y].insert(x, seg);
-		x += seg.size();
-		// Split line at x
-		std::string tail = rows_[y].substr(x);
-		rows_[y].erase(x);
-		rows_.insert(rows_.begin() + static_cast<std::ptrdiff_t>(y + 1), Line(tail));
-		y += 1;
-		x = 0;
-		remain.erase(0, pos + 1);
-	}
-	// Do not set dirty here; UndoSystem will manage state/dirty externally
-#endif
 }
 
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
+
 // ===== Adapter helpers for PieceTable-backed Buffer =====
 void
 Buffer::ensure_rows_cache() const
@@ -527,18 +405,17 @@ Buffer::ensure_rows_cache() const
 	rows_cache_dirty_                  = false;
 }
 
+
 std::size_t
 Buffer::content_LineCount_() const
 {
 	return content_.LineCount();
 }
-#endif
 
 
 void
 Buffer::delete_text(int row, int col, std::size_t len)
 {
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
 	if (len == 0)
 		return;
 	if (row < 0)
@@ -608,48 +485,12 @@ Buffer::delete_text(int row, int col, std::size_t len)
 		content_.Delete(start, end - start);
 		rows_cache_dirty_ = true;
 	}
-	return;
-#else
-	if (rows_.empty() || len == 0)
-		return;
-	if (row < 0)
-		row = 0;
-	if (static_cast<std::size_t>(row) >= rows_.size())
-		return;
-	const auto y = static_cast<std::size_t>(row);
-	const auto x = std::min<std::size_t>(static_cast<std::size_t>(col), rows_[y].size());
-
-	std::size_t remaining = len;
-	while (remaining > 0 && y < rows_.size()) {
-		auto &line                = rows_[y];
-		const std::size_t in_line = std::min<std::size_t>(remaining, line.size() - std::min(x, line.size()));
-		if (x < line.size() && in_line > 0) {
-			line.erase(x, in_line);
-			remaining -= in_line;
-		}
-		if (remaining == 0)
-			break;
-		// If at or beyond end of line and there is a next line, join it (deleting the implied '\n')
-		if (y + 1 < rows_.size()) {
-			line += rows_[y + 1];
-			rows_.erase(rows_.begin() + static_cast<std::ptrdiff_t>(y + 1));
-			// deleting the newline consumes one virtual character
-			if (remaining > 0) {
-				// Treat the newline as one deletion unit if len spans it
-				// We already joined, so nothing else to do here.
-			}
-		} else {
-			break;
-		}
-	}
-#endif
 }
 
 
 void
 Buffer::split_line(int row, const int col)
 {
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
 	if (row < 0)
 		row = 0;
 	if (col < 0)
@@ -659,28 +500,12 @@ Buffer::split_line(int row, const int col)
 	const char nl = '\n';
 	content_.Insert(off, &nl, 1);
 	rows_cache_dirty_ = true;
-	return;
-#else
-	if (row < 0) {
-		row = 0;
-	}
-
-	if (static_cast<std::size_t>(row) >= rows_.size()) {
-		rows_.resize(static_cast<std::size_t>(row) + 1);
-	}
-	const auto y    = static_cast<std::size_t>(row);
-	const auto x    = std::min<std::size_t>(static_cast<std::size_t>(col), rows_[y].size());
-	const auto tail = rows_[y].substr(x);
-	rows_[y].erase(x);
-	rows_.insert(rows_.begin() + static_cast<std::ptrdiff_t>(y + 1), Line(tail));
-#endif
 }
 
 
 void
 Buffer::join_lines(int row)
 {
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
 	if (row < 0)
 		row = 0;
 	std::size_t r = static_cast<std::size_t>(row);
@@ -691,27 +516,12 @@ Buffer::join_lines(int row)
 	// end_of_line now equals line end (clamped before newline). The newline should be exactly at this position.
 	content_.Delete(end_of_line, 1);
 	rows_cache_dirty_ = true;
-	return;
-#else
-	if (row < 0) {
-		row = 0;
-	}
-
-	const auto y = static_cast<std::size_t>(row);
-	if (y + 1 >= rows_.size()) {
-		return;
-	}
-
-	rows_[y] += rows_[y + 1];
-	rows_.erase(rows_.begin() + static_cast<std::ptrdiff_t>(y + 1));
-#endif
 }
 
 
 void
 Buffer::insert_row(int row, const std::string_view text)
 {
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
 	if (row < 0)
 		row = 0;
 	std::size_t off = content_.LineColToByteOffset(static_cast<std::size_t>(row), 0);
@@ -720,21 +530,12 @@ Buffer::insert_row(int row, const std::string_view text)
 	const char nl = '\n';
 	content_.Insert(off + text.size(), &nl, 1);
 	rows_cache_dirty_ = true;
-	return;
-#else
-	if (row < 0)
-		row = 0;
-	if (static_cast<std::size_t>(row) > rows_.size())
-		row = static_cast<int>(rows_.size());
-	rows_.insert(rows_.begin() + row, Line(std::string(text)));
-#endif
 }
 
 
 void
 Buffer::delete_row(int row)
 {
-#ifdef KTE_USE_BUFFER_PIECE_TABLE
 	if (row < 0)
 		row = 0;
 	std::size_t r = static_cast<std::size_t>(row);
@@ -747,14 +548,6 @@ Buffer::delete_row(int row)
 	std::size_t end   = range.second;
 	content_.Delete(start, end - start);
 	rows_cache_dirty_ = true;
-	return;
-#else
-	if (row < 0)
-		row = 0;
-	if (static_cast<std::size_t>(row) >= rows_.size())
-		return;
-	rows_.erase(rows_.begin() + row);
-#endif
 }
 
 
