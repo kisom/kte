@@ -294,25 +294,34 @@ ImGuiInputHandler::ProcessSDLEvent(const SDL_Event &e)
 	bool produced = false;
 	switch (e.type) {
 	case SDL_MOUSEWHEEL: {
-		// Let ImGui handle mouse wheel when it wants to capture the mouse
-		// (e.g., when hovering the editor child window with scrollbars).
-		// This enables native vertical and horizontal scrolling behavior in GUI.
-		if (ImGui::GetIO().WantCaptureMouse)
-			return false;
-		// Otherwise, fallback to mapping vertical wheel to editor scroll commands.
-		int dy = e.wheel.y;
+		// High-resolution trackpads can deliver fractional wheel deltas. Accumulate
+		// precise values and emit one scroll step per whole unit.
+		float dy = 0.0f;
+#if SDL_VERSION_ATLEAST(2,0,18)
+		dy = e.wheel.preciseY;
+#else
+		dy = static_cast<float>(e.wheel.y);
+#endif
 #ifdef SDL_MOUSEWHEEL_FLIPPED
 		if (e.wheel.direction == SDL_MOUSEWHEEL_FLIPPED)
 			dy = -dy;
 #endif
-		if (dy != 0) {
-			int repeat   = dy > 0 ? dy : -dy;
-			CommandId id = dy > 0 ? CommandId::ScrollUp : CommandId::ScrollDown;
-			std::lock_guard<std::mutex> lk(mu_);
-			for (int i = 0; i < repeat; ++i) {
-				q_.push(MappedInput{true, id, std::string(), 0});
+		if (dy != 0.0f) {
+			wheel_accum_y_ += dy;
+			float abs_accum = wheel_accum_y_ >= 0.0f ? wheel_accum_y_ : -wheel_accum_y_;
+			int steps       = static_cast<int>(abs_accum);
+			if (steps > 0) {
+				CommandId id = (wheel_accum_y_ > 0.0f) ? CommandId::ScrollUp : CommandId::ScrollDown;
+				std::lock_guard<std::mutex> lk(mu_);
+				for (int i = 0; i < steps; ++i) {
+					q_.push(MappedInput{true, id, std::string(), 0});
+				}
+				// remove the whole steps, keep fractional remainder
+				wheel_accum_y_ += (wheel_accum_y_ > 0.0f)
+					                  ? -static_cast<float>(steps)
+					                  : static_cast<float>(steps);
+				return true; // consumed
 			}
-			return true; // consumed
 		}
 		return false;
 	}

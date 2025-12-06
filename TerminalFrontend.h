@@ -16,6 +16,11 @@ public:
 
 	~TerminalFrontend() override = default;
 
+	// Configurable ESC key delay (ms) for ncurses' set_escdelay().
+	// Controls how long ncurses waits to distinguish ESC vs. meta sequences.
+	// Adjust if your terminal needs a different threshold.
+	static constexpr int kEscDelayMs = 50;
+
 	bool Init(Editor &ed) override;
 
 	void Step(Editor &ed, bool &running) override;

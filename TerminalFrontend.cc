@@ -42,13 +42,15 @@ TerminalFrontend::Init(Editor &ed)
 	meta(stdscr, TRUE);
 	// Make ESC key sequences resolve quickly so ESC+<key> works as meta
 #ifdef set_escdelay
-	set_escdelay(50);
+	set_escdelay(TerminalFrontend::kEscDelayMs);
 #endif
-	nodelay(stdscr, TRUE);
+	// Make getch() block briefly instead of busy-looping; reduces CPU when idle
+	// Equivalent to nodelay(FALSE) with a small timeout.
+	timeout(16); // ~16ms (about 60Hz)
 	curs_set(1);
 	// Enable mouse support if available
 	mouseinterval(0);
-	mousemask(ALL_MOUSE_EVENTS, nullptr);
+	mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, nullptr);
 
 	int r = 0, c = 0;
 	getmaxyx(stdscr, r, c);
@@ -94,9 +96,6 @@ TerminalFrontend::Step(Editor &ed, bool &running)
 		if (mi.hasCommand) {
 			Execute(ed, mi.id, mi.arg, mi.count);
 		}
-	} else {
-		// Avoid busy loop
-		usleep(1000);
 	}
 
 	if (ed.QuitRequested()) {

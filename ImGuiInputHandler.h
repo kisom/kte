@@ -41,4 +41,9 @@ private:
 	bool suppress_text_input_once_ = false;
 
 	Editor *ed_ = nullptr; // attached editor for editor-owned uarg handling
+
+	// Accumulators for high-resolution (trackpad) scrolling. We emit one scroll
+	// command per whole step and keep the fractional remainder.
+	float wheel_accum_y_ = 0.0f;
+	float wheel_accum_x_ = 0.0f; // reserved for future horizontal scrolling
 };
