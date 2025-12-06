@@ -3,6 +3,7 @@
  */
 #pragma once
 #include <termios.h>
+#include <signal.h>
 
 #include "Frontend.h"
 #include "TerminalInputHandler.h"
@@ -29,4 +30,7 @@ private:
 	// Saved terminal attributes to restore on shutdown
 	bool have_orig_tio_ = false;
 	struct termios orig_tio_{};
+	// Saved SIGINT handler to restore on shutdown
+	bool have_old_sigint_ = false;
+	struct sigaction old_sigint_{};
 };

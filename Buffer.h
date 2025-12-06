@@ -12,7 +12,6 @@
 #include "PieceTable.h"
 #include "UndoSystem.h"
 #include <cstdint>
-#include <memory>
 #include "syntax/HighlighterEngine.h"
 #include "Highlight.h"
 
@@ -79,7 +78,8 @@ public:
 	}
 
 
-	// Line wrapper backed by PieceTable
+	// Line wrapper used by legacy command paths.
+	// Keep this lightweight: store materialized bytes only for that line.
 	class Line {
 	public:
 		Line() = default;
@@ -108,119 +108,102 @@ public:
 		// capacity helpers
 		void Clear()
 		{
-			buf_.Clear();
+			s_.clear();
 		}
 
 
 		// size/access
 		[[nodiscard]] std::size_t size() const
 		{
-			return buf_.Size();
+			return s_.size();
 		}
 
 
 		[[nodiscard]] bool empty() const
 		{
-			return size() == 0;
+			return s_.empty();
 		}
 
 
 		// read-only raw view
 		[[nodiscard]] const char *Data() const
 		{
-			return buf_.Data();
+			return s_.data();
 		}
 
 
 		[[nodiscard]] std::size_t Size() const
 		{
-			return buf_.Size();
+			return s_.size();
 		}
 
 
 		// element access (read-only)
 		[[nodiscard]] char operator[](std::size_t i) const
 		{
-			const char *d = buf_.Data();
-			return (i < buf_.Size() && d) ? d[i] : '\0';
+			return (i < s_.size()) ? s_[i] : '\0';
 		}
 
 
 		// conversions
 		explicit operator std::string() const
 		{
-			return {buf_.Data() ? buf_.Data() : "", buf_.Size()};
+			return s_;
 		}
 
 
 		// string-like API used by command/renderer layers (implemented via materialization for now)
 		[[nodiscard]] std::string substr(std::size_t pos) const
 		{
-			const std::size_t n = buf_.Size();
-			if (pos >= n)
-				return {};
-			return {buf_.Data() + pos, n - pos};
+			return pos < s_.size() ? s_.substr(pos) : std::string();
 		}
 
 
 		[[nodiscard]] std::string substr(std::size_t pos, std::size_t len) const
 		{
-			const std::size_t n = buf_.Size();
-			if (pos >= n)
-				return {};
-			const std::size_t take = (pos + len > n) ? (n - pos) : len;
-			return {buf_.Data() + pos, take};
+			return pos < s_.size() ? s_.substr(pos, len) : std::string();
 		}
 
 
 		// minimal find() to support search within a line
 		[[nodiscard]] std::size_t find(const std::string &needle, const std::size_t pos = 0) const
 		{
-			// Materialize to std::string for now; Line is backed by PieceTable
-			const auto s = static_cast<std::string>(*this);
-			return s.find(needle, pos);
+			return s_.find(needle, pos);
 		}
 
 
 		void erase(std::size_t pos)
 		{
-			// erase to end
-			material_edit([&](std::string &s) {
-				if (pos < s.size())
-					s.erase(pos);
-			});
+			if (pos < s_.size())
+				s_.erase(pos);
 		}
 
 
 		void erase(std::size_t pos, std::size_t len)
 		{
-			material_edit([&](std::string &s) {
-				if (pos < s.size())
-					s.erase(pos, len);
-			});
+			if (pos < s_.size())
+				s_.erase(pos, len);
 		}
 
 
 		void insert(std::size_t pos, const std::string &seg)
 		{
-			material_edit([&](std::string &s) {
-				if (pos > s.size())
-					pos = s.size();
-				s.insert(pos, seg);
-			});
+			if (pos > s_.size())
+				pos = s_.size();
+			s_.insert(pos, seg);
 		}
 
 
 		Line &operator+=(const Line &other)
 		{
-			buf_.Append(other.buf_.Data(), other.buf_.Size());
+			s_ += other.s_;
 			return *this;
 		}
 
 
 		Line &operator+=(const std::string &s)
 		{
-			buf_.Append(s.data(), s.size());
+			s_ += s;
 			return *this;
 		}
 
@@ -234,22 +217,11 @@ public:
 	private:
 		void assign_from(const std::string &s)
 		{
-			buf_.Clear();
-			if (!s.empty())
-				buf_.Append(s.data(), s.size());
+			s_ = s;
 		}
 
 
-		template<typename F>
-		void material_edit(F fn)
-		{
-			std::string tmp = static_cast<std::string>(*this);
-			fn(tmp);
-			assign_from(tmp);
-		}
-
-
-		PieceTable buf_;
+		std::string s_;
 	};
 
 
@@ -265,6 +237,25 @@ public:
 		ensure_rows_cache();
 		return rows_;
 	}
+
+
+	// Lightweight, lazy per-line accessors that avoid materializing all rows.
+	// Prefer these over Rows() in hot paths to reduce memory overhead on large files.
+	[[nodiscard]] std::string GetLineString(std::size_t row) const
+	{
+		return content_.GetLine(row);
+	}
+
+
+	[[nodiscard]] std::pair<std::size_t, std::size_t> GetLineRange(std::size_t row) const
+	{
+		return content_.GetLineRange(row);
+	}
+
+
+	// Zero-copy view of a line. Points into the materialized backing store; becomes
+	// invalid after subsequent edits. Use immediately.
+	[[nodiscard]] std::string_view GetLineView(std::size_t row) const;
 
 
 	[[nodiscard]] const std::string &Filename() const
@@ -411,13 +402,13 @@ public:
 	}
 
 
-	kte::HighlighterEngine *Highlighter()
+	[[nodiscard]] kte::HighlighterEngine *Highlighter()
 	{
 		return highlighter_.get();
 	}
 
 
-	const kte::HighlighterEngine *Highlighter() const
+	[[nodiscard]] const kte::HighlighterEngine *Highlighter() const
 	{
 		return highlighter_.get();
 	}
@@ -452,7 +443,7 @@ public:
 	void delete_row(int row);
 
 	// Undo system accessors (created per-buffer)
-	UndoSystem *Undo();
+	[[nodiscard]] UndoSystem *Undo();
 
 	[[nodiscard]] const UndoSystem *Undo() const;
 

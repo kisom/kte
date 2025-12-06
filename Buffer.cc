@@ -3,6 +3,9 @@
 #include <filesystem>
 #include <cstdlib>
 #include <limits>
+#include <cerrno>
+#include <cstring>
+#include <string_view>
 
 #include "Buffer.h"
 #include "UndoSystem.h"
@@ -295,15 +298,17 @@ Buffer::Save(std::string &err) const
 	}
 	std::ofstream out(filename_, std::ios::out | std::ios::binary | std::ios::trunc);
 	if (!out) {
-		err = "Failed to open for write: " + filename_;
+		err = "Failed to open for write: " + filename_ + ". Error: " + std::string(std::strerror(errno));
 		return false;
 	}
-	const char *d = content_.Data();
-	std::size_t n = content_.Size();
-	if (d && n)
-		out.write(d, static_cast<std::streamsize>(n));
+	// Write the entire buffer in a single block to minimize I/O calls.
+	const char *data = content_.Data();
+	const auto size  = static_cast<std::streamsize>(content_.Size());
+	if (data != nullptr && size > 0) {
+		out.write(data, size);
+	}
 	if (!out.good()) {
-		err = "Write error";
+		err = "Write error: " + filename_ + ". Error: " + std::string(std::strerror(errno));
 		return false;
 	}
 	// Note: const method cannot change dirty_. Intentionally const to allow UI code
@@ -337,17 +342,17 @@ Buffer::SaveAs(const std::string &path, std::string &err)
 	// Write to the given path
 	std::ofstream out(out_path, std::ios::out | std::ios::binary | std::ios::trunc);
 	if (!out) {
-		err = "Failed to open for write: " + out_path;
+		err = "Failed to open for write: " + out_path + ". Error: " + std::string(std::strerror(errno));
 		return false;
 	}
-	{
-		const char *d = content_.Data();
-		std::size_t n = content_.Size();
-		if (d && n)
-			out.write(d, static_cast<std::streamsize>(n));
+	// Write whole content in a single I/O operation
+	const char *data = content_.Data();
+	const auto size  = static_cast<std::streamsize>(content_.Size());
+	if (data != nullptr && size > 0) {
+		out.write(data, size);
 	}
 	if (!out.good()) {
-		err = "Write error";
+		err = "Write error: " + out_path + ". Error: " + std::string(std::strerror(errno));
 		return false;
 	}
 
@@ -389,6 +394,20 @@ Buffer::insert_text(int row, int col, std::string_view text)
 
 
 // ===== Adapter helpers for PieceTable-backed Buffer =====
+std::string_view
+Buffer::GetLineView(std::size_t row) const
+{
+	// Get byte range for the logical line and return a view into materialized data
+	auto range       = content_.GetLineRange(row); // [start,end) in bytes
+	const char *base = content_.Data(); // materializes if needed
+	if (!base)
+		return std::string_view();
+	const std::size_t start = range.first;
+	const std::size_t len   = (range.second > range.first) ? (range.second - range.first) : 0;
+	return std::string_view(base + start, len);
+}
+
+
 void
 Buffer::ensure_rows_cache() const
 {
@@ -422,66 +441,42 @@ Buffer::delete_text(int row, int col, std::size_t len)
 		row = 0;
 	if (col < 0)
 		col = 0;
-	std::size_t start = content_.LineColToByteOffset(static_cast<std::size_t>(row), static_cast<std::size_t>(col));
-	// Walk len logical characters across lines to compute end offset
-	std::size_t r                = static_cast<std::size_t>(row);
-	std::size_t c                = static_cast<std::size_t>(col);
-	std::size_t remaining        = len;
-	const std::size_t line_count = content_.LineCount();
-	while (remaining > 0 && r < line_count) {
-		auto range = content_.GetLineRange(r); // [start,end)
-		// Compute end of line excluding trailing '\n'
-		std::size_t line_end = range.second;
-		if (line_end > range.first) {
-			// If last char is '\n', don't count in-column span
-			std::string last = content_.GetRange(line_end - 1, 1);
-			if (!last.empty() && last[0] == '\n') {
-				line_end -= 1;
-			}
+	const std::size_t start = content_.LineColToByteOffset(static_cast<std::size_t>(row),
+	                                                       static_cast<std::size_t>(col));
+	std::size_t r         = static_cast<std::size_t>(row);
+	std::size_t c         = static_cast<std::size_t>(col);
+	std::size_t remaining = len;
+	const std::size_t lc  = content_.LineCount();
+
+	while (remaining > 0 && r < lc) {
+		const std::string line = content_.GetLine(r); // logical line (without trailing '\n')
+		const std::size_t L    = line.size();
+		if (c < L) {
+			const std::size_t take = std::min(remaining, L - c);
+			c += take;
+			remaining -= take;
 		}
-		std::size_t cur_off = content_.LineColToByteOffset(r, c);
-		std::size_t in_line = (cur_off < line_end) ? (line_end - cur_off) : 0;
-		if (remaining <= in_line) {
-			// All within current line
-			std::size_t end = cur_off + remaining;
-			content_.Delete(start, end - start);
-			rows_cache_dirty_ = true;
-			return;
-		}
-		// Consume rest of line
-		remaining -= in_line;
-		std::size_t end = cur_off + in_line;
-		// If there is a next line and remaining > 0, consider consuming the newline as 1
-		if (r + 1 < line_count) {
+		if (remaining == 0)
+			break;
+		// Consume newline between lines as one char, if there is a next line
+		if (r + 1 < lc) {
 			if (remaining > 0) {
-				// newline
-				end += 1;
-				remaining -= 1;
+				remaining -= 1; // the newline
+				r += 1;
+				c = 0;
 			}
-			// Move to next line
-			r += 1;
-			c = 0;
-			// Update start deletion length so far by postponing until we know final end; we keep start fixed
-			if (remaining == 0) {
-				content_.Delete(start, end - start);
-				rows_cache_dirty_ = true;
-				return;
-			}
-			// Continue loop with updated r/c; but also keep track of 'end' as current consumed position
-			// Rather than tracking incrementally, we will recompute cur_off at top of loop.
-			// However, we need to carry forward the consumed part; we can temporarily store 'end' in start_of_next
-			// To simplify, after loop finishes we will compute final end using current r/c using remaining.
 		} else {
-			// No next line; delete to file end
+			// At last line and still remaining: delete to EOF
 			std::size_t total = content_.Size();
 			content_.Delete(start, total - start);
 			rows_cache_dirty_ = true;
 			return;
 		}
 	}
-	// If loop ended because remaining==0 at a line boundary
-	if (remaining == 0) {
-		std::size_t end = content_.LineColToByteOffset(r, c);
+
+	// Compute end offset at (r,c)
+	std::size_t end = content_.LineColToByteOffset(r, c);
+	if (end > start) {
 		content_.Delete(start, end - start);
 		rows_cache_dirty_ = true;
 	}

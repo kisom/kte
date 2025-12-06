@@ -15,13 +15,32 @@ PieceTable::PieceTable(const std::size_t initialCapacity)
 }
 
 
+PieceTable::PieceTable(const std::size_t initialCapacity,
+                       const std::size_t piece_limit,
+                       const std::size_t small_piece_threshold,
+                       const std::size_t max_consolidation_bytes)
+{
+	add_.reserve(initialCapacity);
+	materialized_.reserve(initialCapacity);
+	piece_limit_             = piece_limit;
+	small_piece_threshold_   = small_piece_threshold;
+	max_consolidation_bytes_ = max_consolidation_bytes;
+}
+
+
 PieceTable::PieceTable(const PieceTable &other)
 	: original_(other.original_),
 	  add_(other.add_),
 	  pieces_(other.pieces_),
 	  materialized_(other.materialized_),
 	  dirty_(other.dirty_),
-	  total_size_(other.total_size_) {}
+	  total_size_(other.total_size_)
+{
+	version_ = other.version_;
+	// caches are per-instance, mark invalid
+	range_cache_ = {};
+	find_cache_  = {};
+}
 
 
 PieceTable &
@@ -35,6 +54,9 @@ PieceTable::operator=(const PieceTable &other)
 	materialized_ = other.materialized_;
 	dirty_        = other.dirty_;
 	total_size_   = other.total_size_;
+	version_      = other.version_;
+	range_cache_  = {};
+	find_cache_   = {};
 	return *this;
 }
 
@@ -49,6 +71,9 @@ PieceTable::PieceTable(PieceTable &&other) noexcept
 {
 	other.dirty_      = true;
 	other.total_size_ = 0;
+	version_          = other.version_;
+	range_cache_      = {};
+	find_cache_       = {};
 }
 
 
@@ -65,6 +90,9 @@ PieceTable::operator=(PieceTable &&other) noexcept
 	total_size_       = other.total_size_;
 	other.dirty_      = true;
 	other.total_size_ = 0;
+	version_          = other.version_;
+	range_cache_      = {};
+	find_cache_       = {};
 	return *this;
 }
 
@@ -78,6 +106,21 @@ PieceTable::Reserve(const std::size_t newCapacity)
 	add_.reserve(newCapacity);
 	materialized_.reserve(newCapacity);
 }
+
+
+// Setter to allow tuning consolidation heuristics
+void
+PieceTable::SetConsolidationParams(const std::size_t piece_limit,
+                                   const std::size_t small_piece_threshold,
+                                   const std::size_t max_consolidation_bytes)
+{
+	piece_limit_             = piece_limit;
+	small_piece_threshold_   = small_piece_threshold;
+	max_consolidation_bytes_ = max_consolidation_bytes;
+}
+
+
+// (removed helper) — we'll invalidate caches inline inside mutating methods
 
 
 void
@@ -154,6 +197,9 @@ PieceTable::Clear()
 	dirty_      = true;
 	line_index_.clear();
 	line_index_dirty_ = true;
+	version_++;
+	range_cache_ = {};
+	find_cache_  = {};
 }
 
 
@@ -174,6 +220,9 @@ PieceTable::addPieceBack(const Source src, const std::size_t start, const std::s
 				last.len += len;
 				total_size_ += len;
 				dirty_ = true;
+				version_++;
+				range_cache_ = {};
+				find_cache_  = {};
 				return;
 			}
 		}
@@ -183,6 +232,9 @@ PieceTable::addPieceBack(const Source src, const std::size_t start, const std::s
 	total_size_ += len;
 	dirty_ = true;
 	InvalidateLineIndex();
+	version_++;
+	range_cache_ = {};
+	find_cache_  = {};
 }
 
 
@@ -201,6 +253,9 @@ PieceTable::addPieceFront(Source src, std::size_t start, std::size_t len)
 			first.len += len;
 			total_size_ += len;
 			dirty_ = true;
+			version_++;
+			range_cache_ = {};
+			find_cache_  = {};
 			return;
 		}
 	}
@@ -208,6 +263,9 @@ PieceTable::addPieceFront(Source src, std::size_t start, std::size_t len)
 	total_size_ += len;
 	dirty_ = true;
 	InvalidateLineIndex();
+	version_++;
+	range_cache_ = {};
+	find_cache_  = {};
 }
 
 
@@ -260,24 +318,27 @@ PieceTable::coalesceNeighbors(std::size_t index)
 		return;
 	if (index >= pieces_.size())
 		index = pieces_.size() - 1;
-	// Try merge with previous
-	if (index > 0) {
+	// Merge repeatedly with previous while contiguous and same source
+	while (index > 0) {
 		auto &prev = pieces_[index - 1];
 		auto &curr = pieces_[index];
 		if (prev.src == curr.src && prev.start + prev.len == curr.start) {
 			prev.len += curr.len;
 			pieces_.erase(pieces_.begin() + static_cast<std::ptrdiff_t>(index));
-			if (index > 0)
-				index -= 1;
+			index -= 1;
+		} else {
+			break;
 		}
 	}
-	// Try merge with next (index may have shifted)
-	if (index + 1 < pieces_.size()) {
+	// Merge repeatedly with next while contiguous and same source
+	while (index + 1 < pieces_.size()) {
 		auto &curr = pieces_[index];
 		auto &next = pieces_[index + 1];
 		if (curr.src == next.src && curr.start + curr.len == next.start) {
 			curr.len += next.len;
 			pieces_.erase(pieces_.begin() + static_cast<std::ptrdiff_t>(index + 1));
+		} else {
+			break;
 		}
 	}
 }
@@ -316,10 +377,12 @@ PieceTable::RebuildLineIndex() const
 void
 PieceTable::Insert(std::size_t byte_offset, const char *text, std::size_t len)
 {
-	if (len == 0)
+	if (len == 0) {
 		return;
-	if (byte_offset > total_size_)
+	}
+	if (byte_offset > total_size_) {
 		byte_offset = total_size_;
+	}
 
 	const std::size_t add_start = add_.size();
 	add_.append(text, len);
@@ -329,6 +392,10 @@ PieceTable::Insert(std::size_t byte_offset, const char *text, std::size_t len)
 		total_size_ += len;
 		dirty_ = true;
 		InvalidateLineIndex();
+		maybeConsolidate();
+		version_++;
+		range_cache_ = {};
+		find_cache_  = {};
 		return;
 	}
 
@@ -340,6 +407,10 @@ PieceTable::Insert(std::size_t byte_offset, const char *text, std::size_t len)
 		dirty_ = true;
 		InvalidateLineIndex();
 		coalesceNeighbors(pieces_.size() - 1);
+		maybeConsolidate();
+		version_++;
+		range_cache_ = {};
+		find_cache_  = {};
 		return;
 	}
 
@@ -366,18 +437,25 @@ PieceTable::Insert(std::size_t byte_offset, const char *text, std::size_t len)
 	// Try coalescing around the inserted position (the inserted piece is at idx + (inner>0 ? 1 : 0))
 	std::size_t ins_index = idx + (inner > 0 ? 1 : 0);
 	coalesceNeighbors(ins_index);
+	maybeConsolidate();
+	version_++;
+	range_cache_ = {};
+	find_cache_  = {};
 }
 
 
 void
 PieceTable::Delete(std::size_t byte_offset, std::size_t len)
 {
-	if (len == 0)
+	if (len == 0) {
 		return;
-	if (byte_offset >= total_size_)
+	}
+	if (byte_offset >= total_size_) {
 		return;
-	if (byte_offset + len > total_size_)
+	}
+	if (byte_offset + len > total_size_) {
 		len = total_size_ - byte_offset;
+	}
 
 	auto [idx, inner]     = locate(byte_offset);
 	std::size_t remaining = len;
@@ -430,6 +508,100 @@ PieceTable::Delete(std::size_t byte_offset, std::size_t len)
 		coalesceNeighbors(idx);
 	if (idx > 0)
 		coalesceNeighbors(idx - 1);
+	maybeConsolidate();
+	version_++;
+	range_cache_ = {};
+	find_cache_  = {};
+}
+
+
+// ===== Consolidation implementation =====
+
+void
+PieceTable::appendPieceDataTo(std::string &out, const Piece &p) const
+{
+	if (p.len == 0)
+		return;
+	const std::string &src = p.src == Source::Original ? original_ : add_;
+	out.append(src.data() + static_cast<std::ptrdiff_t>(p.start), p.len);
+}
+
+
+void
+PieceTable::consolidateRange(std::size_t start_idx, std::size_t end_idx)
+{
+	if (start_idx >= end_idx || start_idx >= pieces_.size())
+		return;
+	end_idx           = std::min(end_idx, pieces_.size());
+	std::size_t total = 0;
+	for (std::size_t i = start_idx; i < end_idx; ++i)
+		total += pieces_[i].len;
+	if (total == 0)
+		return;
+
+	const std::size_t add_start = add_.size();
+	std::string tmp;
+	tmp.reserve(std::min<std::size_t>(total, max_consolidation_bytes_));
+	for (std::size_t i = start_idx; i < end_idx; ++i)
+		appendPieceDataTo(tmp, pieces_[i]);
+	add_.append(tmp);
+
+	// Replace [start_idx, end_idx) with single Add piece
+	Piece consolidated{Source::Add, add_start, tmp.size()};
+	pieces_.erase(pieces_.begin() + static_cast<std::ptrdiff_t>(start_idx),
+	              pieces_.begin() + static_cast<std::ptrdiff_t>(end_idx));
+	pieces_.insert(pieces_.begin() + static_cast<std::ptrdiff_t>(start_idx), consolidated);
+
+	// total_size_ unchanged
+	dirty_ = true;
+	InvalidateLineIndex();
+	coalesceNeighbors(start_idx);
+	// Layout changed; invalidate caches/version
+	version_++;
+	range_cache_ = {};
+	find_cache_  = {};
+}
+
+
+void
+PieceTable::maybeConsolidate()
+{
+	if (pieces_.size() <= piece_limit_)
+		return;
+
+	// Find the first run of small pieces to consolidate
+	std::size_t n          = pieces_.size();
+	std::size_t best_start = n, best_end = n;
+	std::size_t i          = 0;
+	while (i < n) {
+		// Skip large pieces quickly
+		if (pieces_[i].len > small_piece_threshold_) {
+			i++;
+			continue;
+		}
+		std::size_t j     = i;
+		std::size_t bytes = 0;
+		while (j < n) {
+			const auto &p = pieces_[j];
+			if (p.len > small_piece_threshold_)
+				break;
+			if (bytes + p.len > max_consolidation_bytes_)
+				break;
+			bytes += p.len;
+			j++;
+		}
+		if (j - i >= 2 && bytes > 0) {
+			// consolidate runs of at least 2 pieces
+			best_start = i;
+			best_end   = j;
+			break; // do one run per call; subsequent ops can repeat if still over limit
+		}
+		i = j + 1;
+	}
+
+	if (best_start < best_end) {
+		consolidateRange(best_start, best_end);
+	}
 }
 
 
@@ -517,8 +689,45 @@ PieceTable::GetRange(std::size_t byte_offset, std::size_t len) const
 		return std::string();
 	if (byte_offset + len > total_size_)
 		len = total_size_ - byte_offset;
-	materialize();
-	return materialized_.substr(byte_offset, len);
+
+	// Fast path: return cached value if version/offset/len match
+	if (range_cache_.valid && range_cache_.version == version_ &&
+	    range_cache_.off == byte_offset && range_cache_.len == len) {
+		return range_cache_.data;
+	}
+
+	std::string out;
+	out.reserve(len);
+	if (!dirty_) {
+		// Already materialized; slice directly
+		out.assign(materialized_.data() + static_cast<std::ptrdiff_t>(byte_offset), len);
+	} else {
+		// Assemble substring directly from pieces without full materialization
+		auto [idx, inner]     = locate(byte_offset);
+		std::size_t remaining = len;
+		while (remaining > 0 && idx < pieces_.size()) {
+			const auto &p          = pieces_[idx];
+			const std::string &src = (p.src == Source::Original) ? original_ : add_;
+			std::size_t take       = std::min<std::size_t>(p.len - inner, remaining);
+			if (take > 0) {
+				const char *base = src.data() + static_cast<std::ptrdiff_t>(p.start + inner);
+				out.append(base, take);
+				remaining -= take;
+				inner = 0;
+				idx += 1;
+			} else {
+				break;
+			}
+		}
+	}
+
+	// Update cache
+	range_cache_.valid   = true;
+	range_cache_.version = version_;
+	range_cache_.off     = byte_offset;
+	range_cache_.len     = len;
+	range_cache_.data    = out;
+	return out;
 }
 
 
@@ -529,9 +738,22 @@ PieceTable::Find(const std::string &needle, std::size_t start) const
 		return start <= total_size_ ? start : std::numeric_limits<std::size_t>::max();
 	if (start > total_size_)
 		return std::numeric_limits<std::size_t>::max();
+	if (find_cache_.valid &&
+	    find_cache_.version == version_ &&
+	    find_cache_.needle == needle &&
+	    find_cache_.start == start) {
+		return find_cache_.result;
+	}
+
 	materialize();
 	auto pos = materialized_.find(needle, start);
 	if (pos == std::string::npos)
-		return std::numeric_limits<std::size_t>::max();
+		pos = std::numeric_limits<std::size_t>::max();
+	// Update cache
+	find_cache_.valid   = true;
+	find_cache_.version = version_;
+	find_cache_.needle  = needle;
+	find_cache_.start   = start;
+	find_cache_.result  = pos;
 	return pos;
 }

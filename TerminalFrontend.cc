@@ -57,6 +57,20 @@ TerminalFrontend::Init(Editor &ed)
 	ed.SetDimensions(static_cast<std::size_t>(r), static_cast<std::size_t>(c));
 	// Attach editor to input handler for editor-owned features (e.g., universal argument)
 	input_.Attach(&ed);
+
+	// Ignore SIGINT (Ctrl-C) so it doesn't terminate the TUI.
+	// We'll restore the previous handler on Shutdown().
+	{
+		struct sigaction sa{};
+		sa.sa_handler = SIG_IGN;
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = 0;
+		struct sigaction old{};
+		if (sigaction(SIGINT, &sa, &old) == 0) {
+			old_sigint_      = old;
+			have_old_sigint_ = true;
+		}
+	}
 	return true;
 }
 
@@ -100,6 +114,11 @@ TerminalFrontend::Shutdown()
 	if (have_orig_tio_) {
 		(void) tcsetattr(STDIN_FILENO, TCSANOW, &orig_tio_);
 		have_orig_tio_ = false;
+	}
+	// Restore previous SIGINT handler
+	if (have_old_sigint_) {
+		(void) sigaction(SIGINT, &old_sigint_, nullptr);
+		have_old_sigint_ = false;
 	}
 	endwin();
 }

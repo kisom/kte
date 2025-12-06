@@ -29,89 +29,95 @@ map_key_to_command(const int ch,
 	// Handle special keys from ncurses
 	// These keys exit k-prefix mode if active (user pressed C-k then a special key).
 	switch (ch) {
-		case KEY_MOUSE: {
-			k_prefix       = false;
-			k_ctrl_pending = false;
-			MEVENT ev{};
-			if (getmouse(&ev) == OK) {
-				// Mouse wheel → scroll viewport without moving cursor
+	case KEY_ENTER:
+		// Some terminals send KEY_ENTER distinct from '\n'/'\r'
+		k_prefix = false;
+		k_ctrl_pending = false;
+		out            = {true, CommandId::Newline, "", 0};
+		return true;
+	case KEY_MOUSE: {
+		k_prefix       = false;
+		k_ctrl_pending = false;
+		MEVENT ev{};
+		if (getmouse(&ev) == OK) {
+			// Mouse wheel → scroll viewport without moving cursor
 #ifdef BUTTON4_PRESSED
-				if (ev.bstate & (BUTTON4_PRESSED | BUTTON4_RELEASED | BUTTON4_CLICKED)) {
-					out = {true, CommandId::ScrollUp, "", 0};
-					return true;
-				}
+			if (ev.bstate & (BUTTON4_PRESSED | BUTTON4_RELEASED | BUTTON4_CLICKED)) {
+				out = {true, CommandId::ScrollUp, "", 0};
+				return true;
+			}
 #endif
 #ifdef BUTTON5_PRESSED
-				if (ev.bstate & (BUTTON5_PRESSED | BUTTON5_RELEASED | BUTTON5_CLICKED)) {
-					out = {true, CommandId::ScrollDown, "", 0};
-					return true;
-				}
-#endif
-				// React to left button click/press
-				if (ev.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED | BUTTON1_RELEASED)) {
-					char buf[64];
-					// Use screen coordinates; command handler will translate via offsets
-					std::snprintf(buf, sizeof(buf), "@%d:%d", ev.y, ev.x);
-					out = {true, CommandId::MoveCursorTo, std::string(buf), 0};
-					return true;
-				}
+			if (ev.bstate & (BUTTON5_PRESSED | BUTTON5_RELEASED | BUTTON5_CLICKED)) {
+				out = {true, CommandId::ScrollDown, "", 0};
+				return true;
 			}
-			// No actionable mouse event
-			out.hasCommand = false;
-			return true;
+#endif
+			// React to left button click/press
+			if (ev.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED | BUTTON1_RELEASED)) {
+				char buf[64];
+				// Use screen coordinates; command handler will translate via offsets
+				std::snprintf(buf, sizeof(buf), "@%d:%d", ev.y, ev.x);
+				out = {true, CommandId::MoveCursorTo, std::string(buf), 0};
+				return true;
+			}
 		}
-		case KEY_LEFT:
-			k_prefix = false;
-			k_ctrl_pending = false;
-			out            = {true, CommandId::MoveLeft, "", 0};
-			return true;
-		case KEY_RIGHT:
-			k_prefix = false;
-			k_ctrl_pending = false;
-			out            = {true, CommandId::MoveRight, "", 0};
-			return true;
-		case KEY_UP:
-			k_prefix = false;
-			k_ctrl_pending = false;
-			out            = {true, CommandId::MoveUp, "", 0};
-			return true;
-		case KEY_DOWN:
-			k_prefix = false;
-			k_ctrl_pending = false;
-			out            = {true, CommandId::MoveDown, "", 0};
-			return true;
-		case KEY_HOME:
-			k_prefix = false;
-			k_ctrl_pending = false;
-			out            = {true, CommandId::MoveHome, "", 0};
-			return true;
-		case KEY_END:
-			k_prefix = false;
-			k_ctrl_pending = false;
-			out            = {true, CommandId::MoveEnd, "", 0};
-			return true;
-		case KEY_PPAGE:
-			k_prefix = false;
-			k_ctrl_pending = false;
-			out            = {true, CommandId::PageUp, "", 0};
-			return true;
-		case KEY_NPAGE:
-			k_prefix = false;
-			k_ctrl_pending = false;
-			out            = {true, CommandId::PageDown, "", 0};
-			return true;
-		case KEY_DC:
-			k_prefix = false;
-			k_ctrl_pending = false;
-			out            = {true, CommandId::DeleteChar, "", 0};
-			return true;
-		case KEY_RESIZE:
-			k_prefix = false;
-			k_ctrl_pending = false;
-			out            = {true, CommandId::Refresh, "", 0};
-			return true;
-		default:
-			break;
+		// No actionable mouse event
+		out.hasCommand = false;
+		return true;
+	}
+	case KEY_LEFT:
+		k_prefix = false;
+		k_ctrl_pending = false;
+		out            = {true, CommandId::MoveLeft, "", 0};
+		return true;
+	case KEY_RIGHT:
+		k_prefix = false;
+		k_ctrl_pending = false;
+		out            = {true, CommandId::MoveRight, "", 0};
+		return true;
+	case KEY_UP:
+		k_prefix = false;
+		k_ctrl_pending = false;
+		out            = {true, CommandId::MoveUp, "", 0};
+		return true;
+	case KEY_DOWN:
+		k_prefix = false;
+		k_ctrl_pending = false;
+		out            = {true, CommandId::MoveDown, "", 0};
+		return true;
+	case KEY_HOME:
+		k_prefix = false;
+		k_ctrl_pending = false;
+		out            = {true, CommandId::MoveHome, "", 0};
+		return true;
+	case KEY_END:
+		k_prefix = false;
+		k_ctrl_pending = false;
+		out            = {true, CommandId::MoveEnd, "", 0};
+		return true;
+	case KEY_PPAGE:
+		k_prefix = false;
+		k_ctrl_pending = false;
+		out            = {true, CommandId::PageUp, "", 0};
+		return true;
+	case KEY_NPAGE:
+		k_prefix = false;
+		k_ctrl_pending = false;
+		out            = {true, CommandId::PageDown, "", 0};
+		return true;
+	case KEY_DC:
+		k_prefix = false;
+		k_ctrl_pending = false;
+		out            = {true, CommandId::DeleteChar, "", 0};
+		return true;
+	case KEY_RESIZE:
+		k_prefix = false;
+		k_ctrl_pending = false;
+		out            = {true, CommandId::Refresh, "", 0};
+		return true;
+	default:
+		break;
 	}
 
 	// ESC as cancel of prefix; many terminals send meta sequences as ESC+...

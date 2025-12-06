@@ -6,6 +6,7 @@
 #include <sstream>
 #include <cmath>
 #include <cctype>
+#include <string_view>
 
 #include "Command.h"
 #include "syntax/HighlighterRegistry.h"
@@ -48,7 +49,7 @@ bool gFontDialogRequested = false;
 // window based on the editor's current dimensions. The bottom row is reserved
 // for the status line.
 static std::size_t
-compute_render_x(const std::string &line, const std::size_t curx, const std::size_t tabw)
+compute_render_x(std::string_view line, const std::size_t curx, const std::size_t tabw)
 {
 	std::size_t rx = 0;
 	for (std::size_t i = 0; i < curx && i < line.size(); ++i) {
@@ -93,10 +94,11 @@ ensure_cursor_visible(const Editor &ed, Buffer &buf)
 	}
 
 	// Horizontal scrolling (use rendered columns with tabs expanded)
-	std::size_t rx    = 0;
-	const auto &lines = buf.Rows();
-	if (cury < lines.size()) {
-		rx = compute_render_x(static_cast<std::string>(lines[cury]), curx, 8);
+	std::size_t rx   = 0;
+	const auto total = buf.Nrows();
+	if (cury < total) {
+		// Avoid materializing all rows and copying strings; get a zero-copy view
+		rx = compute_render_x(buf.GetLineView(cury), curx, 8);
 	}
 	if (rx < coloffs) {
 		coloffs = rx;

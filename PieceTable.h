@@ -3,8 +3,10 @@
  */
 #pragma once
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
+#include <limits>
 
 
 class PieceTable {
@@ -12,6 +14,12 @@ public:
 	PieceTable();
 
 	explicit PieceTable(std::size_t initialCapacity);
+
+	// Advanced constructor allowing configuration of consolidation heuristics
+	PieceTable(std::size_t initialCapacity,
+	           std::size_t piece_limit,
+	           std::size_t small_piece_threshold,
+	           std::size_t max_consolidation_bytes);
 
 	PieceTable(const PieceTable &other);
 
@@ -92,6 +100,11 @@ public:
 	// Simple search utility; returns byte offset or npos
 	[[nodiscard]] std::size_t Find(const std::string &needle, std::size_t start = 0) const;
 
+	// Heuristic configuration
+	void SetConsolidationParams(std::size_t piece_limit,
+	                            std::size_t small_piece_threshold,
+	                            std::size_t max_consolidation_bytes);
+
 private:
 	enum class Source : unsigned char { Original, Add };
 
@@ -113,6 +126,13 @@ private:
 	// Helper: try to coalesce neighboring pieces around index
 	void coalesceNeighbors(std::size_t index);
 
+	// Consolidation helpers and heuristics
+	void maybeConsolidate();
+
+	void consolidateRange(std::size_t start_idx, std::size_t end_idx);
+
+	void appendPieceDataTo(std::string &out, const Piece &p) const;
+
 	// Line index support (rebuilt lazily on demand)
 	void InvalidateLineIndex() const;
 
@@ -124,10 +144,37 @@ private:
 	std::vector<Piece> pieces_;
 
 	mutable std::string materialized_;
-	mutable bool dirty_     = true;
-	std::size_t total_size_ = 0;
+	mutable bool dirty_ = true;
+	// Monotonic content version. Increment on any mutation that affects content layout
+	mutable std::uint64_t version_ = 0;
+	std::size_t total_size_        = 0;
 
 	// Cached line index: starting byte offset of each line (always contains at least 1 entry: 0)
 	mutable std::vector<std::size_t> line_index_;
 	mutable bool line_index_dirty_ = true;
+
+	// Heuristic knobs
+	std::size_t piece_limit_             = 4096; // trigger consolidation when exceeded
+	std::size_t small_piece_threshold_   = 64; // bytes
+	std::size_t max_consolidation_bytes_ = 4096; // cap per consolidation run
+
+	// Lightweight caches to avoid redundant work when callers query the same range repeatedly
+	struct RangeCache {
+		bool valid            = false;
+		std::uint64_t version = 0;
+		std::size_t off       = 0;
+		std::size_t len       = 0;
+		std::string data;
+	};
+
+	struct FindCache {
+		bool valid            = false;
+		std::uint64_t version = 0;
+		std::string needle;
+		std::size_t start  = 0;
+		std::size_t result = std::numeric_limits<std::size_t>::max();
+	};
+
+	mutable RangeCache range_cache_;
+	mutable FindCache find_cache_;
 };
