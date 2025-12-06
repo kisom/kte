@@ -83,8 +83,12 @@ ensure_cursor_visible(const Editor &ed, Buffer &buf)
 		rowoffs = cury - content_rows + 1;
 	}
 
-	// Clamp vertical offset to available content
-	const auto total_rows = buf.Nrows();
+	// Clamp vertical offset to available content. Use the materialized rows cache
+	// because some legacy editing commands still modify Buffer::Rows() directly.
+	// TerminalRenderer also renders from Buffer::Rows(), so keeping viewport math
+	// consistent with that avoids desync where the cursor goes off-screen when
+	// inserting newlines at EOF.
+	const auto total_rows = buf.Rows().size();
 	if (content_rows < total_rows) {
 		std::size_t max_rowoffs = total_rows - content_rows;
 		if (rowoffs > max_rowoffs)

@@ -23,7 +23,7 @@ make clean
 rm -fr kge.app* kge-qt.app*
 make
 mv kge.app kge-qt.app
-macdeployqt -always-overwrite kge-qt.app
+macdeployqt kge-qt.app -always-overwrite
 zip -r kge-qt.app.zip kge-qt.app 
 sha256sum kge-qt.app.zip
 open .
