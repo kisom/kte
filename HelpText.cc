@@ -31,6 +31,7 @@ HelpText::Text()
 		"  C-k c        Close current buffer\n"
 		"  C-k d        Kill to end of line\n"
 		"  C-k e        Open file (prompt)\n"
+		"  C-k i        New empty buffer\n"
 		"  C-k f        Flush kill ring\n"
 		"  C-k g        Jump to line\n"
 		"  C-k h        Show this help\n"

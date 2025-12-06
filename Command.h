@@ -31,6 +31,7 @@ enum class CommandId {
 	VisualFontPickerToggle,
 	// Buffers
 	BufferSwitchStart, // begin buffer switch prompt
+	BufferNew, // create a new empty, unnamed buffer (C-k i)
 	BufferClose,
 	BufferNext,
 	BufferPrev,

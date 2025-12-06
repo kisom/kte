@@ -1585,6 +1585,19 @@ cmd_buffer_close(const CommandContext &ctx)
 }
 
 
+// Create a new empty, unnamed buffer and switch to it
+static bool
+cmd_buffer_new(const CommandContext &ctx)
+{
+	// Create an empty buffer and add it to the editor
+	Buffer empty;
+	std::size_t idx = ctx.editor.AddBuffer(std::move(empty));
+	ctx.editor.SwitchTo(idx);
+	ctx.editor.SetStatus("New buffer");
+	return true;
+}
+
+
 // --- Editing ---
 static bool
 cmd_insert_text(CommandContext &ctx)
@@ -4378,6 +4391,7 @@ InstallDefaultCommands()
 		CommandId::BufferSwitchStart, "buffer-switch-start", "Begin buffer switch prompt",
 		cmd_buffer_switch_start, false, false
 	});
+	CommandRegistry::Register({CommandId::BufferNew, "buffer-new", "Open new empty buffer", cmd_buffer_new});
 	CommandRegistry::Register({CommandId::BufferNext, "buffer-next", "Switch to next buffer", cmd_buffer_next});
 	CommandRegistry::Register({CommandId::BufferPrev, "buffer-prev", "Switch to previous buffer", cmd_buffer_prev});
 	CommandRegistry::Register({
