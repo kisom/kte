@@ -292,66 +292,34 @@ install(TARGETS kte
 install(FILES docs/kte.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 
 if (BUILD_TESTS)
-    # test_undo executable for testing undo/redo system
-    add_executable(test_undo
-            test_undo.cc
-            ${COMMON_SOURCES}
-            ${COMMON_HEADERS}
+    # Unified unit test runner
+    add_executable(kte_tests
+            tests/TestRunner.cc
+            tests/Test.h
+            tests/test_buffer_io.cc
+            tests/test_piece_table.cc
+            tests/test_search.cc
+
+            # minimal engine sources required by Buffer
+            PieceTable.cc
+            Buffer.cc
+            OptimizedSearch.cc
+            UndoNode.cc
+            UndoTree.cc
+            UndoSystem.cc
+            ${SYNTAX_SOURCES}
     )
 
-    if (KTE_UNDO_DEBUG)
-        target_compile_definitions(test_undo PRIVATE KTE_UNDO_DEBUG=1)
-    endif ()
+    # Allow tests to include project headers like "Buffer.h"
+    target_include_directories(kte_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-
-    target_link_libraries(test_undo ${CURSES_LIBRARIES})
+    # Keep tests free of ncurses/GUI deps
     if (KTE_ENABLE_TREESITTER)
         if (TREESITTER_INCLUDE_DIR)
-            target_include_directories(test_undo PRIVATE ${TREESITTER_INCLUDE_DIR})
+            target_include_directories(kte_tests PRIVATE ${TREESITTER_INCLUDE_DIR})
         endif ()
         if (TREESITTER_LIBRARY)
-            target_link_libraries(test_undo ${TREESITTER_LIBRARY})
-        endif ()
-    endif ()
-
-    # test_buffer_save executable to verify Buffer::Save writes contents to disk
-    # Keep this test minimal to avoid pulling the entire app; only compile what's needed
-    add_executable(test_buffer_save
-            test_buffer_save.cc
-            PieceTable.cc
-            Buffer.cc
-            ${SYNTAX_SOURCES}
-            UndoNode.cc
-            UndoTree.cc
-            UndoSystem.cc
-    )
-    # test_buffer_save_existing: verifies Save() after OpenFromFile on existing path
-    add_executable(test_buffer_save_existing
-            test_buffer_save_existing.cc
-            PieceTable.cc
-            Buffer.cc
-            ${SYNTAX_SOURCES}
-            UndoNode.cc
-            UndoTree.cc
-            UndoSystem.cc
-    )
-    # test for opening a non-existent path then saving
-    add_executable(test_buffer_open_nonexistent_save
-            test_buffer_open_nonexistent_save.cc
-            PieceTable.cc
-            Buffer.cc
-            ${SYNTAX_SOURCES}
-            UndoNode.cc
-            UndoTree.cc
-            UndoSystem.cc
-    )
-    # No ncurses needed for this unit
-    if (KTE_ENABLE_TREESITTER)
-        if (TREESITTER_INCLUDE_DIR)
-            target_include_directories(test_buffer_save PRIVATE ${TREESITTER_INCLUDE_DIR})
-        endif ()
-        if (TREESITTER_LIBRARY)
-            target_link_libraries(test_buffer_save ${TREESITTER_LIBRARY})
+            target_link_libraries(kte_tests ${TREESITTER_LIBRARY})
         endif ()
     endif ()
 endif ()
