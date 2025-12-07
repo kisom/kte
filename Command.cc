@@ -4224,22 +4224,38 @@ cmd_reflow_paragraph(CommandContext &ctx)
 static bool
 cmd_reload_buffer(CommandContext &ctx)
 {
-	Buffer *buf = ctx.editor.CurrentBuffer();
-	if (!buf)
-		return false;
-	const std::string &filename = buf->Filename();
-	if (filename.empty()) {
-		ctx.editor.SetStatus("Cannot reload unnamed buffer");
-		return false;
-	}
-	std::string err;
-	if (!buf->OpenFromFile(filename, err)) {
-		ctx.editor.SetStatus(std::string("Reload failed: ") + err);
-		return false;
-	}
-	ctx.editor.SetStatus(std::string("Reloaded ") + filename);
-	ensure_cursor_visible(ctx.editor, *buf);
-	return true;
+    Buffer *buf = ctx.editor.CurrentBuffer();
+    if (!buf)
+        return false;
+    // Remember the current cursor position so we can attempt to restore it
+    const std::size_t old_x = buf->Curx();
+    const std::size_t old_y = buf->Cury();
+    const std::string &filename = buf->Filename();
+    if (filename.empty()) {
+        ctx.editor.SetStatus("Cannot reload unnamed buffer");
+        return false;
+    }
+    std::string err;
+    if (!buf->OpenFromFile(filename, err)) {
+        ctx.editor.SetStatus(std::string("Reload failed: ") + err);
+        return false;
+    }
+    // Try to restore the cursor to its previous position if still valid; otherwise clamp
+    {
+        auto &rows = buf->Rows();
+        const std::size_t nrows = rows.size();
+        if (nrows == 0) {
+            buf->SetCursor(0, 0);
+        } else {
+            const std::size_t new_y = old_y < nrows ? old_y : (nrows - 1);
+            const std::size_t line_len = rows[new_y].size();
+            const std::size_t new_x = old_x < line_len ? old_x : line_len;
+            buf->SetCursor(new_x, new_y);
+        }
+    }
+    ctx.editor.SetStatus(std::string("Reloaded ") + filename);
+    ensure_cursor_visible(ctx.editor, *buf);
+    return true;
 }
 
 
