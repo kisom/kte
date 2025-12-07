@@ -313,6 +313,47 @@ if (BUILD_TESTS)
             target_link_libraries(test_undo ${TREESITTER_LIBRARY})
         endif ()
     endif ()
+
+    # test_buffer_save executable to verify Buffer::Save writes contents to disk
+    # Keep this test minimal to avoid pulling the entire app; only compile what's needed
+    add_executable(test_buffer_save
+            test_buffer_save.cc
+            PieceTable.cc
+            Buffer.cc
+            ${SYNTAX_SOURCES}
+            UndoNode.cc
+            UndoTree.cc
+            UndoSystem.cc
+    )
+    # test_buffer_save_existing: verifies Save() after OpenFromFile on existing path
+    add_executable(test_buffer_save_existing
+            test_buffer_save_existing.cc
+            PieceTable.cc
+            Buffer.cc
+            ${SYNTAX_SOURCES}
+            UndoNode.cc
+            UndoTree.cc
+            UndoSystem.cc
+    )
+    # test for opening a non-existent path then saving
+    add_executable(test_buffer_open_nonexistent_save
+            test_buffer_open_nonexistent_save.cc
+            PieceTable.cc
+            Buffer.cc
+            ${SYNTAX_SOURCES}
+            UndoNode.cc
+            UndoTree.cc
+            UndoSystem.cc
+    )
+    # No ncurses needed for this unit
+    if (KTE_ENABLE_TREESITTER)
+        if (TREESITTER_INCLUDE_DIR)
+            target_include_directories(test_buffer_save PRIVATE ${TREESITTER_INCLUDE_DIR})
+        endif ()
+        if (TREESITTER_LIBRARY)
+            target_link_libraries(test_buffer_save ${TREESITTER_LIBRARY})
+        endif ()
+    endif ()
 endif ()
 
 if (${BUILD_GUI})

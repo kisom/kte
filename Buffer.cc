@@ -292,28 +292,29 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 bool
 Buffer::Save(std::string &err) const
 {
-	if (!is_file_backed_ || filename_.empty()) {
-		err = "Buffer is not file-backed; use SaveAs()";
-		return false;
-	}
-	std::ofstream out(filename_, std::ios::out | std::ios::binary | std::ios::trunc);
-	if (!out) {
-		err = "Failed to open for write: " + filename_ + ". Error: " + std::string(std::strerror(errno));
-		return false;
-	}
-	// Write the entire buffer in a single block to minimize I/O calls.
-	const char *data = content_.Data();
-	const auto size  = static_cast<std::streamsize>(content_.Size());
-	if (data != nullptr && size > 0) {
-		out.write(data, size);
-	}
-	if (!out.good()) {
-		err = "Write error: " + filename_ + ". Error: " + std::string(std::strerror(errno));
-		return false;
-	}
-	// Note: const method cannot change dirty_. Intentionally const to allow UI code
-	// to decide when to flip dirty flag after successful save.
-	return true;
+    if (!is_file_backed_ || filename_.empty()) {
+        err = "Buffer is not file-backed; use SaveAs()";
+        return false;
+    }
+    std::ofstream out(filename_, std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!out) {
+        err = "Failed to open for write: " + filename_ + ". Error: " + std::string(std::strerror(errno));
+        return false;
+    }
+    // Stream the content directly from the piece table to avoid relying on
+    // full materialization, which may yield an empty pointer when size > 0.
+    if (content_.Size() > 0) {
+        content_.WriteToStream(out);
+    }
+    // Ensure data hits the OS buffers
+    out.flush();
+    if (!out.good()) {
+        err = "Write error: " + filename_ + ". Error: " + std::string(std::strerror(errno));
+        return false;
+    }
+    // Note: const method cannot change dirty_. Intentionally const to allow UI code
+    // to decide when to flip dirty flag after successful save.
+    return true;
 }
 
 
@@ -345,16 +346,16 @@ Buffer::SaveAs(const std::string &path, std::string &err)
 		err = "Failed to open for write: " + out_path + ". Error: " + std::string(std::strerror(errno));
 		return false;
 	}
-	// Write whole content in a single I/O operation
-	const char *data = content_.Data();
-	const auto size  = static_cast<std::streamsize>(content_.Size());
-	if (data != nullptr && size > 0) {
-		out.write(data, size);
-	}
-	if (!out.good()) {
-		err = "Write error: " + out_path + ". Error: " + std::string(std::strerror(errno));
-		return false;
-	}
+ // Stream content without forcing full materialization
+ if (content_.Size() > 0) {
+     content_.WriteToStream(out);
+ }
+ // Ensure data hits the OS buffers
+    out.flush();
+    if (!out.good()) {
+        err = "Write error: " + out_path + ". Error: " + std::string(std::strerror(errno));
+        return false;
+    }
 
 	filename_       = out_path;
 	is_file_backed_ = true;

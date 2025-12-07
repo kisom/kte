@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <ostream>
 #include <vector>
 #include <limits>
 
@@ -99,6 +100,9 @@ public:
 
 	// Simple search utility; returns byte offset or npos
 	[[nodiscard]] std::size_t Find(const std::string &needle, std::size_t start = 0) const;
+
+	// Stream out content without materializing the entire buffer
+	void WriteToStream(std::ostream &out) const;
 
 	// Heuristic configuration
 	void SetConsolidationParams(std::size_t piece_limit,

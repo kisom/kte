@@ -197,9 +197,11 @@ Editor::OpenFile(const std::string &path, std::string &err)
 					eng->InvalidateFrom(0);
 				}
 			}
-			return true;
-		}
-	}
+            // Defensive: ensure any active prompt is closed after a successful open
+            CancelPrompt();
+            return true;
+        }
+    }
 
 	Buffer b;
 	if (!b.OpenFromFile(path, err)) {
@@ -237,8 +239,10 @@ Editor::OpenFile(const std::string &path, std::string &err)
 	}
 	// Add as a new buffer and switch to it
 	std::size_t idx = AddBuffer(std::move(b));
-	SwitchTo(idx);
-	return true;
+    SwitchTo(idx);
+    // Defensive: ensure any active prompt is closed after a successful open
+    CancelPrompt();
+    return true;
 }
 
 

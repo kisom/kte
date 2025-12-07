@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <utility>
 #include <limits>
+#include <ostream>
 
 #include "PieceTable.h"
 
@@ -756,4 +757,18 @@ PieceTable::Find(const std::string &needle, std::size_t start) const
 	find_cache_.start   = start;
 	find_cache_.result  = pos;
 	return pos;
+}
+
+
+void
+PieceTable::WriteToStream(std::ostream &out) const
+{
+    // Stream the content piece-by-piece without forcing full materialization
+    for (const auto &p : pieces_) {
+        if (p.len == 0)
+            continue;
+        const std::string &src = (p.src == Source::Original) ? original_ : add_;
+        const char *base       = src.data() + static_cast<std::ptrdiff_t>(p.start);
+        out.write(base, static_cast<std::streamsize>(p.len));
+    }
 }
