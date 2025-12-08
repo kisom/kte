@@ -158,16 +158,17 @@ map_key(const SDL_Keycode key,
 			ascii_key = static_cast<int>(key);
 		}
 		bool ctrl2 = (mod & KMOD_CTRL) != 0;
-		// If user typed a literal 'C' (or '^') as a control qualifier, keep k-prefix active
-		if (ascii_key == 'C' || ascii_key == 'c' || ascii_key == '^') {
-			k_ctrl_pending = true;
-			// Keep waiting for the next suffix; show status and suppress ensuing TEXTINPUT
-			if (ed)
-				ed->SetStatus("C-k C _");
-			suppress_textinput_once = true;
-			out.hasCommand          = false;
-			return true;
-		}
+  // If user typed a literal 'C' (uppercase) or '^' as a control qualifier, keep k-prefix active
+  // Do NOT treat lowercase 'c' as a qualifier; 'c' is a valid k-command (BufferClose).
+  if (ascii_key == 'C' || ascii_key == '^') {
+      k_ctrl_pending = true;
+      // Keep waiting for the next suffix; show status and suppress ensuing TEXTINPUT
+      if (ed)
+          ed->SetStatus("C-k C _");
+      suppress_textinput_once = true;
+      out.hasCommand          = false;
+      return true;
+  }
 		// Otherwise, consume the k-prefix now for the actual suffix
 		k_prefix = false;
 		if (ascii_key != 0) {
@@ -472,16 +473,16 @@ ImGuiInputHandler::ProcessSDLEvent(const SDL_Event &e)
 					ascii_key = static_cast<int>(c0);
 				}
 				if (ascii_key != 0) {
-					// Qualifier via TEXTINPUT: 'C' or '^'
-					if (ascii_key == 'C' || ascii_key == 'c' || ascii_key == '^') {
-						k_ctrl_pending_ = true;
-						if (ed_)
-							ed_->SetStatus("C-k C _");
-						// Keep k-prefix active; do not emit a command
-						k_prefix_ = true;
-						produced  = true;
-						break;
-					}
+     // Qualifier via TEXTINPUT: uppercase 'C' or '^' only
+     if (ascii_key == 'C' || ascii_key == '^') {
+         k_ctrl_pending_ = true;
+         if (ed_)
+             ed_->SetStatus("C-k C _");
+         // Keep k-prefix active; do not emit a command
+         k_prefix_ = true;
+         produced  = true;
+         break;
+     }
 					// Map via k-prefix table; do not pass Ctrl for TEXTINPUT case
 					CommandId id;
 					bool pass_ctrl  = k_ctrl_pending_;

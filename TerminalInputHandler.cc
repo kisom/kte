@@ -178,14 +178,15 @@ map_key_to_command(const int ch,
 			ctrl      = true;
 			ascii_key = 'a' + (ch - 1);
 		}
-		// If user typed literal 'C'/'c' or '^' as a qualifier, keep k-prefix and set pending
-		if (ascii_key == 'C' || ascii_key == 'c' || ascii_key == '^') {
-			k_ctrl_pending = true;
-			if (ed)
-				ed->SetStatus("C-k C _");
-			out.hasCommand = false;
-			return true;
-		}
+  // If user typed literal 'C' or '^' as a qualifier, keep k-prefix and set pending
+  // Note: Do NOT treat lowercase 'c' as a qualifier, since 'c' is a valid C-k command (BufferClose).
+  if (ascii_key == 'C' || ascii_key == '^') {
+      k_ctrl_pending = true;
+      if (ed)
+          ed->SetStatus("C-k C _");
+      out.hasCommand = false;
+      return true;
+  }
 		// For actual suffix, consume the k-prefix
 		k_prefix = false;
 		// Do NOT lowercase here; KLookupKCommand handles case-sensitive bindings
