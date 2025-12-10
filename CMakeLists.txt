@@ -379,12 +379,18 @@ if (${BUILD_GUI})
                 ${CMAKE_CURRENT_BINARY_DIR}/kge-Info.plist
                 @ONLY)
 
+        # Ensure proper macOS bundle properties and RPATH so our bundled
+        # frameworks are preferred over system/Homebrew ones.
         set_target_properties(kge PROPERTIES
                 MACOSX_BUNDLE TRUE
                 MACOSX_BUNDLE_GUI_IDENTIFIER ${KGE_BUNDLE_ID}
                 MACOSX_BUNDLE_BUNDLE_NAME "kge"
                 MACOSX_BUNDLE_ICON_FILE ${MACOSX_BUNDLE_ICON_FILE}
-                MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/kge-Info.plist")
+                MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/kge-Info.plist"
+                # Prefer the app's bundled frameworks at runtime
+                INSTALL_RPATH "@executable_path/../Frameworks"
+                BUILD_WITH_INSTALL_RPATH TRUE
+        )
 
         add_dependencies(kge kte)
         add_custom_command(TARGET kge POST_BUILD
@@ -408,4 +414,19 @@ if (${BUILD_GUI})
     # Install kge man page only when GUI is built
     install(FILES docs/kge.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
     install(FILES kge.png DESTINATION ${CMAKE_INSTALL_PREFIX}/share/icons)
+
+    # Optional post-build bundle fixup (can also be run from scripts).
+    # This provides a CMake target to run BundleUtilities' fixup_bundle on the
+    # built app, useful after macdeployqt to ensure non-Qt dylibs are internalized.
+    if (APPLE)
+        include(CMakeParseArguments)
+        add_custom_target(kge_fixup_bundle ALL
+                COMMAND ${CMAKE_COMMAND}
+                    -DAPP_BUNDLE=$<TARGET_BUNDLE_DIR:kge>
+                    -P ${CMAKE_CURRENT_LIST_DIR}/cmake/fix_bundle.cmake
+                BYPRODUCTS $<TARGET_BUNDLE_DIR:kge>/Contents/Frameworks
+                COMMENT "Running fixup_bundle on kge.app to internalize non-Qt dylibs"
+                VERBATIM)
+        add_dependencies(kge_fixup_bundle kge)
+    endif ()
 endif ()

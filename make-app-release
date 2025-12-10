@@ -16,14 +16,18 @@ open .
 cd ..
 
 mkdir -p cmake-build-release-qt
-cmake -S . -B cmake-build-release -DBUILD_GUI=ON -DCMAKE_BUILD_TYPE=Release -DENABLE_ASAN=OFF
+cmake -S . -B cmake-build-release-qt -DBUILD_GUI=ON -DKTE_USE_QT=ON -DCMAKE_BUILD_TYPE=Release -DENABLE_ASAN=OFF
 
 cd cmake-build-release-qt
 make clean
 rm -fr kge.app* kge-qt.app*
 make
-mv kge.app kge-qt.app
-macdeployqt kge-qt.app -always-overwrite
+mv -f kge.app kge-qt.app
+# Use the same Qt's macdeployqt as used for building; ensure it overwrites in-bundle paths
+macdeployqt kge-qt.app -always-overwrite -verbose=3
+
+# Run CMake BundleUtilities fixup to internalize non-Qt dylibs and rewrite install names
+cmake -DAPP_BUNDLE="$(pwd)/kge-qt.app" -P "${PWD%/*}/cmake/fix_bundle.cmake"
 zip -r kge-qt.app.zip kge-qt.app 
 sha256sum kge-qt.app.zip
 open .

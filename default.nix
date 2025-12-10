@@ -1,5 +1,6 @@
 {
-  lib,
+  pkgs ? import <nixpkgs> {},
+  lib ? pkgs.lib,
   stdenv,
   cmake,
   ncurses,
