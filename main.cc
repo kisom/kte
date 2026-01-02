@@ -305,6 +305,7 @@ main(int argc, const char *argv[])
 		return 1;
 	}
 
+	Execute(editor, CommandId::CenterOnCursor);
 
 	bool running = true;
 	while (running) {
