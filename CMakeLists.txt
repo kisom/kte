@@ -4,7 +4,7 @@ project(kte)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 20)
-set(KTE_VERSION "1.5.5")
+set(KTE_VERSION "1.5.6")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
@@ -63,7 +63,7 @@ endif ()
 
 message(STATUS "Build system: ${CMAKE_HOST_SYSTEM_NAME}")
 
-if (${BUILD_GUI})
+if (BUILD_GUI)
     include(cmake/imgui.cmake)
 endif ()
 
@@ -326,7 +326,7 @@ if (BUILD_TESTS)
     endif ()
 endif ()
 
-if (${BUILD_GUI})
+if (BUILD_GUI)
     # ImGui::CreateContext();
     # ImGuiIO& io = ImGui::GetIO();
 
@@ -420,15 +420,16 @@ if (${BUILD_GUI})
     # Optional post-build bundle fixup (can also be run from scripts).
     # This provides a CMake target to run BundleUtilities' fixup_bundle on the
     # built app, useful after macdeployqt to ensure non-Qt dylibs are internalized.
-    if (APPLE)
-        include(CMakeParseArguments)
-        add_custom_target(kge_fixup_bundle ALL
-                COMMAND ${CMAKE_COMMAND}
-                -DAPP_BUNDLE=$<TARGET_BUNDLE_DIR:kge>
-                -P ${CMAKE_CURRENT_LIST_DIR}/cmake/fix_bundle.cmake
-                BYPRODUCTS $<TARGET_BUNDLE_DIR:kge>/Contents/Frameworks
-                COMMENT "Running fixup_bundle on kge.app to internalize non-Qt dylibs"
-                VERBATIM)
-        add_dependencies(kge_fixup_bundle kge)
+    if (APPLE AND TARGET kge)
+        get_target_property(IS_BUNDLE kge MACOSX_BUNDLE)
+        if (IS_BUNDLE)
+            add_custom_target(kge_fixup_bundle ALL
+                    COMMAND ${CMAKE_COMMAND}
+                    -DAPP_BUNDLE=${CMAKE_CURRENT_BINARY_DIR}/$<TARGET_PROPERTY:kge,MACOSX_BUNDLE_BUNDLE_NAME>.app
+                    -P ${CMAKE_CURRENT_LIST_DIR}/cmake/fix_bundle.cmake
+                    COMMENT "Running fixup_bundle on kge.app to internalize non-Qt dylibs"
+                    VERBATIM)
+            add_dependencies(kge_fixup_bundle kge)
+        endif ()
     endif ()
 endif ()
