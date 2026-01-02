@@ -3,12 +3,12 @@
 #include <string>
 #include <utility>
 
-#include "BrassMonoCode.h"
+#include "BerkeleyMono.h"
 
 namespace kte::Fonts {
 // Provide default embedded font aliases used by GUIFrontend fallback loader
-inline const unsigned int DefaultFontSize  = BrassMonoCode::DefaultFontBoldCompressedSize;
-inline const unsigned int *DefaultFontData = BrassMonoCode::DefaultFontBoldCompressedData;
+inline const unsigned int DefaultFontSize  = BerkeleyMono::DefaultFontRegularCompressedSize;
+inline const unsigned int *DefaultFontData = BerkeleyMono::DefaultFontRegularCompressedData;
 
 class Font {
 public:

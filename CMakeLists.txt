@@ -208,6 +208,7 @@ set(FONT_HEADERS
         fonts/Syne.h
         fonts/Triplicate.h
         fonts/Unispace.h
+        fonts/BerkeleyMono.h
 )
 
 set(COMMON_HEADERS
@@ -255,6 +256,7 @@ if (BUILD_GUI)
                 ImGuiFrontend.h
                 ImGuiInputHandler.h
                 ImGuiRenderer.h
+                fonts/BerkeleyMono.h
         )
     endif ()
 endif ()

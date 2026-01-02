@@ -1,5 +1,6 @@
 #pragma once
 #include "B612Mono.h"
+#include "BerkeleyMono.h"
 #include "BrassMono.h"
 #include "BrassMonoCode.h"
 #include "FiraCode.h"

@@ -7,8 +7,8 @@ InstallDefaultFonts()
 {
 	FontRegistry::Instance().Register(std::make_unique<Font>(
 		"default",
-		BrassMono::DefaultFontBoldCompressedData,
-		BrassMono::DefaultFontBoldCompressedSize
+		BerkeleyMono::DefaultFontBoldCompressedData,
+		BerkeleyMono::DefaultFontBoldCompressedSize
 	));
 	FontRegistry::Instance().Register(std::make_unique<Font>(
 		"b612",
@@ -16,19 +16,29 @@ InstallDefaultFonts()
 		B612Mono::DefaultFontRegularCompressedSize
 	));
 	FontRegistry::Instance().Register(std::make_unique<Font>(
+		"berkeley",
+		BerkeleyMono::DefaultFontRegularCompressedData,
+		BerkeleyMono::DefaultFontRegularCompressedSize
+	));
+	FontRegistry::Instance().Register(std::make_unique<Font>(
+		"berkeley-bold",
+		BerkeleyMono::DefaultFontBoldCompressedData,
+		BerkeleyMono::DefaultFontBoldCompressedSize
+	));
+	FontRegistry::Instance().Register(std::make_unique<Font>(
 		"brassmono",
 		BrassMono::DefaultFontRegularCompressedData,
 		BrassMono::DefaultFontRegularCompressedSize
 	));
 	FontRegistry::Instance().Register(std::make_unique<Font>(
-	    "brassmono-bold",
-	    BrassMono::DefaultFontBoldCompressedData,
-	    BrassMono::DefaultFontBoldCompressedSize
+		"brassmono-bold",
+		BrassMono::DefaultFontBoldCompressedData,
+		BrassMono::DefaultFontBoldCompressedSize
 	));
 	FontRegistry::Instance().Register(std::make_unique<Font>(
-	    "brassmonocode",
-	    BrassMonoCode::DefaultFontRegularCompressedData,
-	    BrassMonoCode::DefaultFontRegularCompressedSize
+		"brassmonocode",
+		BrassMonoCode::DefaultFontRegularCompressedData,
+		BrassMonoCode::DefaultFontRegularCompressedSize
 	));
 	FontRegistry::Instance().Register(std::make_unique<Font>(
 		"brassmonocode-bold",
