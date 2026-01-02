@@ -237,8 +237,8 @@ extract_region_text(const Buffer &buf, std::size_t sx, std::size_t sy, std::size
 	{
 		const auto &line = rows[sy];
 		std::size_t xs   = std::min(sx, line.size());
-		out += line.substr(xs);
-		out += '\n';
+		out              += line.substr(xs);
+		out              += '\n';
 	}
 	// middle lines full
 	for (std::size_t y = sy + 1; y < ey; ++y) {
@@ -249,7 +249,7 @@ extract_region_text(const Buffer &buf, std::size_t sx, std::size_t sy, std::size
 	{
 		const auto &line = rows[ey];
 		std::size_t xe   = std::min(ex, line.size());
-		out += line.substr(0, xe);
+		out              += line.substr(0, xe);
 	}
 	return out;
 }
@@ -277,7 +277,7 @@ delete_region(Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::
 		buf.delete_text(static_cast<int>(sy), static_cast<int>(xs), xe - xs);
 	} else {
 		// Multi-line: delete from (sx,sy) to (ex,ey)
-		// Strategy: 
+		// Strategy:
 		// 1. Save suffix of last line (from ex to end)
 		// 2. Delete tail of first line (from sx to end)
 		// 3. Delete all lines from sy+1 to ey (inclusive)
@@ -1922,7 +1922,7 @@ cmd_insert_text(CommandContext &ctx)
 	// If in search mode, treat printable input as query update
 	if (ctx.editor.SearchActive()) {
 		std::string q = ctx.editor.SearchQuery();
-		q += ctx.arg; // arg already printable text
+		q             += ctx.arg; // arg already printable text
 		ctx.editor.SetSearchQuery(q);
 
 		// Recompute matches and move cursor to current index
@@ -1967,34 +1967,34 @@ cmd_insert_text(CommandContext &ctx)
 		ctx.editor.SetStatus("InsertText arg must not contain newlines");
 		return false;
 	}
- ensure_at_least_one_line(*buf);
- std::size_t y = buf->Cury();
- std::size_t x = buf->Curx();
- std::size_t ins_y = y;
- std::size_t ins_x = x; // remember insertion start for undo positioning
- int repeat    = ctx.count > 0 ? ctx.count : 1;
+	ensure_at_least_one_line(*buf);
+	std::size_t y     = buf->Cury();
+	std::size_t x     = buf->Curx();
+	std::size_t ins_y = y;
+	std::size_t ins_x = x; // remember insertion start for undo positioning
+	int repeat        = ctx.count > 0 ? ctx.count : 1;
 
- // Apply edits to the underlying PieceTable through Buffer::insert_text,
- // not directly to the legacy rows_ cache. This ensures Save() persists text.
- for (int i = 0; i < repeat; ++i) {
-     buf->insert_text(static_cast<int>(y), static_cast<int>(x), std::string_view(ctx.arg));
-     x += ctx.arg.size();
- }
- buf->SetDirty(true);
- // Record undo for this contiguous insert at the original insertion point
- if (auto *u = buf->Undo()) {
-     // Position cursor at insertion start for the undo record
-     buf->SetCursor(ins_x, ins_y);
-     u->Begin(UndoType::Insert);
-     for (int i = 0; i < repeat; ++i) {
-         u->Append(std::string_view(ctx.arg));
-     }
-     // Finalize this contiguous insert as a single undoable action
-     u->commit();
- }
- buf->SetCursor(x, y);
- ensure_cursor_visible(ctx.editor, *buf);
- return true;
+	// Apply edits to the underlying PieceTable through Buffer::insert_text,
+	// not directly to the legacy rows_ cache. This ensures Save() persists text.
+	for (int i = 0; i < repeat; ++i) {
+		buf->insert_text(static_cast<int>(y), static_cast<int>(x), std::string_view(ctx.arg));
+		x += ctx.arg.size();
+	}
+	buf->SetDirty(true);
+	// Record undo for this contiguous insert at the original insertion point
+	if (auto *u = buf->Undo()) {
+		// Position cursor at insertion start for the undo record
+		buf->SetCursor(ins_x, ins_y);
+		u->Begin(UndoType::Insert);
+		for (int i = 0; i < repeat; ++i) {
+			u->Append(std::string_view(ctx.arg));
+		}
+		// Finalize this contiguous insert as a single undoable action
+		u->commit();
+	}
+	buf->SetCursor(x, y);
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
 }
 
 
@@ -2325,57 +2325,58 @@ cmd_newline(CommandContext &ctx)
 			// Save original cursor to restore after operations
 			std::size_t orig_x = buf->Curx();
 			std::size_t orig_y = buf->Cury();
-   std::size_t total  = 0;
-   UndoSystem *u      = buf->Undo();
-   if (u)
-       u->commit(); // end any pending batch
-   for (std::size_t y = 0; y < buf->Rows().size(); ++y) {
-       std::size_t pos = 0;
-       while (true) {
-           const auto &rows_view = buf->Rows();
-           if (y >= rows_view.size())
-               break;
-           std::string line = static_cast<std::string>(rows_view[y]);
-           if (find.empty())
-               break;
-           std::size_t p = line.find(find, pos);
-           if (p == std::string::npos)
-               break;
-           // Delete matched segment from the piece table
-           buf->delete_text(static_cast<int>(y), static_cast<int>(p), find.size());
-           if (u) {
-               buf->SetCursor(p, y);
-               u->Begin(UndoType::Delete);
-               u->Append(std::string_view(find));
-           }
-           // Insert replacement if provided
-           if (!with.empty()) {
-               buf->insert_text(static_cast<int>(y), static_cast<int>(p), std::string_view(with));
-               if (u) {
-                   buf->SetCursor(p, y);
-                   u->Begin(UndoType::Insert);
-                   u->Append(std::string_view(with));
-               }
-               pos = p + with.size();
-           } else {
-               // When replacing with empty, continue after the deletion point to avoid re-matching
-               pos = p;
-               if (pos < static_cast<std::size_t>(buf->Rows()[y].size()))
-                   ++pos;
-               else
-                   break;
-           }
-           ++total;
-       }
-   }
-   buf->SetDirty(true);
-   // Restore original cursor
-   if (orig_y < buf->Rows().size())
-       buf->SetCursor(orig_x, orig_y);
-   ensure_cursor_visible(ctx.editor, *buf);
-   char msg[128];
-   std::snprintf(msg, sizeof(msg), "Replaced %zu occurrence%s", total, (total == 1 ? "" : "s"));
-   ctx.editor.SetStatus(msg);
+			std::size_t total  = 0;
+			UndoSystem *u      = buf->Undo();
+			if (u)
+				u->commit(); // end any pending batch
+			for (std::size_t y = 0; y < buf->Rows().size(); ++y) {
+				std::size_t pos = 0;
+				while (true) {
+					const auto &rows_view = buf->Rows();
+					if (y >= rows_view.size())
+						break;
+					std::string line = static_cast<std::string>(rows_view[y]);
+					if (find.empty())
+						break;
+					std::size_t p = line.find(find, pos);
+					if (p == std::string::npos)
+						break;
+					// Delete matched segment from the piece table
+					buf->delete_text(static_cast<int>(y), static_cast<int>(p), find.size());
+					if (u) {
+						buf->SetCursor(p, y);
+						u->Begin(UndoType::Delete);
+						u->Append(std::string_view(find));
+					}
+					// Insert replacement if provided
+					if (!with.empty()) {
+						buf->insert_text(static_cast<int>(y), static_cast<int>(p),
+						                 std::string_view(with));
+						if (u) {
+							buf->SetCursor(p, y);
+							u->Begin(UndoType::Insert);
+							u->Append(std::string_view(with));
+						}
+						pos = p + with.size();
+					} else {
+						// When replacing with empty, continue after the deletion point to avoid re-matching
+						pos = p;
+						if (pos < static_cast<std::size_t>(buf->Rows()[y].size()))
+							++pos;
+						else
+							break;
+					}
+					++total;
+				}
+			}
+			buf->SetDirty(true);
+			// Restore original cursor
+			if (orig_y < buf->Rows().size())
+				buf->SetCursor(orig_x, orig_y);
+			ensure_cursor_visible(ctx.editor, *buf);
+			char msg[128];
+			std::snprintf(msg, sizeof(msg), "Replaced %zu occurrence%s", total, (total == 1 ? "" : "s"));
+			ctx.editor.SetStatus(msg);
 			// Clear search-highlighting state after replace completes
 			ctx.editor.SetSearchActive(false);
 			ctx.editor.SetSearchQuery("");
@@ -2383,7 +2384,7 @@ cmd_newline(CommandContext &ctx)
 			ctx.editor.ClearSearchOrigin();
 			ctx.editor.SetSearchIndex(-1);
 			return true;
-  } else if (kind == Editor::PromptKind::OpenFile) {
+		} else if (kind == Editor::PromptKind::OpenFile) {
 			std::string err;
 			// Expand "~" to the user's home directory
 			auto expand_user_path = [](const std::string &in) -> std::string {
@@ -2401,14 +2402,16 @@ cmd_newline(CommandContext &ctx)
 			value = expand_user_path(value);
 			if (value.empty()) {
 				ctx.editor.SetStatus("Open canceled (empty)");
-            } else if (!ctx.editor.OpenFile(value, err)) {
-                ctx.editor.SetStatus(err.empty() ? std::string("Failed to open ") + value : err);
-            } else {
-                ctx.editor.SetStatus(std::string("Opened ") + value);
-                // Close the prompt so subsequent typing edits the buffer, not the prompt
-                ctx.editor.CancelPrompt();
-            }
-        } else if (kind == Editor::PromptKind::BufferSwitch) {
+			} else if (!ctx.editor.OpenFile(value, err)) {
+				ctx.editor.SetStatus(err.empty() ? std::string("Failed to open ") + value : err);
+			} else {
+				ctx.editor.SetStatus(std::string("Opened ") + value);
+				// Center the view on the cursor (e.g. if the buffer restored a cursor position)
+				cmd_center_on_cursor(ctx);
+				// Close the prompt so subsequent typing edits the buffer, not the prompt
+				ctx.editor.CancelPrompt();
+			}
+		} else if (kind == Editor::PromptKind::BufferSwitch) {
 			// Resolve to a buffer index by exact match against path or basename;
 			// if multiple partial matches, prefer exact; if none, keep status.
 			const auto &bs = ctx.editor.Buffers();
@@ -2469,18 +2472,18 @@ cmd_newline(CommandContext &ctx)
 							std::string("Overwrite existing file '") + value + "'? (y/N)");
 					} else {
 						std::string err;
-      if (!buf->SaveAs(value, err)) {
-                        ctx.editor.SetStatus(err);
-                    } else {
-                        buf->SetDirty(false);
-                        ctx.editor.SetStatus("Saved as " + value);
-                        if (auto *u = buf->Undo())
-                            u->mark_saved();
-                        // Close the prompt on successful save-as
-                        ctx.editor.CancelPrompt();
-                        // If a close-after-save was requested (from closing a dirty, unnamed buffer),
-                        // close the buffer now.
-                        if (ctx.editor.CloseAfterSave()) {
+						if (!buf->SaveAs(value, err)) {
+							ctx.editor.SetStatus(err);
+						} else {
+							buf->SetDirty(false);
+							ctx.editor.SetStatus("Saved as " + value);
+							if (auto *u = buf->Undo())
+								u->mark_saved();
+							// Close the prompt on successful save-as
+							ctx.editor.CancelPrompt();
+							// If a close-after-save was requested (from closing a dirty, unnamed buffer),
+							// close the buffer now.
+							if (ctx.editor.CloseAfterSave()) {
 								ctx.editor.SetCloseAfterSave(false);
 								std::size_t idx_close = ctx.editor.CurrentBufferIndex();
 								std::string name_close = buffer_display_name(*buf);
@@ -2508,51 +2511,51 @@ cmd_newline(CommandContext &ctx)
 			// Confirmation for potentially destructive operations (e.g., overwrite on save-as)
 			Buffer *buf              = ctx.editor.CurrentBuffer();
 			const std::string target = ctx.editor.PendingOverwritePath();
-   if (!target.empty() && buf) {
-                bool yes = false;
-                if (!value.empty()) {
-                    char c = value[0];
-                    yes    = (c == 'y' || c == 'Y');
-                }
-                if (yes) {
-                    std::string err;
-                    if (!buf->SaveAs(target, err)) {
-                        ctx.editor.SetStatus(err);
-                    } else {
-                        buf->SetDirty(false);
-                        ctx.editor.SetStatus("Saved as " + target);
-                        if (auto *u = buf->Undo())
-                            u->mark_saved();
-                        // If this overwrite confirm was part of a close-after-save flow, close now.
-                        if (ctx.editor.CloseAfterSave()) {
-                            ctx.editor.SetCloseAfterSave(false);
-                            std::size_t idx_close  = ctx.editor.CurrentBufferIndex();
-                            std::string name_close = buffer_display_name(*buf);
-                            if (buf->Undo())
-                                buf->Undo()->discard_pending();
-                            ctx.editor.CloseBuffer(idx_close);
-                            if (ctx.editor.BufferCount() == 0) {
-                                Buffer empty;
-                                ctx.editor.AddBuffer(std::move(empty));
-                                ctx.editor.SwitchTo(0);
-                            }
-                            const Buffer *cur = ctx.editor.CurrentBuffer();
-                            ctx.editor.SetStatus(
-                                std::string("Closed: ") + name_close + std::string(
-                                    "  Now: ")
-                                + (cur ? buffer_display_name(*cur) : std::string("")));
-                        }
-                        // Close the prompt after successful confirmation
-                        ctx.editor.CancelPrompt();
-                    }
-                } else {
-                    ctx.editor.SetStatus("Save canceled");
-                    // Close the prompt after negative confirmation
-                    ctx.editor.CancelPrompt();
-                }
-                ctx.editor.ClearPendingOverwritePath();
-                // Regardless of answer, end any close-after-save pending state for safety.
-                ctx.editor.SetCloseAfterSave(false);
+			if (!target.empty() && buf) {
+				bool yes = false;
+				if (!value.empty()) {
+					char c = value[0];
+					yes    = (c == 'y' || c == 'Y');
+				}
+				if (yes) {
+					std::string err;
+					if (!buf->SaveAs(target, err)) {
+						ctx.editor.SetStatus(err);
+					} else {
+						buf->SetDirty(false);
+						ctx.editor.SetStatus("Saved as " + target);
+						if (auto *u = buf->Undo())
+							u->mark_saved();
+						// If this overwrite confirm was part of a close-after-save flow, close now.
+						if (ctx.editor.CloseAfterSave()) {
+							ctx.editor.SetCloseAfterSave(false);
+							std::size_t idx_close  = ctx.editor.CurrentBufferIndex();
+							std::string name_close = buffer_display_name(*buf);
+							if (buf->Undo())
+								buf->Undo()->discard_pending();
+							ctx.editor.CloseBuffer(idx_close);
+							if (ctx.editor.BufferCount() == 0) {
+								Buffer empty;
+								ctx.editor.AddBuffer(std::move(empty));
+								ctx.editor.SwitchTo(0);
+							}
+							const Buffer *cur = ctx.editor.CurrentBuffer();
+							ctx.editor.SetStatus(
+								std::string("Closed: ") + name_close + std::string(
+									"  Now: ")
+								+ (cur ? buffer_display_name(*cur) : std::string("")));
+						}
+						// Close the prompt after successful confirmation
+						ctx.editor.CancelPrompt();
+					}
+				} else {
+					ctx.editor.SetStatus("Save canceled");
+					// Close the prompt after negative confirmation
+					ctx.editor.CancelPrompt();
+				}
+				ctx.editor.ClearPendingOverwritePath();
+				// Regardless of answer, end any close-after-save pending state for safety.
+				ctx.editor.SetCloseAfterSave(false);
 			} else if (ctx.editor.CloseConfirmPending() && buf) {
 				bool yes = false;
 				if (!value.empty()) {
@@ -2735,20 +2738,20 @@ cmd_newline(CommandContext &ctx)
 				ctx.editor.SetSearchIndex(-1);
 				return true;
 			}
-   std::size_t changed = 0;
-   // Iterate by index to allow modifications via PieceTable helpers
-   for (std::size_t y = 0; y < buf->Rows().size(); ++y) {
-       std::string before = static_cast<std::string>(buf->Rows()[y]);
-       std::string after  = std::regex_replace(before, rx, repl);
-       if (after != before) {
-           // Replace entire line y with 'after' using PieceTable ops
-           buf->delete_row(static_cast<int>(y));
-           buf->insert_row(static_cast<int>(y), std::string_view(after));
-           ++changed;
-       }
-   }
-   buf->SetDirty(true);
-   ctx.editor.SetStatus("Regex replaced in " + std::to_string(changed) + " line(s)");
+			std::size_t changed = 0;
+			// Iterate by index to allow modifications via PieceTable helpers
+			for (std::size_t y = 0; y < buf->Rows().size(); ++y) {
+				std::string before = static_cast<std::string>(buf->Rows()[y]);
+				std::string after  = std::regex_replace(before, rx, repl);
+				if (after != before) {
+					// Replace entire line y with 'after' using PieceTable ops
+					buf->delete_row(static_cast<int>(y));
+					buf->insert_row(static_cast<int>(y), std::string_view(after));
+					++changed;
+				}
+			}
+			buf->SetDirty(true);
+			ctx.editor.SetStatus("Regex replaced in " + std::to_string(changed) + " line(s)");
 			// Clear search UI state
 			ctx.editor.SetSearchActive(false);
 			ctx.editor.SetSearchQuery("");
@@ -2772,29 +2775,29 @@ cmd_newline(CommandContext &ctx)
 			ensure_cursor_visible(ctx.editor, *buf);
 		return true;
 	}
-    Buffer *buf = ctx.editor.CurrentBuffer();
-    if (!buf) {
-        ctx.editor.SetStatus("No buffer to edit");
-        return false;
-    }
-    ensure_at_least_one_line(*buf);
-    std::size_t y = buf->Cury();
-    std::size_t x = buf->Curx();
-    int repeat    = ctx.count > 0 ? ctx.count : 1;
-    for (int i = 0; i < repeat; ++i) {
-        buf->split_line(static_cast<int>(y), static_cast<int>(x));
-        // Move to start of next line
-        y += 1;
-        x = 0;
-    }
-    buf->SetCursor(x, y);
-    buf->SetDirty(true);
-    if (auto *u = buf->Undo()) {
-        u->Begin(UndoType::Newline);
-        u->commit();
-    }
-    ensure_cursor_visible(ctx.editor, *buf);
-    return true;
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf) {
+		ctx.editor.SetStatus("No buffer to edit");
+		return false;
+	}
+	ensure_at_least_one_line(*buf);
+	std::size_t y = buf->Cury();
+	std::size_t x = buf->Curx();
+	int repeat    = ctx.count > 0 ? ctx.count : 1;
+	for (int i = 0; i < repeat; ++i) {
+		buf->split_line(static_cast<int>(y), static_cast<int>(x));
+		// Move to start of next line
+		y += 1;
+		x = 0;
+	}
+	buf->SetCursor(x, y);
+	buf->SetDirty(true);
+	if (auto *u = buf->Undo()) {
+		u->Begin(UndoType::Newline);
+		u->commit();
+	}
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
 }
 
 
@@ -2845,92 +2848,92 @@ cmd_backspace(CommandContext &ctx)
 		}
 		return true;
 	}
-    Buffer *buf = ctx.editor.CurrentBuffer();
-    if (!buf) {
-        ctx.editor.SetStatus("No buffer to edit");
-        return false;
-    }
-    ensure_at_least_one_line(*buf);
-    std::size_t y = buf->Cury();
-    std::size_t x = buf->Curx();
-    UndoSystem *u = buf->Undo();
-    int repeat    = ctx.count > 0 ? ctx.count : 1;
-    for (int i = 0; i < repeat; ++i) {
-        // Refresh a read-only view of lines for char capture/lengths
-        const auto &rows_view = buf->Rows();
-        if (x > 0) {
-            char deleted = '\0';
-            if (y < rows_view.size() && x - 1 < rows_view[y].size())
-                deleted = rows_view[y][x - 1];
-            buf->delete_text(static_cast<int>(y), static_cast<int>(x - 1), 1);
-            x -= 1;
-            buf->SetCursor(x, y);
-            if (u) {
-                u->Begin(UndoType::Delete);
-                if (deleted != '\0')
-                    u->Append(deleted);
-            }
-        } else if (y > 0) {
-            // Compute previous line length before join
-            std::size_t prev_len = 0;
-            if (y - 1 < rows_view.size())
-                prev_len = rows_view[y - 1].size();
-            buf->join_lines(static_cast<int>(y - 1));
-            y = y - 1;
-            x = prev_len;
-            buf->SetCursor(x, y);
-            if (u) {
-                u->Begin(UndoType::Newline);
-                u->commit();
-            }
-        } else {
-            break;
-        }
-    }
-    buf->SetCursor(x, y);
-    buf->SetDirty(true);
-    ensure_cursor_visible(ctx.editor, *buf);
-    return true;
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf) {
+		ctx.editor.SetStatus("No buffer to edit");
+		return false;
+	}
+	ensure_at_least_one_line(*buf);
+	std::size_t y = buf->Cury();
+	std::size_t x = buf->Curx();
+	UndoSystem *u = buf->Undo();
+	int repeat    = ctx.count > 0 ? ctx.count : 1;
+	for (int i = 0; i < repeat; ++i) {
+		// Refresh a read-only view of lines for char capture/lengths
+		const auto &rows_view = buf->Rows();
+		if (x > 0) {
+			char deleted = '\0';
+			if (y < rows_view.size() && x - 1 < rows_view[y].size())
+				deleted = rows_view[y][x - 1];
+			buf->delete_text(static_cast<int>(y), static_cast<int>(x - 1), 1);
+			x -= 1;
+			buf->SetCursor(x, y);
+			if (u) {
+				u->Begin(UndoType::Delete);
+				if (deleted != '\0')
+					u->Append(deleted);
+			}
+		} else if (y > 0) {
+			// Compute previous line length before join
+			std::size_t prev_len = 0;
+			if (y - 1 < rows_view.size())
+				prev_len = rows_view[y - 1].size();
+			buf->join_lines(static_cast<int>(y - 1));
+			y = y - 1;
+			x = prev_len;
+			buf->SetCursor(x, y);
+			if (u) {
+				u->Begin(UndoType::Newline);
+				u->commit();
+			}
+		} else {
+			break;
+		}
+	}
+	buf->SetCursor(x, y);
+	buf->SetDirty(true);
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
 }
 
 
 static bool
 cmd_delete_char(CommandContext &ctx)
 {
-    Buffer *buf = ctx.editor.CurrentBuffer();
-    if (!buf) {
-        ctx.editor.SetStatus("No buffer to edit");
-        return false;
-    }
-    ensure_at_least_one_line(*buf);
-    std::size_t y = buf->Cury();
-    std::size_t x = buf->Curx();
-    UndoSystem *u = buf->Undo();
-    int repeat    = ctx.count > 0 ? ctx.count : 1;
-    for (int i = 0; i < repeat; ++i) {
-        const auto &rows_view = buf->Rows();
-        if (y >= rows_view.size())
-            break;
-        if (x < rows_view[y].size()) {
-            char deleted = rows_view[y][x];
-            buf->delete_text(static_cast<int>(y), static_cast<int>(x), 1);
-            if (u) {
-                u->Begin(UndoType::Delete);
-                u->Append(deleted);
-            }
-        } else if (y + 1 < rows_view.size()) {
-            buf->join_lines(static_cast<int>(y));
-            if (u) {
-                u->Begin(UndoType::Newline);
-                u->commit();
-            }
-        } else {
-            break;
-        }
-    }
-    buf->SetDirty(true);
-    ensure_cursor_visible(ctx.editor, *buf);
-    return true;
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf) {
+		ctx.editor.SetStatus("No buffer to edit");
+		return false;
+	}
+	ensure_at_least_one_line(*buf);
+	std::size_t y = buf->Cury();
+	std::size_t x = buf->Curx();
+	UndoSystem *u = buf->Undo();
+	int repeat    = ctx.count > 0 ? ctx.count : 1;
+	for (int i = 0; i < repeat; ++i) {
+		const auto &rows_view = buf->Rows();
+		if (y >= rows_view.size())
+			break;
+		if (x < rows_view[y].size()) {
+			char deleted = rows_view[y][x];
+			buf->delete_text(static_cast<int>(y), static_cast<int>(x), 1);
+			if (u) {
+				u->Begin(UndoType::Delete);
+				u->Append(deleted);
+			}
+		} else if (y + 1 < rows_view.size()) {
+			buf->join_lines(static_cast<int>(y));
+			if (u) {
+				u->Begin(UndoType::Newline);
+				u->commit();
+			}
+		} else {
+			break;
+		}
+	}
+	buf->SetDirty(true);
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
 }
 
 
@@ -2975,98 +2978,98 @@ cmd_redo(CommandContext &ctx)
 static bool
 cmd_kill_to_eol(CommandContext &ctx)
 {
-    Buffer *buf = ctx.editor.CurrentBuffer();
-    if (!buf) {
-        ctx.editor.SetStatus("No buffer to edit");
-        return false;
-    }
-    ensure_at_least_one_line(*buf);
-    std::size_t y = buf->Cury();
-    std::size_t x = buf->Curx();
-    int repeat    = ctx.count > 0 ? ctx.count : 1;
-    std::string killed_total;
-    for (int i = 0; i < repeat; ++i) {
-        const auto &rows_view = buf->Rows();
-        if (y >= rows_view.size())
-            break;
-        if (x < rows_view[y].size()) {
-            // delete from cursor to end of line
-            killed_total += rows_view[y].substr(x);
-            std::size_t len = rows_view[y].size() - x;
-            buf->delete_text(static_cast<int>(y), static_cast<int>(x), len);
-        } else if (y + 1 < rows_view.size()) {
-            // at EOL: delete the newline (join with next line)
-            killed_total += "\n";
-            buf->join_lines(static_cast<int>(y));
-        } else {
-            // nothing to delete
-            break;
-        }
-    }
-    buf->SetDirty(true);
-    ensure_cursor_visible(ctx.editor, *buf);
-    if (!killed_total.empty()) {
-        if (ctx.editor.KillChain())
-            ctx.editor.KillRingAppend(killed_total);
-        else
-            ctx.editor.KillRingPush(killed_total);
-        ctx.editor.SetKillChain(true);
-    }
-    return true;
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf) {
+		ctx.editor.SetStatus("No buffer to edit");
+		return false;
+	}
+	ensure_at_least_one_line(*buf);
+	std::size_t y = buf->Cury();
+	std::size_t x = buf->Curx();
+	int repeat    = ctx.count > 0 ? ctx.count : 1;
+	std::string killed_total;
+	for (int i = 0; i < repeat; ++i) {
+		const auto &rows_view = buf->Rows();
+		if (y >= rows_view.size())
+			break;
+		if (x < rows_view[y].size()) {
+			// delete from cursor to end of line
+			killed_total    += rows_view[y].substr(x);
+			std::size_t len = rows_view[y].size() - x;
+			buf->delete_text(static_cast<int>(y), static_cast<int>(x), len);
+		} else if (y + 1 < rows_view.size()) {
+			// at EOL: delete the newline (join with next line)
+			killed_total += "\n";
+			buf->join_lines(static_cast<int>(y));
+		} else {
+			// nothing to delete
+			break;
+		}
+	}
+	buf->SetDirty(true);
+	ensure_cursor_visible(ctx.editor, *buf);
+	if (!killed_total.empty()) {
+		if (ctx.editor.KillChain())
+			ctx.editor.KillRingAppend(killed_total);
+		else
+			ctx.editor.KillRingPush(killed_total);
+		ctx.editor.SetKillChain(true);
+	}
+	return true;
 }
 
 
 static bool
 cmd_kill_line(CommandContext &ctx)
 {
-    Buffer *buf = ctx.editor.CurrentBuffer();
-    if (!buf) {
-        ctx.editor.SetStatus("No buffer to edit");
-        return false;
-    }
-    ensure_at_least_one_line(*buf);
-    std::size_t y = buf->Cury();
-    std::size_t x = buf->Curx();
-    (void) x; // cursor x will be reset to 0
-    int repeat = ctx.count > 0 ? ctx.count : 1;
-    std::string killed_total;
-    for (int i = 0; i < repeat; ++i) {
-        const auto &rows_view = buf->Rows();
-        if (rows_view.empty())
-            break;
-        if (rows_view.size() == 1) {
-            // last remaining line: clear its contents
-            killed_total += static_cast<std::string>(rows_view[0]);
-            if (!rows_view[0].empty())
-                buf->delete_text(0, 0, rows_view[0].size());
-            y = 0;
-        } else if (y < rows_view.size()) {
-            // erase current line; keep y pointing at the next line
-            killed_total += static_cast<std::string>(rows_view[y]);
-            killed_total += "\n";
-            buf->delete_row(static_cast<int>(y));
-            const auto &rows_after = buf->Rows();
-            if (y >= rows_after.size()) {
-                // deleted last line; move to previous
-                y = rows_after.empty() ? 0 : rows_after.size() - 1;
-            }
-        } else {
-            // out of range
-            const auto &rows2 = buf->Rows();
-            y = rows2.empty() ? 0 : rows2.size() - 1;
-        }
-    }
-    buf->SetCursor(0, y);
-    buf->SetDirty(true);
-    ensure_cursor_visible(ctx.editor, *buf);
-    if (!killed_total.empty()) {
-        if (ctx.editor.KillChain())
-            ctx.editor.KillRingAppend(killed_total);
-        else
-            ctx.editor.KillRingPush(killed_total);
-        ctx.editor.SetKillChain(true);
-    }
-    return true;
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf) {
+		ctx.editor.SetStatus("No buffer to edit");
+		return false;
+	}
+	ensure_at_least_one_line(*buf);
+	std::size_t y = buf->Cury();
+	std::size_t x = buf->Curx();
+	(void) x; // cursor x will be reset to 0
+	int repeat = ctx.count > 0 ? ctx.count : 1;
+	std::string killed_total;
+	for (int i = 0; i < repeat; ++i) {
+		const auto &rows_view = buf->Rows();
+		if (rows_view.empty())
+			break;
+		if (rows_view.size() == 1) {
+			// last remaining line: clear its contents
+			killed_total += static_cast<std::string>(rows_view[0]);
+			if (!rows_view[0].empty())
+				buf->delete_text(0, 0, rows_view[0].size());
+			y = 0;
+		} else if (y < rows_view.size()) {
+			// erase current line; keep y pointing at the next line
+			killed_total += static_cast<std::string>(rows_view[y]);
+			killed_total += "\n";
+			buf->delete_row(static_cast<int>(y));
+			const auto &rows_after = buf->Rows();
+			if (y >= rows_after.size()) {
+				// deleted last line; move to previous
+				y = rows_after.empty() ? 0 : rows_after.size() - 1;
+			}
+		} else {
+			// out of range
+			const auto &rows2 = buf->Rows();
+			y                 = rows2.empty() ? 0 : rows2.size() - 1;
+		}
+	}
+	buf->SetCursor(0, y);
+	buf->SetDirty(true);
+	ensure_cursor_visible(ctx.editor, *buf);
+	if (!killed_total.empty()) {
+		if (ctx.editor.KillChain())
+			ctx.editor.KillRingAppend(killed_total);
+		else
+			ctx.editor.KillRingPush(killed_total);
+		ctx.editor.SetKillChain(true);
+	}
+	return true;
 }
 
 
@@ -3115,10 +3118,10 @@ cmd_move_file_end(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
- ensure_at_least_one_line(*buf);
- const auto &rows    = buf->Rows();
-	std::size_t y = rows.empty() ? 0 : rows.size() - 1;
-	std::size_t x = rows.empty() ? 0 : rows[y].size();
+	ensure_at_least_one_line(*buf);
+	const auto &rows = buf->Rows();
+	std::size_t y    = rows.empty() ? 0 : rows.size() - 1;
+	std::size_t x    = rows.empty() ? 0 : rows[y].size();
 	buf->SetCursor(x, y);
 	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
@@ -3815,13 +3818,13 @@ cmd_delete_word_prev(CommandContext &ctx)
 				break;
 			--x;
 		}
-        // Now delete from (x, y) to (start_x, start_y) using PieceTable
-        std::string deleted = extract_region_text(*buf, x, y, start_x, start_y);
-        delete_region(*buf, x, y, start_x, start_y);
-        // Prepend to killed_total (since we're deleting backwards)
-        killed_total = deleted + killed_total;
-    }
-    buf->SetCursor(x, y);
+		// Now delete from (x, y) to (start_x, start_y) using PieceTable
+		std::string deleted = extract_region_text(*buf, x, y, start_x, start_y);
+		delete_region(*buf, x, y, start_x, start_y);
+		// Prepend to killed_total (since we're deleting backwards)
+		killed_total = deleted + killed_total;
+	}
+	buf->SetCursor(x, y);
 	buf->SetDirty(true);
 	ensure_cursor_visible(ctx.editor, *buf);
 	if (!killed_total.empty()) {
@@ -3838,22 +3841,22 @@ cmd_delete_word_prev(CommandContext &ctx)
 static bool
 cmd_delete_word_next(CommandContext &ctx)
 {
-    Buffer *buf = ctx.editor.CurrentBuffer();
-    if (!buf)
-        return false;
-    if (auto *u = buf->Undo())
-        u->commit();
-    ensure_at_least_one_line(*buf);
-    const auto &rows    = buf->Rows();
-    std::size_t y = buf->Cury();
-    std::size_t x = buf->Curx();
-    int repeat    = ctx.count > 0 ? ctx.count : 1;
-    std::string killed_total;
-    for (int i = 0; i < repeat; ++i) {
-        if (y >= rows.size())
-            break;
-        std::size_t start_y = y;
-        std::size_t start_x = x;
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
+	ensure_at_least_one_line(*buf);
+	const auto &rows = buf->Rows();
+	std::size_t y    = buf->Cury();
+	std::size_t x    = buf->Curx();
+	int repeat       = ctx.count > 0 ? ctx.count : 1;
+	std::string killed_total;
+	for (int i = 0; i < repeat; ++i) {
+		if (y >= rows.size())
+			break;
+		std::size_t start_y = y;
+		std::size_t start_x = x;
 		// First, if currently on a word, skip to its end
 		while (y < rows.size()) {
 			if (x < rows[y].size() && is_word_char(static_cast<unsigned char>(rows[y][x]))) {
@@ -3886,16 +3889,16 @@ cmd_delete_word_next(CommandContext &ctx)
 				continue;
 			}
 		}
-        // Now delete from (start_x, start_y) to (x, y) using PieceTable
-        std::string deleted = extract_region_text(*buf, start_x, start_y, x, y);
-        delete_region(*buf, start_x, start_y, x, y);
-        y = start_y;
-        x = start_x;
-        killed_total += deleted;
-    }
-    buf->SetCursor(x, y);
-    buf->SetDirty(true);
-    ensure_cursor_visible(ctx.editor, *buf);
+		// Now delete from (start_x, start_y) to (x, y) using PieceTable
+		std::string deleted = extract_region_text(*buf, start_x, start_y, x, y);
+		delete_region(*buf, start_x, start_y, x, y);
+		y            = start_y;
+		x            = start_x;
+		killed_total += deleted;
+	}
+	buf->SetCursor(x, y);
+	buf->SetDirty(true);
+	ensure_cursor_visible(ctx.editor, *buf);
 	if (!killed_total.empty()) {
 		if (ctx.editor.KillChain())
 			ctx.editor.KillRingAppend(killed_total);
@@ -3922,13 +3925,13 @@ cmd_indent_region(CommandContext &ctx)
 		ctx.editor.SetStatus("No region to indent");
 		return false;
 	}
-    for (std::size_t y = sy; y <= ey && y < buf->Rows().size(); ++y) {
-        buf->insert_text(static_cast<int>(y), 0, std::string_view("\t"));
-    }
-    buf->SetDirty(true);
-    buf->ClearMark();
-    ensure_cursor_visible(ctx.editor, *buf);
-    return true;
+	for (std::size_t y = sy; y <= ey && y < buf->Rows().size(); ++y) {
+		buf->insert_text(static_cast<int>(y), 0, std::string_view("\t"));
+	}
+	buf->SetDirty(true);
+	buf->ClearMark();
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
 }
 
 
@@ -3947,28 +3950,28 @@ cmd_unindent_region(CommandContext &ctx)
 		ctx.editor.SetStatus("No region to unindent");
 		return false;
 	}
-    for (std::size_t y = sy; y <= ey && y < buf->Rows().size(); ++y) {
-        const auto &rows_view = buf->Rows();
-        if (y >= rows_view.size())
-            break;
-        const std::string line = static_cast<std::string>(rows_view[y]);
-        if (!line.empty()) {
-            if (line[0] == '\t') {
-                buf->delete_text(static_cast<int>(y), 0, 1);
-            } else if (line[0] == ' ') {
-                std::size_t spaces = 0;
-                while (spaces < line.size() && spaces < 8 && line[spaces] == ' ') {
-                    ++spaces;
-                }
-                if (spaces > 0)
-                    buf->delete_text(static_cast<int>(y), 0, spaces);
-            }
-        }
-    }
-    buf->SetDirty(true);
-    buf->ClearMark();
-    ensure_cursor_visible(ctx.editor, *buf);
-    return true;
+	for (std::size_t y = sy; y <= ey && y < buf->Rows().size(); ++y) {
+		const auto &rows_view = buf->Rows();
+		if (y >= rows_view.size())
+			break;
+		const std::string line = static_cast<std::string>(rows_view[y]);
+		if (!line.empty()) {
+			if (line[0] == '\t') {
+				buf->delete_text(static_cast<int>(y), 0, 1);
+			} else if (line[0] == ' ') {
+				std::size_t spaces = 0;
+				while (spaces < line.size() && spaces < 8 && line[spaces] == ' ') {
+					++spaces;
+				}
+				if (spaces > 0)
+					buf->delete_text(static_cast<int>(y), 0, spaces);
+			}
+		}
+	}
+	buf->SetDirty(true);
+	buf->ClearMark();
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
 }
 
 
@@ -3979,7 +3982,7 @@ cmd_reflow_paragraph(CommandContext &ctx)
 	if (!buf)
 		return false;
 	ensure_at_least_one_line(*buf);
- auto &rows    = buf->Rows();
+	auto &rows    = buf->Rows();
 	std::size_t y = buf->Cury();
 	// Treat a universal-argument count of 1 as "no width specified".
 	// Editor::UArgGet() returns 1 when no explicit count was provided.
@@ -4094,8 +4097,8 @@ cmd_reflow_paragraph(CommandContext &ctx)
 				line.push_back(' ');
 				++cur_len;
 			}
-			line += wrd;
-			cur_len += wrd.size();
+			line               += wrd;
+			cur_len            += wrd.size();
 			first_word_on_line = false;
 		}
 		if (!line.empty())
@@ -4199,17 +4202,18 @@ cmd_reflow_paragraph(CommandContext &ctx)
 	if (new_lines.empty())
 		new_lines.push_back("");
 
- // Replace paragraph lines via PieceTable-backed operations
- for (std::size_t i = para_end; i + 1 > para_start; --i) {
-     buf->delete_row(static_cast<int>(i));
-     if (i == 0) break; // prevent wrap on size_t
- }
- // Insert new lines starting at para_start
- std::size_t insert_y = para_start;
- for (const auto &ln : new_lines) {
-     buf->insert_row(static_cast<int>(insert_y), std::string_view(ln));
-     insert_y += 1;
- }
+	// Replace paragraph lines via PieceTable-backed operations
+	for (std::size_t i = para_end; i + 1 > para_start; --i) {
+		buf->delete_row(static_cast<int>(i));
+		if (i == 0)
+			break; // prevent wrap on size_t
+	}
+	// Insert new lines starting at para_start
+	std::size_t insert_y = para_start;
+	for (const auto &ln: new_lines) {
+		buf->insert_row(static_cast<int>(insert_y), std::string_view(ln));
+		insert_y += 1;
+	}
 
 	// Place cursor at the end of the paragraph
 	std::size_t new_last_y = para_start + (new_lines.empty() ? 0 : new_lines.size() - 1);
@@ -4224,38 +4228,38 @@ cmd_reflow_paragraph(CommandContext &ctx)
 static bool
 cmd_reload_buffer(CommandContext &ctx)
 {
-    Buffer *buf = ctx.editor.CurrentBuffer();
-    if (!buf)
-        return false;
-    // Remember the current cursor position so we can attempt to restore it
-    const std::size_t old_x = buf->Curx();
-    const std::size_t old_y = buf->Cury();
-    const std::string &filename = buf->Filename();
-    if (filename.empty()) {
-        ctx.editor.SetStatus("Cannot reload unnamed buffer");
-        return false;
-    }
-    std::string err;
-    if (!buf->OpenFromFile(filename, err)) {
-        ctx.editor.SetStatus(std::string("Reload failed: ") + err);
-        return false;
-    }
-    // Try to restore the cursor to its previous position if still valid; otherwise clamp
-    {
-        auto &rows = buf->Rows();
-        const std::size_t nrows = rows.size();
-        if (nrows == 0) {
-            buf->SetCursor(0, 0);
-        } else {
-            const std::size_t new_y = old_y < nrows ? old_y : (nrows - 1);
-            const std::size_t line_len = rows[new_y].size();
-            const std::size_t new_x = old_x < line_len ? old_x : line_len;
-            buf->SetCursor(new_x, new_y);
-        }
-    }
-    ctx.editor.SetStatus(std::string("Reloaded ") + filename);
-    ensure_cursor_visible(ctx.editor, *buf);
-    return true;
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	// Remember the current cursor position so we can attempt to restore it
+	const std::size_t old_x     = buf->Curx();
+	const std::size_t old_y     = buf->Cury();
+	const std::string &filename = buf->Filename();
+	if (filename.empty()) {
+		ctx.editor.SetStatus("Cannot reload unnamed buffer");
+		return false;
+	}
+	std::string err;
+	if (!buf->OpenFromFile(filename, err)) {
+		ctx.editor.SetStatus(std::string("Reload failed: ") + err);
+		return false;
+	}
+	// Try to restore the cursor to its previous position if still valid; otherwise clamp
+	{
+		auto &rows              = buf->Rows();
+		const std::size_t nrows = rows.size();
+		if (nrows == 0) {
+			buf->SetCursor(0, 0);
+		} else {
+			const std::size_t new_y    = old_y < nrows ? old_y : (nrows - 1);
+			const std::size_t line_len = rows[new_y].size();
+			const std::size_t new_x    = old_x < line_len ? old_x : line_len;
+			buf->SetCursor(new_x, new_y);
+		}
+	}
+	ctx.editor.SetStatus(std::string("Reloaded ") + filename);
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
 }
 
 

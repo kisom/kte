@@ -73,6 +73,7 @@ TerminalFrontend::Init(Editor &ed)
 			have_old_sigint_ = true;
 		}
 	}
+
 	return true;
 }
 
