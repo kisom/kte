@@ -142,13 +142,13 @@ protected:
 				p.save();
 				p.setClipRect(viewport);
 
-    // Iterate visible lines
-    for (std::size_t i = rowoffs, vis_idx = 0; i < last_row; ++i, ++vis_idx) {
-        // Materialize the Buffer::Line into a std::string for
-        // regex/iterator usage and general string ops.
-        const std::string line = static_cast<std::string>(lines[i]);
-					const int y        = viewport.y() + static_cast<int>(vis_idx) * line_h;
-					const int baseline = y + fm.ascent();
+				// Iterate visible lines
+				for (std::size_t i = rowoffs, vis_idx = 0; i < last_row; ++i, ++vis_idx) {
+					// Materialize the Buffer::Line into a std::string for
+					// regex/iterator usage and general string ops.
+					const std::string line = static_cast<std::string>(lines[i]);
+					const int y            = viewport.y() + static_cast<int>(vis_idx) * line_h;
+					const int baseline     = y + fm.ascent();
 
 					// Helper: convert src col -> rx with tab expansion
 					auto src_to_rx_line = [&](std::size_t src_col) -> std::size_t {
@@ -453,11 +453,11 @@ protected:
 					std::size_t total = ed_->BufferCount();
 					if (total > 0) {
 						std::size_t idx1 = ed_->CurrentBufferIndex() + 1; // 1-based
-						left += QStringLiteral("  [");
-						left += QString::number(static_cast<qlonglong>(idx1));
-						left += QStringLiteral("/");
-						left += QString::number(static_cast<qlonglong>(total));
-						left += QStringLiteral("] ");
+						left             += QStringLiteral("  [");
+						left             += QString::number(static_cast<qlonglong>(idx1));
+						left             += QStringLiteral("/");
+						left             += QString::number(static_cast<qlonglong>(total));
+						left             += QStringLiteral("] ");
 					} else {
 						left += QStringLiteral("  ");
 					}
@@ -477,9 +477,9 @@ protected:
 
 					// total lines suffix " <n>L"
 					unsigned long lcount = static_cast<unsigned long>(buf->Rows().size());
-					left += QStringLiteral(" ");
-					left += QString::number(static_cast<qlonglong>(lcount));
-					left += QStringLiteral("L");
+					left                 += QStringLiteral(" ");
+					left                 += QString::number(static_cast<qlonglong>(lcount));
+					left                 += QStringLiteral("L");
 				}
 
 				// Build right segment: cursor and mark
@@ -602,12 +602,12 @@ protected:
 		int d_cols = 0;
 		if (std::fabs(v_scroll_accum_) >= 1.0 && (!horiz_mode || std::fabs(v_scroll_accum_) > std::fabs(
 			                                          h_scroll_accum_))) {
-			d_rows = static_cast<int>(v_scroll_accum_);
+			d_rows          = static_cast<int>(v_scroll_accum_);
 			v_scroll_accum_ -= d_rows;
 		}
 		if (std::fabs(h_scroll_accum_) >= 1.0 && (horiz_mode || std::fabs(h_scroll_accum_) >= std::fabs(
 			                                          v_scroll_accum_))) {
-			d_cols = static_cast<int>(h_scroll_accum_);
+			d_cols          = static_cast<int>(h_scroll_accum_);
 			h_scroll_accum_ -= d_cols;
 		}
 

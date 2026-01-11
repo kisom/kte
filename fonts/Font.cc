@@ -1,4 +1,5 @@
 #include "Font.h"
+#include "IosevkaExtended.h"
 
 #include "imgui.h"
 
@@ -20,30 +21,19 @@ Font::Load(const float size) const
 		&config,
 		io.Fonts->GetGlyphRangesDefault());
 
-	// Merge Greek and Coptic
-	config.MergeMode                    = true;
-	static const ImWchar greek_ranges[] = {
+	// Merge Greek and Mathematical symbols from IosevkaExtended as fallback
+	config.MergeMode                       = true;
+	static const ImWchar extended_ranges[] = {
 		0x0370, 0x03FF, // Greek and Coptic
-		0,
-	};
-	io.Fonts->AddFontFromMemoryCompressedTTF(
-		this->data_,
-		this->size_,
-		size,
-		&config,
-		greek_ranges);
-
-	// Merge Mathematical Operators
-	static const ImWchar math_ranges[] = {
 		0x2200, 0x22FF, // Mathematical Operators
 		0,
 	};
 	io.Fonts->AddFontFromMemoryCompressedTTF(
-		this->data_,
-		this->size_,
+		kte::Fonts::IosevkaExtended::DefaultFontRegularCompressedData,
+		kte::Fonts::IosevkaExtended::DefaultFontRegularCompressedSize,
 		size,
 		&config,
-		math_ranges);
+		extended_ranges);
 
 	io.Fonts->Build();
 }

@@ -18,6 +18,7 @@
 #include "GUITheme.h"
 #include "fonts/Font.h" // embedded default font (DefaultFont)
 #include "fonts/FontRegistry.h"
+#include "fonts/IosevkaExtended.h"
 #include "syntax/HighlighterRegistry.h"
 #include "syntax/NullHighlighter.h"
 
@@ -369,30 +370,19 @@ GUIFrontend::LoadGuiFont_(const char * /*path*/, const float size_px)
 		&config,
 		io.Fonts->GetGlyphRangesDefault());
 
-	// Merge Greek and Coptic
-	config.MergeMode                    = true;
-	static const ImWchar greek_ranges[] = {
+	// Merge Greek and Mathematical symbols from IosevkaExtended
+	config.MergeMode                       = true;
+	static const ImWchar extended_ranges[] = {
 		0x0370, 0x03FF, // Greek and Coptic
-		0,
-	};
-	io.Fonts->AddFontFromMemoryCompressedTTF(
-		kte::Fonts::DefaultFontData,
-		kte::Fonts::DefaultFontSize,
-		size_px,
-		&config,
-		greek_ranges);
-
-	// Merge Mathematical Operators
-	static const ImWchar math_ranges[] = {
 		0x2200, 0x22FF, // Mathematical Operators
 		0,
 	};
 	io.Fonts->AddFontFromMemoryCompressedTTF(
-		kte::Fonts::DefaultFontData,
-		kte::Fonts::DefaultFontSize,
+		kte::Fonts::IosevkaExtended::DefaultFontRegularCompressedData,
+		kte::Fonts::IosevkaExtended::DefaultFontRegularCompressedSize,
 		size_px,
 		&config,
-		math_ranges);
+		extended_ranges);
 
 	io.Fonts->Build();
 	return true;

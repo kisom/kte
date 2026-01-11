@@ -560,7 +560,7 @@ ImGuiRenderer::Draw(Editor &ed)
 								              (size_t) std::max<size_t>(
 									              1, (size_t) (tail.size() / 4)))
 							              : 1;
-						start += skip;
+						start                 += skip;
 						std::string candidate = tail.substr(start);
 						ImVec2 cand_sz        = ImGui::CalcTextSize(candidate.c_str());
 						if (cand_sz.x <= avail_px) {
@@ -618,11 +618,11 @@ ImGuiRenderer::Draw(Editor &ed)
 				std::size_t total = ed.BufferCount();
 				if (total > 0) {
 					std::size_t idx1 = ed.CurrentBufferIndex() + 1; // 1-based for display
-					left += "[";
-					left += std::to_string(static_cast<unsigned long long>(idx1));
-					left += "/";
-					left += std::to_string(static_cast<unsigned long long>(total));
-					left += "] ";
+					left             += "[";
+					left             += std::to_string(static_cast<unsigned long long>(idx1));
+					left             += "/";
+					left             += std::to_string(static_cast<unsigned long long>(total));
+					left             += "] ";
 				}
 			}
 			left += fname;
@@ -631,9 +631,9 @@ ImGuiRenderer::Draw(Editor &ed)
 			// Append total line count as "<n>L"
 			{
 				unsigned long lcount = static_cast<unsigned long>(buf->Rows().size());
-				left += " ";
-				left += std::to_string(lcount);
-				left += "L";
+				left                 += " ";
+				left                 += std::to_string(lcount);
+				left                 += "L";
 			}
 
 			// Build right text (cursor/mark)
