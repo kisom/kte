@@ -262,11 +262,11 @@ GUIFrontend::Step(Editor &ed, bool &running)
 
 	// Update editor logical rows/cols using current ImGui metrics and display size
 	{
-		ImGuiIO &io  = ImGui::GetIO();
-		float line_h = ImGui::GetTextLineHeightWithSpacing();
-		float ch_w   = ImGui::CalcTextSize("M").x;
-		if (line_h <= 0.0f)
-			line_h = 16.0f;
+		ImGuiIO &io = ImGui::GetIO();
+		float row_h = ImGui::GetTextLineHeightWithSpacing();
+		float ch_w  = ImGui::CalcTextSize("M").x;
+		if (row_h <= 0.0f)
+			row_h = 16.0f;
 		if (ch_w <= 0.0f)
 			ch_w = 8.0f;
 		// Prefer ImGui IO display size; fall back to cached SDL window size
@@ -274,20 +274,20 @@ GUIFrontend::Step(Editor &ed, bool &running)
 		float disp_h = io.DisplaySize.y > 0 ? io.DisplaySize.y : static_cast<float>(height_);
 
 		// Account for the GUI window padding and the status bar height used in ImGuiRenderer.
-		// ImGuiRenderer pushes WindowPadding = (6,6) every frame, so use the same constants here
-		// to avoid mismatches that would cause premature scrolling.
 		const float pad_x = 6.0f;
 		const float pad_y = 6.0f;
-		// Status bar reserves one frame height (with spacing) inside the window
-		float status_h = ImGui::GetFrameHeightWithSpacing();
 
-		float avail_w = std::max(0.0f, disp_w - 2.0f * pad_x);
-		float avail_h = std::max(0.0f, disp_h - 2.0f * pad_y - status_h);
+		// Use the same logic as ImGuiRenderer for available height and status bar reservation.
+		float wanted_bar_h   = ImGui::GetFrameHeight();
+		float total_avail_h  = std::max(0.0f, disp_h - 2.0f * pad_y);
+		float actual_avail_h = std::floor((total_avail_h - wanted_bar_h) / row_h) * row_h;
 
 		// Visible content rows inside the scroll child
-		auto content_rows = static_cast<std::size_t>(std::floor(avail_h / line_h));
+		auto content_rows = static_cast<std::size_t>(std::max(0.0f, std::floor(actual_avail_h / row_h)));
 		// Editor::Rows includes the status line; add 1 back for it.
-		std::size_t rows = std::max<std::size_t>(1, content_rows + 1);
+		std::size_t rows = content_rows + 1;
+
+		float avail_w    = std::max(0.0f, disp_w - 2.0f * pad_x);
 		std::size_t cols = static_cast<std::size_t>(std::max(1.0f, std::floor(avail_w / ch_w)));
 
 		// Only update if changed to avoid churn

@@ -94,8 +94,17 @@ ImGuiRenderer::Draw(Editor &ed)
 			ImGui::SetNextWindowScroll(ImVec2(target_x, target_y));
 		}
 
-		// Reserve space for status bar at bottom
-		ImGui::BeginChild("scroll", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), false,
+		// Reserve space for status bar at bottom.
+		// We calculate a height that is an exact multiple of the line height
+		// to avoid partial lines and "scroll past end" jitter.
+		float total_avail_h = ImGui::GetContentRegionAvail().y;
+		float wanted_bar_h  = ImGui::GetFrameHeight();
+		float child_h_plan  = std::max(0.0f, std::floor((total_avail_h - wanted_bar_h) / row_h) * row_h);
+		float real_bar_h    = total_avail_h - child_h_plan;
+
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+		ImGui::BeginChild("scroll", ImVec2(0, child_h_plan), false,
 		                  ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 		// Get child window position and scroll for click handling
@@ -138,90 +147,6 @@ ImGuiRenderer::Draw(Editor &ed)
 		}
 		prev_buf_rowoffs = buf_rowoffs;
 		prev_buf_coloffs = buf_coloffs;
-
-		// Synchronize cursor and scrolling.
-		// Ensure the cursor is visible, but avoid aggressive centering so that
-		// the same lines remain visible until the cursor actually goes off-screen.
-		{
-			// Compute visible row range using the child window height
-			float child_h  = ImGui::GetWindowHeight();
-			long first_row = static_cast<long>(scroll_y / row_h);
-			long vis_rows  = static_cast<long>(child_h / row_h);
-			if (vis_rows < 1)
-				vis_rows = 1;
-			long last_row = first_row + vis_rows - 1;
-
-			long cyr = static_cast<long>(cy);
-			if (cyr < first_row) {
-				// Scroll just enough to bring the cursor line to the top
-				float target = static_cast<float>(cyr) * row_h;
-				if (target < 0.f)
-					target = 0.f;
-				float max_y = ImGui::GetScrollMaxY();
-				if (max_y >= 0.f && target > max_y)
-					target = max_y;
-				ImGui::SetScrollY(target);
-				scroll_y  = ImGui::GetScrollY();
-				first_row = static_cast<long>(scroll_y / row_h);
-				last_row  = first_row + vis_rows - 1;
-			} else if (cyr > last_row) {
-				// Scroll just enough to bring the cursor line to the bottom
-				long new_first = cyr - vis_rows + 1;
-				if (new_first < 0)
-					new_first = 0;
-				float target = static_cast<float>(new_first) * row_h;
-				float max_y  = ImGui::GetScrollMaxY();
-				if (target < 0.f)
-					target = 0.f;
-				if (max_y >= 0.f && target > max_y)
-					target = max_y;
-				ImGui::SetScrollY(target);
-				scroll_y  = ImGui::GetScrollY();
-				first_row = static_cast<long>(scroll_y / row_h);
-				last_row  = first_row + vis_rows - 1;
-			}
-
-			// Horizontal scroll: ensure cursor column is visible
-			float child_w = ImGui::GetWindowWidth();
-			long vis_cols = static_cast<long>(child_w / space_w);
-			if (vis_cols < 1)
-				vis_cols = 1;
-			long first_col = static_cast<long>(scroll_x / space_w);
-			long last_col  = first_col + vis_cols - 1;
-
-			// Compute cursor's rendered X position (accounting for tabs)
-			std::size_t cursor_rx = 0;
-			if (cy < lines.size()) {
-				std::string cur_line   = static_cast<std::string>(lines[cy]);
-				const std::size_t tabw = 8;
-				for (std::size_t i = 0; i < cx && i < cur_line.size(); ++i) {
-					if (cur_line[i] == '\t') {
-						cursor_rx += tabw - (cursor_rx % tabw);
-					} else {
-						cursor_rx += 1;
-					}
-				}
-			}
-			long cxr = static_cast<long>(cursor_rx);
-			if (cxr < first_col || cxr > last_col) {
-				float target_x = static_cast<float>(cxr) * space_w;
-				// Center horizontally if possible
-				target_x -= (child_w / 2.0f);
-				if (target_x < 0.f)
-					target_x = 0.f;
-				float max_x = ImGui::GetScrollMaxX();
-				if (max_x >= 0.f && target_x > max_x)
-					target_x = max_x;
-				ImGui::SetScrollX(target_x);
-				scroll_x = ImGui::GetScrollX();
-			}
-			// Phase 3: prefetch visible viewport highlights and warm around in background
-			if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
-				int fr = static_cast<int>(std::max(0L, first_row));
-				int rc = static_cast<int>(std::max(1L, vis_rows));
-				buf->Highlighter()->PrefetchViewport(*buf, fr, rc, buf->Version());
-			}
-		}
 		// Cache current horizontal offset in rendered columns for click handling
 		const std::size_t coloffs_now = buf->Coloffs();
 
@@ -489,23 +414,98 @@ ImGuiRenderer::Draw(Editor &ed)
 				ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
 			}
 		}
+		// Synchronize cursor and scrolling after rendering all lines so content size is known.
+		{
+			float child_h_actual = ImGui::GetWindowHeight();
+			float child_w_actual = ImGui::GetWindowWidth();
+			float scroll_y_now   = ImGui::GetScrollY();
+			float scroll_x_now   = ImGui::GetScrollX();
+
+			long first_row = static_cast<long>(scroll_y_now / row_h);
+			long vis_rows  = static_cast<long>(std::round(child_h_actual / row_h));
+			if (vis_rows < 1)
+				vis_rows = 1;
+			long last_row = first_row + vis_rows - 1;
+
+			long cyr = static_cast<long>(cy);
+			if (cyr < first_row) {
+				float target = static_cast<float>(cyr) * row_h;
+				if (target < 0.f)
+					target = 0.f;
+				float max_y = ImGui::GetScrollMaxY();
+				if (max_y >= 0.f && target > max_y)
+					target = max_y;
+				ImGui::SetScrollY(target);
+				first_row = static_cast<long>(target / row_h);
+				last_row  = first_row + vis_rows - 1;
+			} else if (cyr > last_row) {
+				long new_first = cyr - vis_rows + 1;
+				if (new_first < 0)
+					new_first = 0;
+				float target = static_cast<float>(new_first) * row_h;
+				float max_y  = ImGui::GetScrollMaxY();
+				if (target < 0.f)
+					target = 0.f;
+				if (max_y >= 0.f && target > max_y)
+					target = max_y;
+				ImGui::SetScrollY(target);
+				first_row = static_cast<long>(target / row_h);
+				last_row  = first_row + vis_rows - 1;
+			}
+
+			// Horizontal scroll: ensure cursor column is visible
+			long vis_cols = static_cast<long>(std::round(child_w_actual / space_w));
+			if (vis_cols < 1)
+				vis_cols = 1;
+			long first_col = static_cast<long>(scroll_x_now / space_w);
+			long last_col  = first_col + vis_cols - 1;
+
+			std::size_t cursor_rx = 0;
+			if (cy < lines.size()) {
+				std::string cur_line   = static_cast<std::string>(lines[cy]);
+				const std::size_t tabw = 8;
+				for (std::size_t i = 0; i < cx && i < cur_line.size(); ++i) {
+					if (cur_line[i] == '\t') {
+						cursor_rx += tabw - (cursor_rx % tabw);
+					} else {
+						cursor_rx += 1;
+					}
+				}
+			}
+			long cxr = static_cast<long>(cursor_rx);
+			if (cxr < first_col || cxr > last_col) {
+				float target_x = static_cast<float>(cxr) * space_w;
+				target_x       -= (child_w_actual / 2.0f);
+				if (target_x < 0.f)
+					target_x = 0.f;
+				float max_x = ImGui::GetScrollMaxX();
+				if (max_x >= 0.f && target_x > max_x)
+					target_x = max_x;
+				ImGui::SetScrollX(target_x);
+			}
+
+			if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
+				int fr = static_cast<int>(std::max(0L, first_row));
+				int rc = static_cast<int>(std::max(1L, vis_rows));
+				buf->Highlighter()->PrefetchViewport(*buf, fr, rc, buf->Version());
+			}
+		}
 		ImGui::EndChild();
+		ImGui::PopStyleVar(2); // WindowPadding, ItemSpacing
 
-		// Status bar spanning full width
-		ImGui::Separator();
-
-		// Compute full content width and draw a filled background rectangle
+		// Status bar area starting right after the scroll child
 		ImVec2 win_pos = ImGui::GetWindowPos();
-		ImVec2 cr_min  = ImGui::GetWindowContentRegionMin();
-		ImVec2 cr_max  = ImGui::GetWindowContentRegionMax();
-		float x0       = win_pos.x + cr_min.x;
-		float x1       = win_pos.x + cr_max.x;
-		ImVec2 cursor  = ImGui::GetCursorScreenPos();
-		float bar_h    = ImGui::GetFrameHeight();
-		ImVec2 p0(x0, cursor.y);
-		ImVec2 p1(x1, cursor.y + bar_h);
+		ImVec2 win_sz  = ImGui::GetWindowSize();
+		float x0       = win_pos.x;
+		float x1       = win_pos.x + win_sz.x;
+		float y0       = ImGui::GetCursorScreenPos().y;
+		float bar_h    = real_bar_h;
+
+		ImVec2 p0(x0, y0);
+		ImVec2 p1(x1, y0 + bar_h);
 		ImU32 bg_col = ImGui::GetColorU32(ImGuiCol_HeaderActive);
 		ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, bg_col);
+
 		// If a prompt is active, replace the entire status bar with the prompt text
 		if (ed.PromptActive()) {
 			std::string label = ed.PromptLabel();
@@ -591,11 +591,9 @@ ImGuiRenderer::Draw(Editor &ed)
 
 			ImVec2 msg_sz = ImGui::CalcTextSize(final_msg.c_str());
 			ImGui::PushClipRect(ImVec2(p0.x, p0.y), ImVec2(p1.x, p1.y), true);
-			ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - msg_sz.y) * 0.5f));
+			ImGui::SetCursorScreenPos(ImVec2(left_x, y0 + (bar_h - msg_sz.y) * 0.5f));
 			ImGui::TextUnformatted(final_msg.c_str());
 			ImGui::PopClipRect();
-			// Advance cursor to after the bar to keep layout consistent
-			ImGui::Dummy(ImVec2(x1 - x0, bar_h));
 		} else {
 			// Build left text
 			std::string left;
@@ -671,20 +669,21 @@ ImGuiRenderer::Draw(Editor &ed)
 				float max_left = std::max(0.0f, right_x - left_x - pad);
 				if (max_left < left_sz.x && max_left > 10.0f) {
 					// Render a clipped left using a child region
-					ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - left_sz.y) * 0.5f));
-					ImGui::PushClipRect(ImVec2(left_x, p0.y), ImVec2(right_x - pad, p1.y), true);
+					ImGui::SetCursorScreenPos(ImVec2(left_x, y0 + (bar_h - left_sz.y) * 0.5f));
+					ImGui::PushClipRect(ImVec2(left_x, y0), ImVec2(right_x - pad, y0 + bar_h),
+					                    true);
 					ImGui::TextUnformatted(left.c_str());
 					ImGui::PopClipRect();
 				}
 			} else {
 				// Draw left normally
-				ImGui::SetCursorScreenPos(ImVec2(left_x, p0.y + (bar_h - left_sz.y) * 0.5f));
+				ImGui::SetCursorScreenPos(ImVec2(left_x, y0 + (bar_h - left_sz.y) * 0.5f));
 				ImGui::TextUnformatted(left.c_str());
 			}
 
 			// Draw right
 			ImGui::SetCursorScreenPos(ImVec2(std::max(right_x, left_x),
-			                                 p0.y + (bar_h - right_sz.y) * 0.5f));
+			                                 y0 + (bar_h - right_sz.y) * 0.5f));
 			ImGui::TextUnformatted(right.c_str());
 
 			// Draw middle message centered in remaining space
@@ -696,14 +695,12 @@ ImGuiRenderer::Draw(Editor &ed)
 					ImVec2 msg_sz = ImGui::CalcTextSize(msg.c_str());
 					float msg_x   = mid_left + std::max(0.0f, (mid_w - msg_sz.x) * 0.5f);
 					// Clip to middle region
-					ImGui::PushClipRect(ImVec2(mid_left, p0.y), ImVec2(mid_right, p1.y), true);
-					ImGui::SetCursorScreenPos(ImVec2(msg_x, p0.y + (bar_h - msg_sz.y) * 0.5f));
+					ImGui::PushClipRect(ImVec2(mid_left, y0), ImVec2(mid_right, y0 + bar_h), true);
+					ImGui::SetCursorScreenPos(ImVec2(msg_x, y0 + (bar_h - msg_sz.y) * 0.5f));
 					ImGui::TextUnformatted(msg.c_str());
 					ImGui::PopClipRect();
 				}
 			}
-			// Advance cursor to after the bar to keep layout consistent
-			ImGui::Dummy(ImVec2(x1 - x0, bar_h));
 		}
 	}
 
