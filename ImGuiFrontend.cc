@@ -357,14 +357,43 @@ GUIFrontend::LoadGuiFont_(const char * /*path*/, const float size_px)
 {
 	const ImGuiIO &io = ImGui::GetIO();
 	io.Fonts->Clear();
-	const ImFont *font = io.Fonts->AddFontFromMemoryCompressedTTF(
+
+	ImFontConfig config;
+	config.MergeMode = false;
+
+	// Load Basic Latin + Latin Supplement
+	io.Fonts->AddFontFromMemoryCompressedTTF(
 		kte::Fonts::DefaultFontData,
 		kte::Fonts::DefaultFontSize,
-		size_px);
-	if (!font) {
-		font = io.Fonts->AddFontDefault();
-	}
-	(void) font;
+		size_px,
+		&config,
+		io.Fonts->GetGlyphRangesDefault());
+
+	// Merge Greek and Coptic
+	config.MergeMode                    = true;
+	static const ImWchar greek_ranges[] = {
+		0x0370, 0x03FF, // Greek and Coptic
+		0,
+	};
+	io.Fonts->AddFontFromMemoryCompressedTTF(
+		kte::Fonts::DefaultFontData,
+		kte::Fonts::DefaultFontSize,
+		size_px,
+		&config,
+		greek_ranges);
+
+	// Merge Mathematical Operators
+	static const ImWchar math_ranges[] = {
+		0x2200, 0x22FF, // Mathematical Operators
+		0,
+	};
+	io.Fonts->AddFontFromMemoryCompressedTTF(
+		kte::Fonts::DefaultFontData,
+		kte::Fonts::DefaultFontSize,
+		size_px,
+		&config,
+		math_ranges);
+
 	io.Fonts->Build();
 	return true;
 }

@@ -1,3 +1,6 @@
+#include <clocale>
+#define _XOPEN_SOURCE_EXTENDED 1
+#include <cwchar>
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
@@ -157,35 +160,52 @@ TerminalRenderer::Draw(Editor &ed)
 					// Map to simple attributes; search highlight uses A_STANDOUT which takes precedence below
 					attrset(A_NORMAL);
 					switch (k) {
-						case kte::TokenKind::Keyword:
-						case kte::TokenKind::Type:
-						case kte::TokenKind::Constant:
-						case kte::TokenKind::Function:
-							attron(A_BOLD);
-							break;
-						case kte::TokenKind::Comment:
-							attron(A_DIM);
-							break;
-						case kte::TokenKind::String:
-						case kte::TokenKind::Char:
-						case kte::TokenKind::Number:
-							// standout a bit using A_UNDERLINE if available
-							attron(A_UNDERLINE);
-							break;
-						default:
-							break;
+					case kte::TokenKind::Keyword:
+					case kte::TokenKind::Type:
+					case kte::TokenKind::Constant:
+					case kte::TokenKind::Function:
+						attron(A_BOLD);
+						break;
+					case kte::TokenKind::Comment:
+						attron(A_DIM);
+						break;
+					case kte::TokenKind::String:
+					case kte::TokenKind::Char:
+					case kte::TokenKind::Number:
+						// standout a bit using A_UNDERLINE if available
+						attron(A_UNDERLINE);
+						break;
+					default:
+						break;
 					}
 				};
 				while (written < cols) {
-					char ch       = ' ';
 					bool from_src = false;
+					wchar_t wch   = L' ';
+					int wch_len   = 1;
+					int disp_w    = 1;
+
 					if (src_i < line.size()) {
-						unsigned char c = static_cast<unsigned char>(line[src_i]);
-						if (c == '\t') {
+						// Decode UTF-8
+						std::mbstate_t state = std::mbstate_t();
+						size_t res           = std::mbrtowc(
+							&wch, &line[src_i], line.size() - src_i, &state);
+						if (res == (size_t) -1 || res == (size_t) -2) {
+							// Invalid or incomplete; treat as single byte
+							wch     = static_cast<unsigned char>(line[src_i]);
+							wch_len = 1;
+						} else if (res == 0) {
+							wch     = L'\0';
+							wch_len = 1;
+						} else {
+							wch_len = static_cast<int>(res);
+						}
+
+						if (wch == L'\t') {
 							std::size_t next_tab = tabw - (render_col % tabw);
 							if (render_col + next_tab <= coloffs) {
 								render_col += next_tab;
-								++src_i;
+								src_i      += wch_len;
 								continue;
 							}
 							// Emit spaces for tab
@@ -194,7 +214,7 @@ TerminalRenderer::Draw(Editor &ed)
 								std::size_t to_skip = std::min<std::size_t>(
 									next_tab, coloffs - render_col);
 								render_col += to_skip;
-								next_tab -= to_skip;
+								next_tab   -= to_skip;
 							}
 							// Now render visible spaces
 							while (next_tab > 0 && written < cols) {
@@ -233,23 +253,34 @@ TerminalRenderer::Draw(Editor &ed)
 								++render_col;
 								--next_tab;
 							}
-							++src_i;
+							src_i += wch_len;
 							continue;
 						} else {
 							// normal char
+							disp_w = wcwidth(wch);
+							if (disp_w < 0)
+								disp_w = 1; // non-printable or similar
+
 							if (render_col < coloffs) {
-								++render_col;
-								++src_i;
+								render_col += disp_w;
+								src_i      += wch_len;
 								continue;
 							}
-							ch       = static_cast<char>(c);
 							from_src = true;
 						}
 					} else {
 						// beyond EOL, fill spaces
-						ch       = ' ';
+						wch      = L' ';
+						wch_len  = 1;
+						disp_w   = 1;
 						from_src = false;
 					}
+
+					if (written + disp_w > cols) {
+						// would overflow, just break
+						break;
+					}
+
 					bool in_hl  = search_mode && from_src && is_src_in_hl(src_i);
 					bool in_cur =
 						has_current && li == cur_my && from_src && src_i >= cur_mx && src_i <
@@ -273,11 +304,20 @@ TerminalRenderer::Draw(Editor &ed)
 					if (!in_hl && from_src) {
 						apply_token_attr(token_at(src_i));
 					}
-					addch(static_cast<unsigned char>(ch));
-					++written;
-					++render_col;
+
+					if (from_src) {
+						cchar_t cch;
+						wchar_t warr[2] = {wch, L'\0'};
+						setcchar(&cch, warr, A_NORMAL, 0, nullptr);
+						add_wch(&cch);
+					} else {
+						addch(' ');
+					}
+
+					written    += disp_w;
+					render_col += disp_w;
 					if (from_src)
-						++src_i;
+						src_i += wch_len;
 					if (src_i >= line.size() && written >= cols)
 						break;
 				}
@@ -297,23 +337,35 @@ TerminalRenderer::Draw(Editor &ed)
 		// Place terminal cursor at logical position accounting for tabs and coloffs.
 		// Recompute the rendered X using the same logic as the drawing loop to avoid
 		// any drift between the command-layer computation and the terminal renderer.
-		std::size_t cy = buf->Cury();
-		std::size_t cx = buf->Curx();
-		int cur_y = static_cast<int>(cy) - static_cast<int>(buf->Rowoffs());
+		std::size_t cy            = buf->Cury();
+		std::size_t cx            = buf->Curx();
+		int cur_y                 = static_cast<int>(cy) - static_cast<int>(buf->Rowoffs());
 		std::size_t rx_recomputed = 0;
 		if (cy < lines.size()) {
 			const std::string line_for_cursor = static_cast<std::string>(lines[cy]);
-			std::size_t src_i_cur = 0;
-			std::size_t render_col_cur = 0;
+			std::size_t src_i_cur             = 0;
+			std::size_t render_col_cur        = 0;
 			while (src_i_cur < line_for_cursor.size() && src_i_cur < cx) {
-				unsigned char ccur = static_cast<unsigned char>(line_for_cursor[src_i_cur]);
-				if (ccur == '\t') {
-					std::size_t next_tab = tabw - (render_col_cur % tabw);
-					render_col_cur += next_tab;
-					++src_i_cur;
+				std::mbstate_t state = std::mbstate_t();
+				wchar_t wch;
+				size_t res = std::mbrtowc(
+					&wch, &line_for_cursor[src_i_cur], line_for_cursor.size() - src_i_cur,
+					&state);
+
+				if (res == (size_t) -1 || res == (size_t) -2) {
+					render_col_cur += 1;
+					src_i_cur      += 1;
+				} else if (res == 0) {
+					src_i_cur += 1;
 				} else {
-					++render_col_cur;
-					++src_i_cur;
+					if (wch == L'\t') {
+						std::size_t next_tab = tabw - (render_col_cur % tabw);
+						render_col_cur       += next_tab;
+					} else {
+						int dw         = wcwidth(wch);
+						render_col_cur += (dw < 0) ? 1 : dw;
+					}
+					src_i_cur += res;
 				}
 			}
 			rx_recomputed = render_col_cur;
@@ -403,9 +455,9 @@ TerminalRenderer::Draw(Editor &ed)
 	{
 		const char *app = "kte";
 		left.reserve(256);
-		left += app;
-		left += " ";
-		left += KTE_VERSION_STR; // already includes leading 'v'
+		left            += app;
+		left            += " ";
+		left            += KTE_VERSION_STR; // already includes leading 'v'
 		const Buffer *b = buf;
 		std::string fname;
 		if (b) {
@@ -426,11 +478,11 @@ TerminalRenderer::Draw(Editor &ed)
 			std::size_t total = ed.BufferCount();
 			if (total > 0) {
 				std::size_t idx1 = ed.CurrentBufferIndex() + 1; // human-friendly 1-based
-				left += "[";
-				left += std::to_string(static_cast<unsigned long long>(idx1));
-				left += "/";
-				left += std::to_string(static_cast<unsigned long long>(total));
-				left += "] ";
+				left             += "[";
+				left             += std::to_string(static_cast<unsigned long long>(idx1));
+				left             += "/";
+				left             += std::to_string(static_cast<unsigned long long>(total));
+				left             += "] ";
 			}
 		}
 		left += fname;
@@ -442,9 +494,9 @@ TerminalRenderer::Draw(Editor &ed)
 		// Append total line count as "<n>L"
 		if (b) {
 			unsigned long lcount = static_cast<unsigned long>(b->Rows().size());
-			left += " ";
-			left += std::to_string(lcount);
-			left += "L";
+			left                 += " ";
+			left                 += std::to_string(lcount);
+			left                 += "L";
 		}
 	}
 

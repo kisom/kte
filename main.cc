@@ -1,3 +1,4 @@
+#include <clocale>
 #include <cctype>
 #include <cerrno>
 #include <cstdio>
@@ -113,6 +114,8 @@ RunStressHighlighter(unsigned seconds)
 int
 main(int argc, const char *argv[])
 {
+	std::setlocale(LC_ALL, "");
+
 	Editor editor;
 
 	// CLI parsing using getopt_long
