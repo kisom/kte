@@ -658,11 +658,9 @@ private:
 } // namespace
 
 bool
-GUIFrontend::Init(Editor &ed)
+GUIFrontend::Init(int &argc, char **argv, Editor &ed)
 {
-	int argc    = 0;
-	char **argv = nullptr;
-	app_        = new QApplication(argc, argv);
+	app_ = new QApplication(argc, argv);
 
 	window_ = new MainWindow(input_);
 	window_->show();

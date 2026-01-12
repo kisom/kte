@@ -13,7 +13,7 @@ public:
 
 	~TestFrontend() override = default;
 
-	bool Init(Editor &ed) override;
+	bool Init(int &argc, char **argv, Editor &ed) override;
 
 	void Step(Editor &ed, bool &running) override;
 

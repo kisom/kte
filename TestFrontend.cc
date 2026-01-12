@@ -4,8 +4,10 @@
 
 
 bool
-TestFrontend::Init(Editor &ed)
+TestFrontend::Init(int &argc, char **argv, Editor &ed)
 {
+	(void) argc;
+	(void) argv;
 	ed.SetDimensions(24, 80);
 	return true;
 }

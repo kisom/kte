@@ -21,7 +21,7 @@ public:
 	// Adjust if your terminal needs a different threshold.
 	static constexpr int kEscDelayMs = 50;
 
-	bool Init(Editor &ed) override;
+	bool Init(int &argc, char **argv, Editor &ed) override;
 
 	void Step(Editor &ed, bool &running) override;
 

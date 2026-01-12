@@ -8,8 +8,10 @@
 
 
 bool
-TerminalFrontend::Init(Editor &ed)
+TerminalFrontend::Init(int &argc, char **argv, Editor &ed)
 {
+	(void) argc;
+	(void) argv;
 	// Ensure Control keys reach the app: disable XON/XOFF and dsusp/susp bindings (e.g., ^S/^Q, ^Y on macOS)
 	{
 		struct termios tio{};

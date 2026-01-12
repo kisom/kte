@@ -112,7 +112,7 @@ RunStressHighlighter(unsigned seconds)
 
 
 int
-main(int argc, const char *argv[])
+main(int argc, char *argv[])
 {
 	std::setlocale(LC_ALL, "");
 
@@ -136,7 +136,7 @@ main(int argc, const char *argv[])
 	int opt;
 	int long_index          = 0;
 	unsigned stress_seconds = 0;
-	while ((opt = getopt_long(argc, const_cast<char *const *>(argv), "gthV", long_opts, &long_index)) != -1) {
+	while ((opt = getopt_long(argc, argv, "gthV", long_opts, &long_index)) != -1) {
 		switch (opt) {
 		case 'g':
 			req_gui = true;
@@ -303,7 +303,7 @@ main(int argc, const char *argv[])
 	}
 #endif
 
-	if (!fe->Init(editor)) {
+	if (!fe->Init(argc, argv, editor)) {
 		std::cerr << "kte: failed to initialize frontend" << std::endl;
 		return 1;
 	}

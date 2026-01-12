@@ -30,8 +30,10 @@
 static auto kGlslVersion = "#version 150"; // GL 3.2 core (macOS compatible)
 
 bool
-GUIFrontend::Init(Editor &ed)
+GUIFrontend::Init(int &argc, char **argv, Editor &ed)
 {
+	(void) argc;
+	(void) argv;
 	// Attach editor to input handler for editor-owned features (e.g., universal argument)
 	input_.Attach(&ed);
 	// editor dimensions will be initialized during the first Step() frame
