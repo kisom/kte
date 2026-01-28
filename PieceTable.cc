@@ -218,9 +218,9 @@ PieceTable::addPieceBack(const Source src, const std::size_t start, const std::s
 			std::size_t expectStart = last.start + last.len;
 
 			if (expectStart == start) {
-				last.len += len;
+				last.len    += len;
 				total_size_ += len;
-				dirty_ = true;
+				dirty_      = true;
 				version_++;
 				range_cache_ = {};
 				find_cache_  = {};
@@ -231,7 +231,7 @@ PieceTable::addPieceBack(const Source src, const std::size_t start, const std::s
 
 	pieces_.push_back(Piece{src, start, len});
 	total_size_ += len;
-	dirty_ = true;
+	dirty_      = true;
 	InvalidateLineIndex();
 	version_++;
 	range_cache_ = {};
@@ -251,9 +251,9 @@ PieceTable::addPieceFront(Source src, std::size_t start, std::size_t len)
 		Piece &first = pieces_.front();
 		if (first.src == src && start + len == first.start) {
 			first.start = start;
-			first.len += len;
+			first.len   += len;
 			total_size_ += len;
-			dirty_ = true;
+			dirty_      = true;
 			version_++;
 			range_cache_ = {};
 			find_cache_  = {};
@@ -262,7 +262,7 @@ PieceTable::addPieceFront(Source src, std::size_t start, std::size_t len)
 	}
 	pieces_.insert(pieces_.begin(), Piece{src, start, len});
 	total_size_ += len;
-	dirty_ = true;
+	dirty_      = true;
 	InvalidateLineIndex();
 	version_++;
 	range_cache_ = {};
@@ -273,6 +273,7 @@ PieceTable::addPieceFront(Source src, std::size_t start, std::size_t len)
 void
 PieceTable::materialize() const
 {
+	std::lock_guard<std::mutex> lock(mutex_);
 	if (!dirty_) {
 		return;
 	}
@@ -348,6 +349,7 @@ PieceTable::coalesceNeighbors(std::size_t index)
 void
 PieceTable::InvalidateLineIndex() const
 {
+	std::lock_guard<std::mutex> lock(mutex_);
 	line_index_dirty_ = true;
 }
 
@@ -355,22 +357,29 @@ PieceTable::InvalidateLineIndex() const
 void
 PieceTable::RebuildLineIndex() const
 {
-	if (!line_index_dirty_)
+	std::lock_guard<std::mutex> lock(mutex_);
+
+	if (!line_index_dirty_) {
 		return;
+	}
 	line_index_.clear();
 	line_index_.push_back(0);
+
 	std::size_t pos = 0;
 	for (const auto &pc: pieces_) {
 		const std::string &src = pc.src == Source::Original ? original_ : add_;
 		const char *base       = src.data() + static_cast<std::ptrdiff_t>(pc.start);
+
 		for (std::size_t j = 0; j < pc.len; ++j) {
 			if (base[j] == '\n') {
 				// next line starts after the newline
 				line_index_.push_back(pos + j + 1);
 			}
 		}
+
 		pos += pc.len;
 	}
+
 	line_index_dirty_ = false;
 }
 
@@ -391,7 +400,7 @@ PieceTable::Insert(std::size_t byte_offset, const char *text, std::size_t len)
 	if (pieces_.empty()) {
 		pieces_.push_back(Piece{Source::Add, add_start, len});
 		total_size_ += len;
-		dirty_ = true;
+		dirty_      = true;
 		InvalidateLineIndex();
 		maybeConsolidate();
 		version_++;
@@ -405,7 +414,7 @@ PieceTable::Insert(std::size_t byte_offset, const char *text, std::size_t len)
 		// insert at end
 		pieces_.push_back(Piece{Source::Add, add_start, len});
 		total_size_ += len;
-		dirty_ = true;
+		dirty_      = true;
 		InvalidateLineIndex();
 		coalesceNeighbors(pieces_.size() - 1);
 		maybeConsolidate();
@@ -433,7 +442,7 @@ PieceTable::Insert(std::size_t byte_offset, const char *text, std::size_t len)
 	pieces_.insert(pieces_.begin() + static_cast<std::ptrdiff_t>(idx), repl.begin(), repl.end());
 
 	total_size_ += len;
-	dirty_ = true;
+	dirty_      = true;
 	InvalidateLineIndex();
 	// Try coalescing around the inserted position (the inserted piece is at idx + (inner>0 ? 1 : 0))
 	std::size_t ins_index = idx + (inner > 0 ? 1 : 0);
@@ -488,13 +497,13 @@ PieceTable::Delete(std::size_t byte_offset, std::size_t len)
 			// entire piece removed
 			pieces_.erase(pieces_.begin() + static_cast<std::ptrdiff_t>(idx));
 			// stay at same idx for next piece
-			inner = 0;
+			inner     = 0;
 			remaining -= take;
 			continue;
 		}
 
 		// After modifying current idx, next deletion continues at beginning of the next logical region
-		inner = 0;
+		inner     = 0;
 		remaining -= take;
 		if (remaining == 0)
 			break;
@@ -503,7 +512,7 @@ PieceTable::Delete(std::size_t byte_offset, std::size_t len)
 	}
 
 	total_size_ -= len;
-	dirty_ = true;
+	dirty_      = true;
 	InvalidateLineIndex();
 	if (idx < pieces_.size())
 		coalesceNeighbors(idx);
@@ -692,14 +701,18 @@ PieceTable::GetRange(std::size_t byte_offset, std::size_t len) const
 		len = total_size_ - byte_offset;
 
 	// Fast path: return cached value if version/offset/len match
-	if (range_cache_.valid && range_cache_.version == version_ &&
-	    range_cache_.off == byte_offset && range_cache_.len == len) {
-		return range_cache_.data;
+	{
+		std::lock_guard<std::mutex> lock(mutex_);
+		if (range_cache_.valid && range_cache_.version == version_ &&
+		    range_cache_.off == byte_offset && range_cache_.len == len) {
+			return range_cache_.data;
+		}
 	}
 
 	std::string out;
 	out.reserve(len);
 	if (!dirty_) {
+		std::lock_guard<std::mutex> lock(mutex_);
 		// Already materialized; slice directly
 		out.assign(materialized_.data() + static_cast<std::ptrdiff_t>(byte_offset), len);
 	} else {
@@ -714,8 +727,8 @@ PieceTable::GetRange(std::size_t byte_offset, std::size_t len) const
 				const char *base = src.data() + static_cast<std::ptrdiff_t>(p.start + inner);
 				out.append(base, take);
 				remaining -= take;
-				inner = 0;
-				idx += 1;
+				inner     = 0;
+				idx       += 1;
 			} else {
 				break;
 			}
@@ -723,11 +736,14 @@ PieceTable::GetRange(std::size_t byte_offset, std::size_t len) const
 	}
 
 	// Update cache
-	range_cache_.valid   = true;
-	range_cache_.version = version_;
-	range_cache_.off     = byte_offset;
-	range_cache_.len     = len;
-	range_cache_.data    = out;
+	{
+		std::lock_guard<std::mutex> lock(mutex_);
+		range_cache_.valid   = true;
+		range_cache_.version = version_;
+		range_cache_.off     = byte_offset;
+		range_cache_.len     = len;
+		range_cache_.data    = out;
+	}
 	return out;
 }
 
@@ -739,23 +755,30 @@ PieceTable::Find(const std::string &needle, std::size_t start) const
 		return start <= total_size_ ? start : std::numeric_limits<std::size_t>::max();
 	if (start > total_size_)
 		return std::numeric_limits<std::size_t>::max();
-	if (find_cache_.valid &&
-	    find_cache_.version == version_ &&
-	    find_cache_.needle == needle &&
-	    find_cache_.start == start) {
-		return find_cache_.result;
+	{
+		std::lock_guard<std::mutex> lock(mutex_);
+		if (find_cache_.valid &&
+		    find_cache_.version == version_ &&
+		    find_cache_.needle == needle &&
+		    find_cache_.start == start) {
+			return find_cache_.result;
+		}
 	}
 
 	materialize();
-	auto pos = materialized_.find(needle, start);
-	if (pos == std::string::npos)
-		pos = std::numeric_limits<std::size_t>::max();
-	// Update cache
-	find_cache_.valid   = true;
-	find_cache_.version = version_;
-	find_cache_.needle  = needle;
-	find_cache_.start   = start;
-	find_cache_.result  = pos;
+	std::size_t pos;
+	{
+		std::lock_guard<std::mutex> lock(mutex_);
+		pos = materialized_.find(needle, start);
+		if (pos == std::string::npos)
+			pos = std::numeric_limits<std::size_t>::max();
+		// Update cache
+		find_cache_.valid   = true;
+		find_cache_.version = version_;
+		find_cache_.needle  = needle;
+		find_cache_.start   = start;
+		find_cache_.result  = pos;
+	}
 	return pos;
 }
 
@@ -763,12 +786,15 @@ PieceTable::Find(const std::string &needle, std::size_t start) const
 void
 PieceTable::WriteToStream(std::ostream &out) const
 {
-    // Stream the content piece-by-piece without forcing full materialization
-    for (const auto &p : pieces_) {
-        if (p.len == 0)
-            continue;
-        const std::string &src = (p.src == Source::Original) ? original_ : add_;
-        const char *base       = src.data() + static_cast<std::ptrdiff_t>(p.start);
-        out.write(base, static_cast<std::streamsize>(p.len));
-    }
+	// Stream the content piece-by-piece without forcing full materialization
+	// No lock needed for original_ and add_ if they are not being modified.
+	// Since this is a const method and kte's piece table isn't modified by multiple threads
+	// (only queried), we just iterate pieces_.
+	for (const auto &p: pieces_) {
+		if (p.len == 0)
+			continue;
+		const std::string &src = (p.src == Source::Original) ? original_ : add_;
+		const char *base       = src.data() + static_cast<std::ptrdiff_t>(p.start);
+		out.write(base, static_cast<std::streamsize>(p.len));
+	}
 }

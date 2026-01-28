@@ -292,29 +292,29 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 bool
 Buffer::Save(std::string &err) const
 {
-    if (!is_file_backed_ || filename_.empty()) {
-        err = "Buffer is not file-backed; use SaveAs()";
-        return false;
-    }
-    std::ofstream out(filename_, std::ios::out | std::ios::binary | std::ios::trunc);
-    if (!out) {
-        err = "Failed to open for write: " + filename_ + ". Error: " + std::string(std::strerror(errno));
-        return false;
-    }
-    // Stream the content directly from the piece table to avoid relying on
-    // full materialization, which may yield an empty pointer when size > 0.
-    if (content_.Size() > 0) {
-        content_.WriteToStream(out);
-    }
-    // Ensure data hits the OS buffers
-    out.flush();
-    if (!out.good()) {
-        err = "Write error: " + filename_ + ". Error: " + std::string(std::strerror(errno));
-        return false;
-    }
-    // Note: const method cannot change dirty_. Intentionally const to allow UI code
-    // to decide when to flip dirty flag after successful save.
-    return true;
+	if (!is_file_backed_ || filename_.empty()) {
+		err = "Buffer is not file-backed; use SaveAs()";
+		return false;
+	}
+	std::ofstream out(filename_, std::ios::out | std::ios::binary | std::ios::trunc);
+	if (!out) {
+		err = "Failed to open for write: " + filename_ + ". Error: " + std::string(std::strerror(errno));
+		return false;
+	}
+	// Stream the content directly from the piece table to avoid relying on
+	// full materialization, which may yield an empty pointer when size > 0.
+	if (content_.Size() > 0) {
+		content_.WriteToStream(out);
+	}
+	// Ensure data hits the OS buffers
+	out.flush();
+	if (!out.good()) {
+		err = "Write error: " + filename_ + ". Error: " + std::string(std::strerror(errno));
+		return false;
+	}
+	// Note: const method cannot change dirty_. Intentionally const to allow UI code
+	// to decide when to flip dirty flag after successful save.
+	return true;
 }
 
 
@@ -346,16 +346,16 @@ Buffer::SaveAs(const std::string &path, std::string &err)
 		err = "Failed to open for write: " + out_path + ". Error: " + std::string(std::strerror(errno));
 		return false;
 	}
- // Stream content without forcing full materialization
- if (content_.Size() > 0) {
-     content_.WriteToStream(out);
- }
- // Ensure data hits the OS buffers
-    out.flush();
-    if (!out.good()) {
-        err = "Write error: " + out_path + ". Error: " + std::string(std::strerror(errno));
-        return false;
-    }
+	// Stream content without forcing full materialization
+	if (content_.Size() > 0) {
+		content_.WriteToStream(out);
+	}
+	// Ensure data hits the OS buffers
+	out.flush();
+	if (!out.good()) {
+		err = "Write error: " + out_path + ". Error: " + std::string(std::strerror(errno));
+		return false;
+	}
 
 	filename_       = out_path;
 	is_file_backed_ = true;
@@ -412,6 +412,7 @@ Buffer::GetLineView(std::size_t row) const
 void
 Buffer::ensure_rows_cache() const
 {
+	std::lock_guard<std::mutex> lock(buffer_mutex_);
 	if (!rows_cache_dirty_)
 		return;
 	rows_.clear();
@@ -454,8 +455,8 @@ Buffer::delete_text(int row, int col, std::size_t len)
 		const std::size_t L    = line.size();
 		if (c < L) {
 			const std::size_t take = std::min(remaining, L - c);
-			c += take;
-			remaining -= take;
+			c                      += take;
+			remaining              -= take;
 		}
 		if (remaining == 0)
 			break;
@@ -463,8 +464,8 @@ Buffer::delete_text(int row, int col, std::size_t len)
 		if (r + 1 < lc) {
 			if (remaining > 0) {
 				remaining -= 1; // the newline
-				r += 1;
-				c = 0;
+				r         += 1;
+				c         = 0;
 			}
 		} else {
 			// At last line and still remaining: delete to EOF

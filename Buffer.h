@@ -14,6 +14,7 @@
 #include <cstdint>
 #include "syntax/HighlighterEngine.h"
 #include "Highlight.h"
+#include <mutex>
 
 // Forward declaration for swap journal integration
 namespace kte {
@@ -482,4 +483,6 @@ private:
 	std::unique_ptr<kte::HighlighterEngine> highlighter_;
 	// Non-owning pointer to swap recorder managed by Editor/SwapManager
 	kte::SwapRecorder *swap_rec_ = nullptr;
+
+	mutable std::mutex buffer_mutex_;
 };

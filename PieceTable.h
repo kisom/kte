@@ -8,6 +8,7 @@
 #include <ostream>
 #include <vector>
 #include <limits>
+#include <mutex>
 
 
 class PieceTable {
@@ -181,4 +182,6 @@ private:
 
 	mutable RangeCache range_cache_;
 	mutable FindCache find_cache_;
+
+	mutable std::mutex mutex_;
 };
