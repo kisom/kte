@@ -298,6 +298,8 @@ if (BUILD_TESTS)
     add_executable(kte_tests
             tests/TestRunner.cc
             tests/Test.h
+            tests/TestHarness.h
+            tests/test_daily_driver_harness.cc
             tests/test_buffer_io.cc
             tests/test_piece_table.cc
             tests/test_search.cc
