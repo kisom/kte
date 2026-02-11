@@ -4026,6 +4026,29 @@ cmd_reflow_paragraph(CommandContext &ctx)
 		return false;
 	};
 
+	auto is_numbered_line = [&](const std::string &s,
+	                            std::string &indent_out,
+	                            std::string &marker_out,
+	                            std::size_t &after_prefix_idx) -> bool {
+		indent_out    = leading_ws(s);
+		std::size_t i = indent_out.size();
+		if (i >= s.size() || !std::isdigit(static_cast<unsigned char>(s[i])))
+			return false;
+		std::size_t j = i;
+		while (j < s.size() && std::isdigit(static_cast<unsigned char>(s[j])))
+			++j;
+		if (j >= s.size())
+			return false;
+		char delim = s[j];
+		if (!(delim == '.' || delim == ')'))
+			return false;
+		if (j + 1 >= s.size() || s[j + 1] != ' ')
+			return false;
+		marker_out       = s.substr(i, (j - i) + 1); // e.g. "1." or "10)"
+		after_prefix_idx = j + 2; // after delimiter + space
+		return true;
+	};
+
 	auto normalize_spaces = [](const std::string &in) {
 		std::string out;
 		out.reserve(in.size());
@@ -4107,20 +4130,25 @@ cmd_reflow_paragraph(CommandContext &ctx)
 
 	std::vector<std::string> new_lines;
 
-	// Determine if this region looks like a list: any line starting with bullet
-	bool region_has_bullet = false;
+	// Determine if this region looks like a list: any line starting with bullet or number
+	bool region_has_list = false;
 	for (std::size_t i = para_start; i <= para_end; ++i) {
 		std::string s = static_cast<std::string>(rows[i]);
 		std::string indent;
 		char marker;
 		std::size_t idx;
 		if (is_bullet_line(s, indent, marker, idx)) {
-			region_has_bullet = true;
+			region_has_list = true;
+			break;
+		}
+		std::string nmarker;
+		if (is_numbered_line(s, indent, nmarker, idx)) {
+			region_has_list = true;
 			break;
 		}
 	}
 
-	if (region_has_bullet) {
+	if (region_has_list) {
 		// Parse as list items; support hanging indent continuations
 		for (std::size_t i = para_start; i <= para_end; ++i) {
 			std::string s = static_cast<std::string>(rows[i]);
@@ -4148,6 +4176,10 @@ cmd_reflow_paragraph(CommandContext &ctx)
 					if (is_bullet_line(ns, nindent, nmarker, nidx)) {
 						break; // next item
 					}
+					std::string nnmarker;
+					if (is_numbered_line(ns, nindent, nnmarker, nidx)) {
+						break; // next item
+					}
 					// Not a continuation and not a bullet: stop (treat as separate paragraph chunk)
 					break;
 				}
@@ -4155,30 +4187,65 @@ cmd_reflow_paragraph(CommandContext &ctx)
 				wrap_with_prefixes(content, first_prefix, cont_prefix, width, new_lines);
 				i = j - 1; // advance
 			} else {
-				// A non-bullet line within a list region; treat as its own wrapped paragraph preserving its indent
-				std::string base_indent = leading_ws(s);
-				std::string content     = s.substr(base_indent.size());
-				std::size_t j           = i + 1;
-				while (j <= para_end) {
-					std::string ns      = static_cast<std::string>(rows[j]);
-					std::string nindent = leading_ws(ns);
-					std::string tmp_indent;
-					char tmp_marker;
-					std::size_t tmp_idx;
-					if (is_bullet_line(ns, tmp_indent, tmp_marker, tmp_idx)) {
-						break; // next bullet starts
-					}
-					if (nindent.size() >= base_indent.size()) {
-						content += ' ';
-						content += ns.substr(base_indent.size());
-						++j;
-					} else {
+				std::string nmarker;
+				if (is_numbered_line(s, indent, nmarker, after_idx)) {
+					std::string first_prefix = indent + nmarker + " ";
+					std::string cont_prefix  = indent + std::string(nmarker.size() + 1, ' ');
+					std::string content      = s.substr(after_idx);
+					// consume continuation lines that are part of this numbered item
+					std::size_t j = i + 1;
+					while (j <= para_end) {
+						std::string ns = static_cast<std::string>(rows[j]);
+						if (starts_with(ns, cont_prefix)) {
+							content += ' ';
+							content += ns.substr(cont_prefix.size());
+							++j;
+							continue;
+						}
+						// stop if next item
+						std::string nindent2;
+						char bmarker;
+						std::size_t nidx;
+						if (is_bullet_line(ns, nindent2, bmarker, nidx))
+							break;
+						std::string nnmarker;
+						if (is_numbered_line(ns, nindent2, nnmarker, nidx))
+							break;
 						break;
 					}
+					content = normalize_spaces(content);
+					wrap_with_prefixes(content, first_prefix, cont_prefix, width, new_lines);
+					i = j - 1;
+				} else {
+					// A non-bullet line within a list region; treat as its own wrapped paragraph preserving its indent
+					std::string base_indent = leading_ws(s);
+					std::string content     = s.substr(base_indent.size());
+					std::size_t j           = i + 1;
+					while (j <= para_end) {
+						std::string ns      = static_cast<std::string>(rows[j]);
+						std::string nindent = leading_ws(ns);
+						std::string tmp_indent;
+						char tmp_marker;
+						std::size_t tmp_idx;
+						if (is_bullet_line(ns, tmp_indent, tmp_marker, tmp_idx)) {
+							break; // next bullet starts
+						}
+						std::string tmp_nmarker;
+						if (is_numbered_line(ns, tmp_indent, tmp_nmarker, tmp_idx)) {
+							break; // next numbered starts
+						}
+						if (nindent.size() >= base_indent.size()) {
+							content += ' ';
+							content += ns.substr(base_indent.size());
+							++j;
+						} else {
+							break;
+						}
+					}
+					content = normalize_spaces(content);
+					wrap_with_prefixes(content, base_indent, base_indent, width, new_lines);
+					i = j - 1;
 				}
-				content = normalize_spaces(content);
-				wrap_with_prefixes(content, base_indent, base_indent, width, new_lines);
-				i = j - 1;
 			}
 		}
 	} else {

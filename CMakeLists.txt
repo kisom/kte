@@ -301,10 +301,15 @@ if (BUILD_TESTS)
             tests/test_buffer_io.cc
             tests/test_piece_table.cc
             tests/test_search.cc
+            tests/test_reflow_paragraph.cc
 
             # minimal engine sources required by Buffer
             PieceTable.cc
             Buffer.cc
+            Editor.cc
+            Command.cc
+            HelpText.cc
+            Swap.cc
             OptimizedSearch.cc
             UndoNode.cc
             UndoTree.cc
