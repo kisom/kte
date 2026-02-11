@@ -302,6 +302,7 @@ if (BUILD_TESTS)
             tests/test_piece_table.cc
             tests/test_search.cc
             tests/test_reflow_paragraph.cc
+            tests/test_undo.cc
             tests/test_visual_line_mode.cc
 
             # minimal engine sources required by Buffer

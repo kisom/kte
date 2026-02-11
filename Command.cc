@@ -2009,27 +2009,22 @@ cmd_insert_text(CommandContext &ctx)
 		return true;
 	}
 
-	std::size_t ins_y = y;
-	std::size_t ins_x = x; // remember insertion start for undo positioning
-
+	UndoSystem *u = buf->Undo();
+	if (u) {
+		// Start/extend a typed-run batch. Do NOT commit here; commit happens on boundaries
+		// (cursor movement, prompts, undo/redo, etc.) so consecutive InsertText commands coalesce.
+		buf->SetCursor(x, y);
+		u->Begin(UndoType::Insert);
+	}
 	// Apply edits to the underlying PieceTable through Buffer::insert_text,
 	// not directly to the legacy rows_ cache. This ensures Save() persists text.
 	for (int i = 0; i < repeat; ++i) {
 		buf->insert_text(static_cast<int>(y), static_cast<int>(x), std::string_view(ctx.arg));
+		if (u)
+			u->Append(std::string_view(ctx.arg));
 		x += ctx.arg.size();
 	}
 	buf->SetDirty(true);
-	// Record undo for this contiguous insert at the original insertion point
-	if (auto *u = buf->Undo()) {
-		// Position cursor at insertion start for the undo record
-		buf->SetCursor(ins_x, ins_y);
-		u->Begin(UndoType::Insert);
-		for (int i = 0; i < repeat; ++i) {
-			u->Append(std::string_view(ctx.arg));
-		}
-		// Finalize this contiguous insert as a single undoable action
-		u->commit();
-	}
 	buf->SetCursor(x, y);
 	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
@@ -3217,6 +3212,10 @@ cmd_yank(CommandContext &ctx)
 	for (int i = 0; i < repeat; ++i) {
 		insert_text_at_cursor(*buf, text);
 	}
+	// Yank is a paste operation; it should clear the mark/region and any selection highlighting.
+	buf->ClearMark();
+	if (buf->VisualLineActive())
+		buf->VisualLineClear();
 	ensure_cursor_visible(ctx.editor, *buf);
 	// Start a new kill chain only from kill commands; yanking should break it
 	ctx.editor.SetKillChain(false);

@@ -33,6 +33,11 @@ public:
 	void UpdateBufferReference(Buffer &new_buf);
 
 private:
+	enum class PendingAppendMode : std::uint8_t {
+		Append,
+		Prepend,
+	};
+
 	void apply(const UndoNode *node, int direction); // +1 redo, -1 undo
 	void free_node(UndoNode *node);
 
@@ -47,6 +52,8 @@ private:
 	static bool is_descendant(UndoNode *root, const UndoNode *target);
 
 	void update_dirty_flag();
+
+	PendingAppendMode pending_mode_ = PendingAppendMode::Append;
 
 	Buffer *buf_;
 	UndoTree &tree_;

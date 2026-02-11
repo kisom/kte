@@ -123,3 +123,36 @@ TEST (VisualLineMode_CancelWithCtrlG)
 	}
 	ASSERT_TRUE(got == exp);
 }
+
+
+TEST (Yank_ClearsMarkAndVisualLine)
+{
+	InstallDefaultCommands();
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+
+	Buffer b;
+	b.insert_text(0, 0, "foo\nbar\n");
+	b.SetCursor(1, 0);
+	ed.AddBuffer(std::move(b));
+
+	ASSERT_TRUE(ed.CurrentBuffer() != nullptr);
+	Buffer *buf = ed.CurrentBuffer();
+
+	// Seed mark + visual-line highlighting.
+	buf->SetMark(buf->Curx(), buf->Cury());
+	ASSERT_TRUE(buf->MarkSet());
+
+	ASSERT_TRUE(Execute(ed, std::string("visual-line-toggle")));
+	ASSERT_TRUE(Execute(ed, std::string("down"), std::string(), 1));
+	ASSERT_TRUE(buf->VisualLineActive());
+
+	// Yank should clear mark and any highlighting.
+	ed.KillRingClear();
+	ed.KillRingPush("X");
+	ASSERT_TRUE(Execute(ed, std::string("yank")));
+
+	ASSERT_TRUE(!buf->MarkSet());
+	ASSERT_TRUE(!buf->VisualLineActive());
+}
