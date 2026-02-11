@@ -370,6 +370,54 @@ public:
 	}
 
 
+	// Visual-line selection support (multicursor/visual mode)
+	void VisualLineClear()
+	{
+		visual_line_active_ = false;
+	}
+
+
+	void VisualLineStart()
+	{
+		visual_line_active_   = true;
+		visual_line_anchor_y_ = cury_;
+		visual_line_active_y_ = cury_;
+	}
+
+
+	void VisualLineToggle()
+	{
+		if (visual_line_active_)
+			VisualLineClear();
+		else
+			VisualLineStart();
+	}
+
+
+	[[nodiscard]] bool VisualLineActive() const
+	{
+		return visual_line_active_;
+	}
+
+
+	void VisualLineSetActiveY(std::size_t y)
+	{
+		visual_line_active_y_ = y;
+	}
+
+
+	[[nodiscard]] std::size_t VisualLineStartY() const
+	{
+		return visual_line_anchor_y_ < visual_line_active_y_ ? visual_line_anchor_y_ : visual_line_active_y_;
+	}
+
+
+	[[nodiscard]] std::size_t VisualLineEndY() const
+	{
+		return visual_line_anchor_y_ < visual_line_active_y_ ? visual_line_active_y_ : visual_line_anchor_y_;
+	}
+
+
 	[[nodiscard]] std::string AsString() const;
 
 	// Syntax highlighting integration (per-buffer)
@@ -466,11 +514,14 @@ private:
 	std::size_t content_LineCount_() const;
 
 	std::string filename_;
-	bool is_file_backed_   = false;
-	bool dirty_            = false;
-	bool read_only_        = false;
-	bool mark_set_         = false;
-	std::size_t mark_curx_ = 0, mark_cury_ = 0;
+	bool is_file_backed_              = false;
+	bool dirty_                       = false;
+	bool read_only_                   = false;
+	bool mark_set_                    = false;
+	std::size_t mark_curx_            = 0, mark_cury_ = 0;
+	bool visual_line_active_          = false;
+	std::size_t visual_line_anchor_y_ = 0;
+	std::size_t visual_line_active_y_ = 0;
 
 	// Per-buffer undo state
 	std::unique_ptr<struct UndoTree> undo_tree_;

@@ -47,6 +47,7 @@ enum class CommandId {
 	MoveFileStart, // move to beginning of file
 	MoveFileEnd, // move to end of file
 	ToggleMark, // toggle mark at cursor
+	VisualLineModeToggle, // toggle visual-line (multicursor) mode (C-k /)
 	JumpToMark, // jump to mark, set mark to previous cursor
 	KillRegion, // kill region between mark and cursor (to kill ring)
 	CopyRegion, // copy region to kill ring (Alt-w)

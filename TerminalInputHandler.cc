@@ -3,6 +3,7 @@
 
 #include "TerminalInputHandler.h"
 #include "KKeymap.h"
+#include "Command.h"
 #include "Editor.h"
 
 namespace {
@@ -23,6 +24,7 @@ map_key_to_command(const int ch,
                    bool &k_prefix,
                    bool &esc_meta,
                    bool &k_ctrl_pending,
+                   bool &mouse_selecting,
                    Editor *ed,
                    MappedInput &out)
 {
@@ -54,12 +56,33 @@ map_key_to_command(const int ch,
 			}
 #endif
 			// React to left button click/press
-			if (ev.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED | BUTTON1_RELEASED)) {
+			if (ed && (ev.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED | BUTTON1_RELEASED |
+			                        REPORT_MOUSE_POSITION))) {
 				char buf[64];
 				// Use screen coordinates; command handler will translate via offsets
 				std::snprintf(buf, sizeof(buf), "@%d:%d", ev.y, ev.x);
-				out = {true, CommandId::MoveCursorTo, std::string(buf), 0};
-				return true;
+				const bool pressed  = (ev.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED)) != 0;
+				const bool released = (ev.bstate & BUTTON1_RELEASED) != 0;
+				const bool moved    = (ev.bstate & REPORT_MOUSE_POSITION) != 0;
+				if (pressed) {
+					mouse_selecting = true;
+					Execute(*ed, CommandId::MoveCursorTo, std::string(buf));
+					if (Buffer *b = ed->CurrentBuffer()) {
+						b->SetMark(b->Curx(), b->Cury());
+					}
+					out.hasCommand = false;
+					return true;
+				}
+				if (mouse_selecting && moved) {
+					Execute(*ed, CommandId::MoveCursorTo, std::string(buf));
+					out.hasCommand = false;
+					return true;
+				}
+				if (released) {
+					mouse_selecting = false;
+					out.hasCommand  = false;
+					return true;
+				}
 			}
 		}
 		// No actionable mouse event
@@ -178,15 +201,15 @@ map_key_to_command(const int ch,
 			ctrl      = true;
 			ascii_key = 'a' + (ch - 1);
 		}
-  // If user typed literal 'C' or '^' as a qualifier, keep k-prefix and set pending
-  // Note: Do NOT treat lowercase 'c' as a qualifier, since 'c' is a valid C-k command (BufferClose).
-  if (ascii_key == 'C' || ascii_key == '^') {
-      k_ctrl_pending = true;
-      if (ed)
-          ed->SetStatus("C-k C _");
-      out.hasCommand = false;
-      return true;
-  }
+		// If user typed literal 'C' or '^' as a qualifier, keep k-prefix and set pending
+		// Note: Do NOT treat lowercase 'c' as a qualifier, since 'c' is a valid C-k command (BufferClose).
+		if (ascii_key == 'C' || ascii_key == '^') {
+			k_ctrl_pending = true;
+			if (ed)
+				ed->SetStatus("C-k C _");
+			out.hasCommand = false;
+			return true;
+		}
 		// For actual suffix, consume the k-prefix
 		k_prefix = false;
 		// Do NOT lowercase here; KLookupKCommand handles case-sensitive bindings
@@ -292,6 +315,7 @@ TerminalInputHandler::decode_(MappedInput &out)
 		ch,
 		k_prefix_, esc_meta_,
 		k_ctrl_pending_,
+		mouse_selecting_,
 		ed_,
 		out);
 	if (!consumed)

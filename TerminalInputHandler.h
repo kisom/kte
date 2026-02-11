@@ -30,5 +30,8 @@ private:
 	// Simple meta (ESC) state for ESC sequences like ESC b/f
 	bool esc_meta_ = false;
 
+	// Mouse drag selection state
+	bool mouse_selecting_ = false;
+
 	Editor *ed_ = nullptr; // attached editor for uarg handling
 };

@@ -107,9 +107,44 @@ TerminalRenderer::Draw(Editor &ed)
 			const std::size_t cur_mx   = has_current ? ed.SearchMatchX() : 0;
 			const std::size_t cur_my   = has_current ? ed.SearchMatchY() : 0;
 			const std::size_t cur_mend = has_current ? (ed.SearchMatchX() + ed.SearchMatchLen()) : 0;
-			bool hl_on                 = false;
-			bool cur_on                = false;
-			int written                = 0;
+
+			// Mark selection (mark -> cursor), in source coordinates
+			bool sel_active    = false;
+			std::size_t sel_sy = 0, sel_sx = 0, sel_ey = 0, sel_ex = 0;
+			if (buf->MarkSet()) {
+				sel_sy = buf->MarkCury();
+				sel_sx = buf->MarkCurx();
+				sel_ey = buf->Cury();
+				sel_ex = buf->Curx();
+				if (sel_sy > sel_ey || (sel_sy == sel_ey && sel_sx > sel_ex)) {
+					std::swap(sel_sy, sel_ey);
+					std::swap(sel_sx, sel_ex);
+				}
+				sel_active = !(sel_sy == sel_ey && sel_sx == sel_ex);
+			}
+			// Visual-line selection: full-line selection range
+			const bool vsel_active    = buf->VisualLineActive();
+			const std::size_t vsel_sy = vsel_active ? buf->VisualLineStartY() : 0;
+			const std::size_t vsel_ey = vsel_active ? buf->VisualLineEndY() : 0;
+			auto is_src_in_sel        = [&](std::size_t y, std::size_t sx) -> bool {
+				(void) sx;
+				if (vsel_active) {
+					if (y >= vsel_sy && y <= vsel_ey)
+						return true;
+				}
+				if (!sel_active)
+					return false;
+				if (y < sel_sy || y > sel_ey)
+					return false;
+				if (sel_sy == sel_ey)
+					return sx >= sel_sx && sx < sel_ex;
+				if (y == sel_sy)
+					return sx >= sel_sx;
+				if (y == sel_ey)
+					return sx < sel_ex;
+				return true;
+			};
+			int written = 0;
 			if (li < lines.size()) {
 				std::string line = static_cast<std::string>(lines[li]);
 				src_i            = 0;
@@ -156,27 +191,21 @@ TerminalRenderer::Draw(Editor &ed)
 					}
 					return kte::TokenKind::Default;
 				};
-				auto apply_token_attr = [&](kte::TokenKind k) {
-					// Map to simple attributes; search highlight uses A_STANDOUT which takes precedence below
-					attrset(A_NORMAL);
+				auto token_attr = [&](kte::TokenKind k) -> attr_t {
 					switch (k) {
 					case kte::TokenKind::Keyword:
 					case kte::TokenKind::Type:
 					case kte::TokenKind::Constant:
 					case kte::TokenKind::Function:
-						attron(A_BOLD);
-						break;
+						return A_BOLD;
 					case kte::TokenKind::Comment:
-						attron(A_DIM);
-						break;
+						return A_DIM;
 					case kte::TokenKind::String:
 					case kte::TokenKind::Char:
 					case kte::TokenKind::Number:
-						// standout a bit using A_UNDERLINE if available
-						attron(A_UNDERLINE);
-						break;
+						return A_UNDERLINE;
 					default:
-						break;
+						return 0;
 					}
 				};
 				while (written < cols) {
@@ -218,36 +247,23 @@ TerminalRenderer::Draw(Editor &ed)
 							}
 							// Now render visible spaces
 							while (next_tab > 0 && written < cols) {
+								bool in_sel = is_src_in_sel(li, src_i);
 								bool in_hl  = search_mode && is_src_in_hl(src_i);
 								bool in_cur =
 									has_current && li == cur_my && src_i >= cur_mx
-									&& src_i < cur_mend;
-								// Toggle highlight attributes
-								int attr = 0;
-								if (in_hl)
-									attr |= A_STANDOUT;
-								if (in_cur)
-									attr |= A_BOLD;
-								if ((attr & A_STANDOUT) && !hl_on) {
-									attron(A_STANDOUT);
-									hl_on = true;
+									&&
+									src_i < cur_mend;
+								attr_t a = A_NORMAL;
+								a        |= token_attr(token_at(src_i));
+								if (in_sel) {
+									a |= A_REVERSE;
+								} else {
+									if (in_hl)
+										a |= A_STANDOUT;
+									if (in_cur)
+										a |= A_BOLD;
 								}
-								if (!(attr & A_STANDOUT) && hl_on) {
-									attroff(A_STANDOUT);
-									hl_on = false;
-								}
-								if ((attr & A_BOLD) && !cur_on) {
-									attron(A_BOLD);
-									cur_on = true;
-								}
-								if (!(attr & A_BOLD) && cur_on) {
-									attroff(A_BOLD);
-									cur_on = false;
-								}
-								// Apply syntax attribute only if not in search highlight
-								if (!in_hl) {
-									apply_token_attr(token_at(src_i));
-								}
+								attrset(a);
 								addch(' ');
 								++written;
 								++render_col;
@@ -281,34 +297,27 @@ TerminalRenderer::Draw(Editor &ed)
 						break;
 					}
 
+					bool in_sel = from_src && is_src_in_sel(li, src_i);
 					bool in_hl  = search_mode && from_src && is_src_in_hl(src_i);
-					bool in_cur =
-						has_current && li == cur_my && from_src && src_i >= cur_mx && src_i <
-						cur_mend;
-					if (in_hl && !hl_on) {
-						attron(A_STANDOUT);
-						hl_on = true;
+					bool in_cur = has_current && li == cur_my && from_src && src_i >= cur_mx &&
+					              src_i < cur_mend;
+					attr_t a = A_NORMAL;
+					if (from_src)
+						a |= token_attr(token_at(src_i));
+					if (in_sel) {
+						a |= A_REVERSE;
+					} else {
+						if (in_hl)
+							a |= A_STANDOUT;
+						if (in_cur)
+							a |= A_BOLD;
 					}
-					if (!in_hl && hl_on) {
-						attroff(A_STANDOUT);
-						hl_on = false;
-					}
-					if (in_cur && !cur_on) {
-						attron(A_BOLD);
-						cur_on = true;
-					}
-					if (!in_cur && cur_on) {
-						attroff(A_BOLD);
-						cur_on = false;
-					}
-					if (!in_hl && from_src) {
-						apply_token_attr(token_at(src_i));
-					}
+					attrset(a);
 
 					if (from_src) {
 						cchar_t cch;
 						wchar_t warr[2] = {wch, L'\0'};
-						setcchar(&cch, warr, A_NORMAL, 0, nullptr);
+						setcchar(&cch, warr, 0, 0, nullptr);
 						add_wch(&cch);
 					} else {
 						addch(' ');
@@ -321,14 +330,6 @@ TerminalRenderer::Draw(Editor &ed)
 					if (src_i >= line.size() && written >= cols)
 						break;
 				}
-			}
-			if (hl_on) {
-				attroff(A_STANDOUT);
-				hl_on = false;
-			}
-			if (cur_on) {
-				attroff(A_BOLD);
-				cur_on = false;
 			}
 			attrset(A_NORMAL);
 			clrtoeol();

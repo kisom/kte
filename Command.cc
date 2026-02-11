@@ -761,6 +761,15 @@ cmd_quit_now(CommandContext &ctx)
 static bool
 cmd_refresh(CommandContext &ctx)
 {
+	// C-g is mapped to Refresh and acts as a general cancel key.
+	// Cancel visual-line (multicursor) mode if active.
+	if (Buffer *buf = ctx.editor.CurrentBuffer()) {
+		if (buf->VisualLineActive()) {
+			buf->VisualLineClear();
+			ctx.editor.SetStatus("Visual line: OFF");
+			return true;
+		}
+	}
 	// If a generic prompt is active, cancel it
 	if (ctx.editor.PromptActive()) {
 		// If also in search mode, restore state
@@ -1968,11 +1977,40 @@ cmd_insert_text(CommandContext &ctx)
 		return false;
 	}
 	ensure_at_least_one_line(*buf);
-	std::size_t y     = buf->Cury();
-	std::size_t x     = buf->Curx();
+	std::size_t y  = buf->Cury();
+	std::size_t x  = buf->Curx();
+	int repeat     = ctx.count > 0 ? ctx.count : 1;
+	std::size_t cx = x;
+	std::size_t cy = y;
+
+	// Visual-line mode: broadcast inserts to each selected line at the same column.
+	if (buf->VisualLineActive()) {
+		const std::size_t sy = buf->VisualLineStartY();
+		const std::size_t ey = buf->VisualLineEndY();
+		const auto &rows     = buf->Rows();
+		for (std::size_t yy = sy; yy <= ey; ++yy) {
+			if (yy >= rows.size())
+				break;
+			std::size_t xx = x;
+			if (xx > rows[yy].size())
+				xx = rows[yy].size();
+			for (int i = 0; i < repeat; ++i) {
+				buf->insert_text(static_cast<int>(yy), static_cast<int>(xx), std::string_view(ctx.arg));
+				xx += ctx.arg.size();
+			}
+			if (yy == y) {
+				cx = xx;
+				cy = yy;
+			}
+		}
+		buf->SetDirty(true);
+		buf->SetCursor(cx, cy);
+		ensure_cursor_visible(ctx.editor, *buf);
+		return true;
+	}
+
 	std::size_t ins_y = y;
 	std::size_t ins_x = x; // remember insertion start for undo positioning
-	int repeat        = ctx.count > 0 ? ctx.count : 1;
 
 	// Apply edits to the underlying PieceTable through Buffer::insert_text,
 	// not directly to the legacy rows_ cache. This ensures Save() persists text.
@@ -2784,6 +2822,41 @@ cmd_newline(CommandContext &ctx)
 	std::size_t y = buf->Cury();
 	std::size_t x = buf->Curx();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
+
+	// Visual-line mode: broadcast newline splits across selected lines.
+	if (buf->VisualLineActive()) {
+		const std::size_t sy = buf->VisualLineStartY();
+		const std::size_t ey = buf->VisualLineEndY();
+		const auto &rows     = buf->Rows();
+		if (rows.empty())
+			return true;
+		std::size_t splits_above = 0;
+		if (sy < y)
+			splits_above = std::min(ey, y - 1) - sy + 1;
+
+		// Iterate bottom-up to keep row indices stable while splitting.
+		for (std::size_t yy = ey + 1; yy-- > sy;) {
+			const auto &rows_view = buf->Rows();
+			if (yy >= rows_view.size())
+				continue;
+			std::size_t xx = x;
+			if (xx > rows_view[yy].size())
+				xx = rows_view[yy].size();
+			// First split at the cursor column; subsequent splits create blank lines.
+			buf->split_line(static_cast<int>(yy), static_cast<int>(xx));
+			for (int i = 1; i < repeat; ++i) {
+				buf->split_line(static_cast<int>(yy + i), 0);
+			}
+		}
+
+		buf->SetDirty(true);
+		// Cursor: end up on the final inserted line for the original cursor line.
+		std::size_t new_y = y + static_cast<std::size_t>(repeat);
+		new_y             += splits_above;
+		buf->SetCursor(0, new_y);
+		ensure_cursor_visible(ctx.editor, *buf);
+		return true;
+	}
 	for (int i = 0; i < repeat; ++i) {
 		buf->split_line(static_cast<int>(y), static_cast<int>(x));
 		// Move to start of next line
@@ -2858,6 +2931,35 @@ cmd_backspace(CommandContext &ctx)
 	std::size_t x = buf->Curx();
 	UndoSystem *u = buf->Undo();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
+
+	// Visual-line mode: broadcast backspace deletes within each selected line.
+	// For now, we do NOT join lines when at column 0 (too ambiguous across multiple lines).
+	if (buf->VisualLineActive()) {
+		const std::size_t sy = buf->VisualLineStartY();
+		const std::size_t ey = buf->VisualLineEndY();
+		const auto &rows     = buf->Rows();
+		std::size_t cx       = x;
+		for (std::size_t yy = sy; yy <= ey; ++yy) {
+			if (yy >= rows.size())
+				break;
+			std::size_t xx = x;
+			if (xx > rows[yy].size())
+				xx = rows[yy].size();
+			for (int i = 0; i < repeat; ++i) {
+				if (xx == 0)
+					break;
+				buf->delete_text(static_cast<int>(yy), static_cast<int>(xx - 1), 1);
+				--xx;
+			}
+			if (yy == y)
+				cx = xx;
+		}
+		buf->SetDirty(true);
+		buf->SetCursor(cx, y);
+		ensure_cursor_visible(ctx.editor, *buf);
+		(void) u;
+		return true;
+	}
 	for (int i = 0; i < repeat; ++i) {
 		// Refresh a read-only view of lines for char capture/lengths
 		const auto &rows_view = buf->Rows();
@@ -2910,6 +3012,30 @@ cmd_delete_char(CommandContext &ctx)
 	std::size_t x = buf->Curx();
 	UndoSystem *u = buf->Undo();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
+
+	// Visual-line mode: broadcast delete-char within each selected line.
+	// For now, we do NOT join lines when at end-of-line.
+	if (buf->VisualLineActive()) {
+		const std::size_t sy = buf->VisualLineStartY();
+		const std::size_t ey = buf->VisualLineEndY();
+		const auto &rows     = buf->Rows();
+		for (std::size_t yy = sy; yy <= ey; ++yy) {
+			if (yy >= rows.size())
+				break;
+			std::size_t xx = x;
+			if (xx > rows[yy].size())
+				xx = rows[yy].size();
+			for (int i = 0; i < repeat; ++i) {
+				if (xx >= buf->Rows()[yy].size())
+					break;
+				buf->delete_text(static_cast<int>(yy), static_cast<int>(xx), 1);
+			}
+		}
+		buf->SetDirty(true);
+		ensure_cursor_visible(ctx.editor, *buf);
+		(void) u;
+		return true;
+	}
 	for (int i = 0; i < repeat; ++i) {
 		const auto &rows_view = buf->Rows();
 		if (y >= rows_view.size())
@@ -3107,6 +3233,8 @@ cmd_move_file_start(CommandContext &ctx)
 		return false;
 	ensure_at_least_one_line(*buf);
 	buf->SetCursor(0, 0);
+	if (buf->VisualLineActive())
+		buf->VisualLineSetActiveY(buf->Cury());
 	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
 }
@@ -3123,6 +3251,8 @@ cmd_move_file_end(CommandContext &ctx)
 	std::size_t y    = rows.empty() ? 0 : rows.size() - 1;
 	std::size_t x    = rows.empty() ? 0 : rows[y].size();
 	buf->SetCursor(x, y);
+	if (buf->VisualLineActive())
+		buf->VisualLineSetActiveY(buf->Cury());
 	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
 }
@@ -3141,6 +3271,18 @@ cmd_toggle_mark(CommandContext &ctx)
 		buf->SetMark(buf->Curx(), buf->Cury());
 		ctx.editor.SetStatus("Mark set");
 	}
+	return true;
+}
+
+
+static bool
+cmd_visual_line_mode_toggle(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf)
+		return false;
+	buf->VisualLineToggle();
+	ctx.editor.SetStatus(std::string("Visual line: ") + (buf->VisualLineActive() ? "ON" : "OFF"));
 	return true;
 }
 
@@ -3306,6 +3448,8 @@ cmd_move_left(CommandContext &ctx)
 		}
 	}
 	buf->SetCursor(x, y);
+	if (buf->VisualLineActive())
+		buf->VisualLineSetActiveY(buf->Cury());
 	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
 }
@@ -3383,6 +3527,8 @@ cmd_move_right(CommandContext &ctx)
 		}
 	}
 	buf->SetCursor(x, y);
+	if (buf->VisualLineActive())
+		buf->VisualLineSetActiveY(buf->Cury());
 	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
 }
@@ -3423,6 +3569,8 @@ cmd_move_up(CommandContext &ctx)
 	if (x > rows[y].size())
 		x = rows[y].size();
 	buf->SetCursor(x, y);
+	if (buf->VisualLineActive())
+		buf->VisualLineSetActiveY(buf->Cury());
 	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
 }
@@ -3464,6 +3612,8 @@ cmd_move_down(CommandContext &ctx)
 	if (x > rows[y].size())
 		x = rows[y].size();
 	buf->SetCursor(x, y);
+	if (buf->VisualLineActive())
+		buf->VisualLineSetActiveY(buf->Cury());
 	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
 }
@@ -4463,6 +4613,10 @@ InstallDefaultCommands()
 	});
 	CommandRegistry::Register({CommandId::MoveFileEnd, "file-end", "Move to end of file", cmd_move_file_end});
 	CommandRegistry::Register({CommandId::ToggleMark, "toggle-mark", "Toggle mark at cursor", cmd_toggle_mark});
+	CommandRegistry::Register({
+		CommandId::VisualLineModeToggle, "visual-line-toggle", "Toggle visual-line (multicursor) mode",
+		cmd_visual_line_mode_toggle, false, false
+	});
 	CommandRegistry::Register({
 		CommandId::JumpToMark, "jump-to-mark", "Jump to mark (swap mark)", cmd_jump_to_mark
 	});

@@ -114,6 +114,9 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 	case '=':
 		out = CommandId::IndentRegion;
 		return true;
+	case '/':
+		out = CommandId::VisualLineModeToggle;
+		return true;
 	case ';':
 		out = CommandId::CommandPromptStart; // C-k ; : generic command prompt
 		return true;

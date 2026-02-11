@@ -150,73 +150,84 @@ ImGuiRenderer::Draw(Editor &ed)
 		// Cache current horizontal offset in rendered columns for click handling
 		const std::size_t coloffs_now = buf->Coloffs();
 
-		// Handle mouse click before rendering to avoid dependent on drawn items
-		if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+		// Mark selection state (mark -> cursor), in source coordinates
+		bool sel_active    = false;
+		std::size_t sel_sy = 0, sel_sx = 0, sel_ey = 0, sel_ex = 0;
+		if (buf->MarkSet()) {
+			sel_sy = buf->MarkCury();
+			sel_sx = buf->MarkCurx();
+			sel_ey = buf->Cury();
+			sel_ex = buf->Curx();
+			if (sel_sy > sel_ey || (sel_sy == sel_ey && sel_sx > sel_ex)) {
+				std::swap(sel_sy, sel_ey);
+				std::swap(sel_sx, sel_ex);
+			}
+			sel_active = !(sel_sy == sel_ey && sel_sx == sel_ex);
+		}
+		// Visual-line selection: full-line highlight range
+		const bool vsel_active    = buf->VisualLineActive();
+		const std::size_t vsel_sy = vsel_active ? buf->VisualLineStartY() : 0;
+		const std::size_t vsel_ey = vsel_active ? buf->VisualLineEndY() : 0;
+
+		static bool mouse_selecting = false;
+		auto mouse_pos_to_buf       = [&]() -> std::pair<std::size_t, std::size_t> {
 			ImVec2 mp = ImGui::GetIO().MousePos;
-			// Compute content-relative position accounting for scroll
-			// mp.y - child_window_pos.y gives us pixels from top of child window
-			// Adding scroll_y gives us pixels from top of content (buffer row 0)
+			// Convert mouse pos to buffer row
 			float content_y = (mp.y - child_window_pos.y) + scroll_y;
 			long by_l       = static_cast<long>(content_y / row_h);
 			if (by_l < 0)
 				by_l = 0;
-
-			// Convert to buffer row
 			std::size_t by = static_cast<std::size_t>(by_l);
-			if (by >= lines.size()) {
-				if (!lines.empty())
-					by = lines.size() - 1;
-				else
-					by = 0;
-			}
+			if (by >= lines.size())
+				by = lines.empty() ? 0 : (lines.size() - 1);
 
-			// Compute click X position relative to left edge of child window (in pixels)
-			// This gives us the visual offset from the start of displayed content
+			// Convert mouse pos to rendered x
 			float visual_x = mp.x - child_window_pos.x;
 			if (visual_x < 0.0f)
 				visual_x = 0.0f;
-
-			// Convert visual pixel offset to rendered column, then add coloffs_now
-			// to get the absolute rendered column in the buffer
 			std::size_t clicked_rx = static_cast<std::size_t>(visual_x / space_w) + coloffs_now;
 
-			// Empty buffer guard: if there are no lines yet, just move to 0:0
-			if (lines.empty()) {
-				Execute(ed, CommandId::MoveCursorTo, std::string("0:0"));
-			} else {
-				// Convert rendered column (clicked_rx) to source column accounting for tabs
-				std::string line_clicked = static_cast<std::string>(lines[by]);
-				const std::size_t tabw   = 8;
-
-				// Iterate through source columns, computing rendered position, to find closest match
-				std::size_t rx       = 0; // rendered column position
-				std::size_t best_col = 0;
-				float best_dist      = std::numeric_limits<float>::infinity();
-				float clicked_rx_f   = static_cast<float>(clicked_rx);
-
-				for (std::size_t i = 0; i <= line_clicked.size(); ++i) {
-					// Check current position
-					float dist = std::fabs(clicked_rx_f - static_cast<float>(rx));
-					if (dist < best_dist) {
-						best_dist = dist;
-						best_col  = i;
-					}
-
-					// Advance to next position if not at end
-					if (i < line_clicked.size()) {
-						if (line_clicked[i] == '\t') {
-							rx += (tabw - (rx % tabw));
-						} else {
-							rx += 1;
-						}
-					}
+			// Convert rendered column to source column
+			if (lines.empty())
+				return {0, 0};
+			std::string line_clicked = static_cast<std::string>(lines[by]);
+			const std::size_t tabw   = 8;
+			std::size_t rx           = 0;
+			std::size_t best_col     = 0;
+			float best_dist          = std::numeric_limits<float>::infinity();
+			float clicked_rx_f       = static_cast<float>(clicked_rx);
+			for (std::size_t i = 0; i <= line_clicked.size(); ++i) {
+				float dist = std::fabs(clicked_rx_f - static_cast<float>(rx));
+				if (dist < best_dist) {
+					best_dist = dist;
+					best_col  = i;
 				}
-
-				// Dispatch absolute buffer coordinates (row:col)
-				char tmp[64];
-				std::snprintf(tmp, sizeof(tmp), "%zu:%zu", by, best_col);
-				Execute(ed, CommandId::MoveCursorTo, std::string(tmp));
+				if (i < line_clicked.size()) {
+					rx += (line_clicked[i] == '\t') ? (tabw - (rx % tabw)) : 1;
+				}
 			}
+			return {by, best_col};
+		};
+
+		// Mouse-driven selection: set mark on press, update cursor on drag
+		if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+			mouse_selecting = true;
+			auto [by, bx]   = mouse_pos_to_buf();
+			char tmp[64];
+			std::snprintf(tmp, sizeof(tmp), "%zu:%zu", by, bx);
+			Execute(ed, CommandId::MoveCursorTo, std::string(tmp));
+			if (Buffer *mbuf = const_cast<Buffer *>(buf)) {
+				mbuf->SetMark(bx, by);
+			}
+		}
+		if (mouse_selecting && ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+			auto [by, bx] = mouse_pos_to_buf();
+			char tmp[64];
+			std::snprintf(tmp, sizeof(tmp), "%zu:%zu", by, bx);
+			Execute(ed, CommandId::MoveCursorTo, std::string(tmp));
+		}
+		if (mouse_selecting && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+			mouse_selecting = false;
 		}
 		for (std::size_t i = rowoffs; i < lines.size(); ++i) {
 			// Capture the screen position before drawing the line
@@ -293,6 +304,51 @@ ImGuiRenderer::Draw(Editor &ed)
 						                  ? IM_COL32(255, 220, 120, 140)
 						                  : IM_COL32(200, 200, 0, 90);
 					ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
+				}
+			}
+
+			// Draw selection background (over search highlight; under text)
+			if (sel_active || vsel_active) {
+				bool line_has  = false;
+				std::size_t sx = 0, ex = 0;
+				if (vsel_active && i >= vsel_sy && i <= vsel_ey) {
+					sx       = 0;
+					ex       = line.size();
+					line_has = ex > sx;
+				} else if (i < sel_sy || i > sel_ey) {
+					line_has = false;
+				} else if (sel_sy == sel_ey) {
+					sx       = sel_sx;
+					ex       = sel_ex;
+					line_has = ex > sx;
+				} else if (i == sel_sy) {
+					sx       = sel_sx;
+					ex       = line.size();
+					line_has = ex > sx;
+				} else if (i == sel_ey) {
+					sx       = 0;
+					ex       = std::min(sel_ex, line.size());
+					line_has = ex > sx;
+				} else {
+					sx       = 0;
+					ex       = line.size();
+					line_has = ex > sx;
+				}
+				if (line_has) {
+					std::size_t rx_start = src_to_rx(sx);
+					std::size_t rx_end   = src_to_rx(ex);
+					if (rx_end > coloffs_now) {
+						std::size_t vx0 = (rx_start > coloffs_now)
+							                  ? (rx_start - coloffs_now)
+							                  : 0;
+						std::size_t vx1 = rx_end - coloffs_now;
+						ImVec2 p0       = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w,
+						                         line_pos.y);
+						ImVec2 p1 = ImVec2(line_pos.x + static_cast<float>(vx1) * space_w,
+						                   line_pos.y + line_h);
+						ImU32 col = ImGui::GetColorU32(ImGuiCol_TextSelectedBg);
+						ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
+					}
 				}
 			}
 			// Emit entire line to an expanded buffer (tabs -> spaces)
