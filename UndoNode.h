@@ -16,6 +16,7 @@ struct UndoNode {
 	int row{};
 	int col{};
 	std::string text;
-	UndoNode *child = nullptr; // next in current timeline
-	UndoNode *next  = nullptr; // redo branch
+	UndoNode *parent = nullptr; // previous state; null means pre-first-edit
+	UndoNode *child  = nullptr; // next in current timeline
+	UndoNode *next   = nullptr; // redo branch
 };

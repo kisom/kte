@@ -69,9 +69,10 @@ UndoSystem::Begin(UndoType type)
 	tree_.pending->row  = row;
 	tree_.pending->col  = col;
 	tree_.pending->text.clear();
-	tree_.pending->child = nullptr;
-	tree_.pending->next  = nullptr;
-	pending_mode_        = PendingAppendMode::Append;
+	tree_.pending->parent = nullptr;
+	tree_.pending->child  = nullptr;
+	tree_.pending->next   = nullptr;
+	pending_mode_         = PendingAppendMode::Append;
 }
 
 
@@ -119,37 +120,28 @@ UndoSystem::commit()
 		return;
 	}
 
-	// Linear semantics: if we are not at the tip, discard redo.
-	if (tree_.current && tree_.current->child) {
-		// Prevent dangling `saved` pointer if it sits in the discarded redo chain.
-		if (tree_.saved && is_descendant(tree_.current->child, tree_.saved)) {
-			tree_.saved = nullptr;
-		}
-		free_branch(tree_.current->child);
-		tree_.current->child = nullptr;
-	}
-
 	if (!tree_.root) {
-		tree_.root    = tree_.pending;
-		tree_.current = tree_.pending;
+		tree_.root            = tree_.pending;
+		tree_.pending->parent = nullptr;
+		tree_.current         = tree_.pending;
 	} else if (!tree_.current) {
-		// We are at the "pre-first-edit" state. Attach as the new root child.
-		// For v1 linear history, this means starting the chain anew.
-		// The existing root represents edits from the past; attach the new node as the new root.
-		// (This situation happens after undoing past the first node.)
-		if (tree_.saved && is_descendant(tree_.root, tree_.saved)) {
-			// ok
-		}
-		// Discard the old root chain because it is redo from the pre-edit state.
-		if (tree_.saved && is_descendant(tree_.root, tree_.saved)) {
-			tree_.saved = nullptr;
-		}
-		free_node(tree_.root);
-		tree_.root    = tree_.pending;
-		tree_.current = tree_.pending;
+		// We are at the "pre-first-edit" state (undo past the first node).
+		// In branching history, preserve the existing root chain as an alternate branch.
+		tree_.pending->parent = nullptr;
+		tree_.pending->next   = tree_.root;
+		tree_.root            = tree_.pending;
+		tree_.current         = tree_.pending;
 	} else {
-		tree_.current->child = tree_.pending;
-		tree_.current        = tree_.pending;
+		// Branching semantics: attach as a new redo branch under current.
+		// Make the new edit the active child by inserting it at the head.
+		tree_.pending->parent = tree_.current;
+		if (!tree_.current->child) {
+			tree_.current->child = tree_.pending;
+		} else {
+			tree_.pending->next  = tree_.current->child;
+			tree_.current->child = tree_.pending;
+		}
+		tree_.current = tree_.pending;
 	}
 
 	tree_.pending = nullptr;
@@ -167,27 +159,44 @@ UndoSystem::undo()
 		return;
 	debug_log("undo");
 	apply(tree_.current, -1);
-	UndoNode *parent = find_parent(tree_.root, tree_.current);
-	tree_.current    = parent;
+	tree_.current = tree_.current->parent;
 	update_dirty_flag();
 }
 
 
 void
-UndoSystem::redo()
+UndoSystem::redo(int branch_index)
 {
 	commit();
-	UndoNode *next = nullptr;
+	UndoNode **head = nullptr;
 	if (!tree_.current) {
-		next = tree_.root;
+		head = &tree_.root;
 	} else {
-		next = tree_.current->child;
+		head = &tree_.current->child;
 	}
-	if (!next)
+	if (!head || !*head)
 		return;
+	if (branch_index < 0)
+		branch_index = 0;
+
+	// Select the Nth sibling from the branch list and make it the active head.
+	UndoNode *prev = nullptr;
+	UndoNode *sel  = *head;
+	for (int i = 0; i < branch_index && sel; ++i) {
+		prev = sel;
+		sel  = sel->next;
+	}
+	if (!sel)
+		return;
+	if (prev) {
+		prev->next = sel->next;
+		sel->next  = *head;
+		*head      = sel;
+	}
+
 	debug_log("redo");
-	apply(next, +1);
-	tree_.current = next;
+	apply(*head, +1);
+	tree_.current = *head;
 	update_dirty_flag();
 }
 

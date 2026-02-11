@@ -319,6 +319,9 @@ if (BUILD_TESTS)
             ${SYNTAX_SOURCES}
     )
 
+    # Allow test-only introspection hooks (guarded in headers) without affecting production builds.
+    target_compile_definitions(kte_tests PRIVATE KTE_TESTS=1)
+
     # Allow tests to include project headers like "Buffer.h"
     target_include_directories(kte_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 

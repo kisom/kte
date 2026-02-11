@@ -20,10 +20,11 @@ public:
 		available_.pop();
 		// Node comes zeroed; ensure links are reset
 		node->text.clear();
-		node->child = nullptr;
-		node->next  = nullptr;
-		node->row   = node->col = 0;
-		node->type  = UndoType{};
+		node->parent = nullptr;
+		node->child  = nullptr;
+		node->next   = nullptr;
+		node->row    = node->col = 0;
+		node->type   = UndoType{};
 		return node;
 	}
 
@@ -34,10 +35,11 @@ public:
 			return;
 		// Clear heavy fields to free memory held by strings
 		node->text.clear();
-		node->child = nullptr;
-		node->next  = nullptr;
-		node->row   = node->col = 0;
-		node->type  = UndoType{};
+		node->parent = nullptr;
+		node->child  = nullptr;
+		node->next   = nullptr;
+		node->row    = node->col = 0;
+		node->type   = UndoType{};
 		available_.push(node);
 	}
 

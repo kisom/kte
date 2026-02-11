@@ -22,7 +22,10 @@ public:
 
 	void undo();
 
-	void redo();
+	// Redo the current node's active child branch.
+	// If `branch_index` > 0, selects that redo sibling (0-based) and makes it active.
+	// When current is null (pre-first-edit), branches are selected among `tree_.root` siblings.
+	void redo(int branch_index = 0);
 
 	void mark_saved();
 
@@ -31,6 +34,14 @@ public:
 	void clear();
 
 	void UpdateBufferReference(Buffer &new_buf);
+
+#if defined(KTE_TESTS)
+	// Test-only introspection hook.
+	const UndoTree &TreeForTests() const
+	{
+		return tree_;
+	}
+#endif
 
 private:
 	enum class PendingAppendMode : std::uint8_t {

@@ -3068,7 +3068,9 @@ cmd_undo(CommandContext &ctx)
 	if (auto *u = buf->Undo()) {
 		// Ensure pending batch is finalized so it can be undone
 		u->commit();
-		u->undo();
+		int repeat = ctx.count > 0 ? ctx.count : 1;
+		for (int i = 0; i < repeat; ++i)
+			u->undo();
 		// Keep cursor within buffer bounds
 		ensure_cursor_visible(ctx.editor, *buf);
 		ctx.editor.SetStatus("Undone");
@@ -3087,7 +3089,14 @@ cmd_redo(CommandContext &ctx)
 	if (auto *u = buf->Undo()) {
 		// Finalize any pending batch before redoing
 		u->commit();
-		u->redo();
+		// With branching undo, a universal-argument count selects an alternate redo branch:
+		//  - no count (or 1): redo the active branch
+		//  - n>1: redo the (n-1)th sibling branch from this point and make it active
+		if (ctx.count > 1) {
+			u->redo(ctx.count - 1);
+		} else {
+			u->redo();
+		}
 		ensure_cursor_visible(ctx.editor, *buf);
 		ctx.editor.SetStatus("Redone");
 		return true;
