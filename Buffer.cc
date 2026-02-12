@@ -8,6 +8,7 @@
 #include <string_view>
 
 #include "Buffer.h"
+#include "SwapRecorder.h"
 #include "UndoSystem.h"
 #include "UndoTree.h"
 // For reconstructing highlighter state on copies
@@ -390,6 +391,8 @@ Buffer::insert_text(int row, int col, std::string_view text)
 	if (!text.empty()) {
 		content_.Insert(off, text.data(), text.size());
 		rows_cache_dirty_ = true;
+		if (swap_rec_)
+			swap_rec_->OnInsert(row, col, text);
 	}
 }
 
@@ -443,6 +446,7 @@ Buffer::delete_text(int row, int col, std::size_t len)
 		row = 0;
 	if (col < 0)
 		col = 0;
+
 	const std::size_t start = content_.LineColToByteOffset(static_cast<std::size_t>(row),
 	                                                       static_cast<std::size_t>(col));
 	std::size_t r         = static_cast<std::size_t>(row);
@@ -462,16 +466,19 @@ Buffer::delete_text(int row, int col, std::size_t len)
 			break;
 		// Consume newline between lines as one char, if there is a next line
 		if (r + 1 < lc) {
-			if (remaining > 0) {
-				remaining -= 1; // the newline
-				r         += 1;
-				c         = 0;
-			}
+			remaining -= 1; // the newline
+			r         += 1;
+			c         = 0;
 		} else {
 			// At last line and still remaining: delete to EOF
-			std::size_t total = content_.Size();
-			content_.Delete(start, total - start);
+			const std::size_t total  = content_.Size();
+			const std::size_t actual = (total > start) ? (total - start) : 0;
+			if (actual == 0)
+				return;
+			content_.Delete(start, actual);
 			rows_cache_dirty_ = true;
+			if (swap_rec_)
+				swap_rec_->OnDelete(row, col, actual);
 			return;
 		}
 	}
@@ -479,8 +486,11 @@ Buffer::delete_text(int row, int col, std::size_t len)
 	// Compute end offset at (r,c)
 	std::size_t end = content_.LineColToByteOffset(r, c);
 	if (end > start) {
-		content_.Delete(start, end - start);
+		const std::size_t actual = end - start;
+		content_.Delete(start, actual);
 		rows_cache_dirty_ = true;
+		if (swap_rec_)
+			swap_rec_->OnDelete(row, col, actual);
 	}
 }
 
@@ -488,15 +498,18 @@ Buffer::delete_text(int row, int col, std::size_t len)
 void
 Buffer::split_line(int row, const int col)
 {
+	int c = col;
 	if (row < 0)
 		row = 0;
-	if (col < 0)
-		row = 0;
+	if (c < 0)
+		c = 0;
 	const std::size_t off = content_.LineColToByteOffset(static_cast<std::size_t>(row),
-	                                                     static_cast<std::size_t>(col));
+	                                                     static_cast<std::size_t>(c));
 	const char nl = '\n';
 	content_.Insert(off, &nl, 1);
 	rows_cache_dirty_ = true;
+	if (swap_rec_)
+		swap_rec_->OnInsert(row, c, std::string_view("\n", 1));
 }
 
 
@@ -508,11 +521,14 @@ Buffer::join_lines(int row)
 	std::size_t r = static_cast<std::size_t>(row);
 	if (r + 1 >= content_.LineCount())
 		return;
+	const int col = static_cast<int>(content_.GetLine(r).size());
 	// Delete the newline between line r and r+1
 	std::size_t end_of_line = content_.LineColToByteOffset(r, std::numeric_limits<std::size_t>::max());
 	// end_of_line now equals line end (clamped before newline). The newline should be exactly at this position.
 	content_.Delete(end_of_line, 1);
 	rows_cache_dirty_ = true;
+	if (swap_rec_)
+		swap_rec_->OnDelete(row, col, 1);
 }
 
 
@@ -527,6 +543,12 @@ Buffer::insert_row(int row, const std::string_view text)
 	const char nl = '\n';
 	content_.Insert(off + text.size(), &nl, 1);
 	rows_cache_dirty_ = true;
+	if (swap_rec_) {
+		// Avoid allocation: emit the row text insertion (if any) and the newline insertion.
+		if (!text.empty())
+			swap_rec_->OnInsert(row, 0, text);
+		swap_rec_->OnInsert(row, static_cast<int>(text.size()), std::string_view("\n", 1));
+	}
 }
 
 
@@ -541,10 +563,15 @@ Buffer::delete_row(int row)
 	auto range = content_.GetLineRange(r); // [start,end)
 	// If not last line, ensure we include the separating newline by using end as-is (which points to next line start)
 	// If last line, end may equal total_size_. We still delete [start,end) which removes the last line content.
-	std::size_t start = range.first;
-	std::size_t end   = range.second;
-	content_.Delete(start, end - start);
+	const std::size_t start  = range.first;
+	const std::size_t end    = range.second;
+	const std::size_t actual = (end > start) ? (end - start) : 0;
+	if (actual == 0)
+		return;
+	content_.Delete(start, actual);
 	rows_cache_dirty_ = true;
+	if (swap_rec_)
+		swap_rec_->OnDelete(row, 0, actual);
 }
 
 

@@ -4,13 +4,13 @@ project(kte)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 20)
-set(KTE_VERSION "1.6.0")
+set(KTE_VERSION "1.6.1")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
 set(BUILD_GUI ON CACHE BOOL "Enable building the graphical version.")
 set(KTE_USE_QT OFF CACHE BOOL "Build the QT frontend instead of ImGui.")
-set(BUILD_TESTS OFF CACHE BOOL "Enable building test programs.")
+set(BUILD_TESTS ON CACHE BOOL "Enable building test programs.")
 set(KTE_FONT_SIZE "18.0" CACHE STRING "Default font size for GUI")
 option(KTE_UNDO_DEBUG "Enable undo instrumentation logs" OFF)
 option(KTE_ENABLE_TREESITTER "Enable optional Tree-sitter highlighter adapter" OFF)
@@ -300,9 +300,17 @@ if (BUILD_TESTS)
             tests/Test.h
             tests/TestHarness.h
             tests/test_daily_driver_harness.cc
+            tests/test_daily_workflows.cc
             tests/test_buffer_io.cc
+            tests/test_buffer_rows.cc
+            tests/test_command_semantics.cc
+            tests/test_kkeymap.cc
+            tests/test_swap_recorder.cc
+            tests/test_swap_writer.cc
+            tests/test_swap_replay.cc
             tests/test_piece_table.cc
             tests/test_search.cc
+            tests/test_search_replace_flow.cc
             tests/test_reflow_paragraph.cc
             tests/test_undo.cc
             tests/test_visual_line_mode.cc
@@ -314,6 +322,8 @@ if (BUILD_TESTS)
             Command.cc
             HelpText.cc
             Swap.cc
+            KKeymap.cc
+            SwapRecorder.h
             OptimizedSearch.cc
             UndoNode.cc
             UndoTree.cc

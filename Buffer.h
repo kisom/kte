@@ -418,6 +418,23 @@ public:
 	}
 
 
+	// In visual-line (multi-cursor) mode, the UI should highlight only the per-line
+	// cursor "spot" (Curx clamped to each line length), not the entire line.
+	[[nodiscard]] bool VisualLineSpotSelected(std::size_t y, std::size_t sx) const
+	{
+		if (!visual_line_active_)
+			return false;
+		if (y < VisualLineStartY() || y > VisualLineEndY())
+			return false;
+		std::string_view ln = GetLineView(y);
+		// `GetLineView()` returns the raw range, which may include a trailing '\n'.
+		if (!ln.empty() && ln.back() == '\n')
+			ln.remove_suffix(1);
+		const std::size_t spot = std::min(Curx(), ln.size());
+		return sx == spot;
+	}
+
+
 	[[nodiscard]] std::string AsString() const;
 
 	// Syntax highlighting integration (per-buffer)

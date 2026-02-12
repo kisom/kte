@@ -12,11 +12,14 @@ Goals
 
 Model overview
 --------------
-Per open buffer, maintain a sidecar swap journal next to the file:
+Per open buffer, maintain a swap journal in a per-user state directory:
 
-- Path: `.<basename>.kte.swp` in the same directory as the file (for
-  unnamed/unsaved buffers, use a per‑session temp dir like
-  `$TMPDIR/kte/` with a random UUID).
+- Path: `$XDG_STATE_HOME/kte/swap/<encoded-path>.swp` (or
+  `~/.local/state/kte/swap/...`)
+  where `<encoded-path>` is the file path with separators replaced (e.g.
+  `/home/kyle/tmp/test.txt` → `home!kyle!tmp!test.txt.swp`).
+  Unnamed/unsaved
+  buffers use a unique `unnamed-<pid>-<counter>.swp` name.
 - Format: append‑only journal of editing operations with periodic
   checkpoints.
 - Crash safety: only append, fsync as per policy; checkpoint via
@@ -84,7 +87,7 @@ Recovery flow
 
 On opening a file:
 
-1. Detect swap sidecar `.<basename>.kte.swp`.
+1. Detect swap journal `$XDG_STATE_HOME/kte/swap/<encoded-path>.swp`.
 2. Validate header, iterate records verifying CRCs.
 3. Compare recorded original file identity against actual file; if
    mismatch, warn user but allow recovery (content wins).
@@ -98,7 +101,7 @@ Stability & corruption mitigation
 ---------------------------------
 
 - Append‑only with per‑record CRC32 guards against torn writes.
-- Atomic checkpoint rotation: write `.<basename>.kte.swp.tmp`, fsync,
+- Atomic checkpoint rotation: write `<encoded-path>.swp.tmp`, fsync,
   then rename over old `.swp`.
 - Size caps: rotate or compact when `.swp` exceeds a threshold (e.g.,
   64–128 MB). Compaction creates a fresh file with a single checkpoint.
@@ -117,8 +120,8 @@ Security considerations
 Interoperability & UX
 ---------------------
 
-- Use a distinctive extension `.kte.swp` to avoid conflicts with other
-  editors.
+- Use a distinctive directory (`$XDG_STATE_HOME/kte/swap`) to avoid
+  conflicts with other editors’ `.swp` conventions.
 - Status bar indicator when swap is active; commands to purge/compact.
 - On save: do not delete swap immediately; keep until the buffer is
   clean and idle for a short grace period (allows undo of accidental

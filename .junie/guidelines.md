@@ -1,6 +1,6 @@
 # Project Guidelines
 
-kte is Kyle's Text Editor — a simple, fast text editor written in C++17.
+kte is Kyle's Text Editor — a simple, fast text editor written in C++20.
 It
 replaces the earlier C implementation, ke (see the ke manual in
 `docs/ke.md`). The
@@ -43,7 +43,7 @@ The file `docs/ke.md` contains the canonical reference for keybindings.
 
 ## Contributing/Development Notes
 
-- C++ standard: C++17.
+- C++ standard: C++20.
 - Keep dependencies minimal.
 - Prefer small, focused changes that preserve ke’s UX unless explicitly
   changing
@@ -54,4 +54,5 @@ The file `docs/ke.md` contains the canonical reference for keybindings.
 - Previous editor manual: `ke.md` (canonical keybinding/spec reference
   for now).
 - Inspiration: kilo, WordStar/VDE, emacs, `mg(1)`.
+
 

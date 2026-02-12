@@ -126,12 +126,7 @@ TerminalRenderer::Draw(Editor &ed)
 			const bool vsel_active    = buf->VisualLineActive();
 			const std::size_t vsel_sy = vsel_active ? buf->VisualLineStartY() : 0;
 			const std::size_t vsel_ey = vsel_active ? buf->VisualLineEndY() : 0;
-			auto is_src_in_sel        = [&](std::size_t y, std::size_t sx) -> bool {
-				(void) sx;
-				if (vsel_active) {
-					if (y >= vsel_sy && y <= vsel_ey)
-						return true;
-				}
+			auto is_src_in_mark_sel   = [&](std::size_t y, std::size_t sx) -> bool {
 				if (!sel_active)
 					return false;
 				if (y < sel_sy || y > sel_ey)
@@ -146,9 +141,48 @@ TerminalRenderer::Draw(Editor &ed)
 			};
 			int written = 0;
 			if (li < lines.size()) {
-				std::string line = static_cast<std::string>(lines[li]);
-				src_i            = 0;
-				render_col       = 0;
+				std::string line                = static_cast<std::string>(lines[li]);
+				const bool vsel_on_line         = vsel_active && li >= vsel_sy && li <= vsel_ey;
+				const std::size_t vsel_spot_src = vsel_on_line
+					                                  ? std::min(buf->Curx(), line.size())
+					                                  : 0;
+				const bool vsel_spot_is_eol = vsel_on_line && vsel_spot_src == line.size();
+				std::size_t vsel_line_rx    = 0;
+				if (vsel_spot_is_eol) {
+					// Compute the rendered (column) width of the line so we can highlight a
+					// single cell at EOL when the spot falls beyond the last character.
+					std::size_t rc = 0;
+					std::size_t si = 0;
+					while (si < line.size()) {
+						wchar_t wch = L' ';
+						int wch_len = 1;
+						std::mbstate_t state = std::mbstate_t();
+						size_t res = std::mbrtowc(&wch, &line[si], line.size() - si, &state);
+						if (res == (size_t) -1 || res == (size_t) -2) {
+							wch     = static_cast<unsigned char>(line[si]);
+							wch_len = 1;
+						} else if (res == 0) {
+							wch     = L'\0';
+							wch_len = 1;
+						} else {
+							wch_len = static_cast<int>(res);
+						}
+						if (wch == L'\t') {
+							constexpr std::size_t tab_width = 8;
+							const std::size_t next_tab      = tab_width - (rc % tab_width);
+							rc                              += next_tab;
+						} else {
+							int w = wcwidth(wch);
+							if (w < 0)
+								w = 1;
+							rc += static_cast<std::size_t>(w);
+						}
+						si += static_cast<std::size_t>(wch_len);
+					}
+					vsel_line_rx = rc;
+				}
+				src_i      = 0;
+				render_col = 0;
 				// Syntax highlighting: fetch per-line spans (sanitized copy)
 				std::vector<kte::HighlightSpan> sane_spans;
 				if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->
@@ -247,7 +281,11 @@ TerminalRenderer::Draw(Editor &ed)
 							}
 							// Now render visible spaces
 							while (next_tab > 0 && written < cols) {
-								bool in_sel = is_src_in_sel(li, src_i);
+								bool in_mark = is_src_in_mark_sel(li, src_i);
+								bool in_vsel =
+									vsel_on_line && !vsel_spot_is_eol && src_i ==
+									vsel_spot_src;
+								bool in_sel = in_mark || in_vsel;
 								bool in_hl  = search_mode && is_src_in_hl(src_i);
 								bool in_cur =
 									has_current && li == cur_my && src_i >= cur_mx
@@ -297,7 +335,16 @@ TerminalRenderer::Draw(Editor &ed)
 						break;
 					}
 
-					bool in_sel = from_src && is_src_in_sel(li, src_i);
+					bool in_mark = from_src && is_src_in_mark_sel(li, src_i);
+					bool in_vsel = false;
+					if (vsel_on_line) {
+						if (from_src) {
+							in_vsel = !vsel_spot_is_eol && src_i == vsel_spot_src;
+						} else {
+							in_vsel = vsel_spot_is_eol && render_col == vsel_line_rx;
+						}
+					}
+					bool in_sel = in_mark || in_vsel;
 					bool in_hl  = search_mode && from_src && is_src_in_hl(src_i);
 					bool in_cur = has_current && li == cur_my && from_src && src_i >= cur_mx &&
 					              src_i < cur_mend;

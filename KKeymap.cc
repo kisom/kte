@@ -17,6 +17,9 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 		case 'd':
 			out = CommandId::KillLine;
 			return true;
+		case 's':
+			out = CommandId::Save;
+			return true;
 		case 'q':
 			out = CommandId::QuitNow;
 			return true;
@@ -41,6 +44,9 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 	switch (k_lower) {
 	case 'a':
 		out = CommandId::MarkAllAndJumpEnd;
+		return true;
+	case ' ': // C-k SPACE
+		out = CommandId::ToggleMark;
 		return true;
 	case 'i':
 		out = CommandId::BufferNew; // C-k i new empty buffer

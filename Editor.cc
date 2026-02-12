@@ -128,8 +128,8 @@ Editor::AddBuffer(const Buffer &buf)
 	buffers_.push_back(buf);
 	// Attach swap recorder
 	if (swap_) {
-		buffers_.back().SetSwapRecorder(swap_.get());
 		swap_->Attach(&buffers_.back());
+		buffers_.back().SetSwapRecorder(swap_->RecorderFor(&buffers_.back()));
 	}
 	if (buffers_.size() == 1) {
 		curbuf_ = 0;
@@ -143,8 +143,8 @@ Editor::AddBuffer(Buffer &&buf)
 {
 	buffers_.push_back(std::move(buf));
 	if (swap_) {
-		buffers_.back().SetSwapRecorder(swap_.get());
 		swap_->Attach(&buffers_.back());
+		buffers_.back().SetSwapRecorder(swap_->RecorderFor(&buffers_.back()));
 	}
 	if (buffers_.size() == 1) {
 		curbuf_ = 0;
@@ -171,8 +171,8 @@ Editor::OpenFile(const std::string &path, std::string &err)
 				return false;
 			// Ensure swap recorder is attached for this buffer
 			if (swap_) {
-				cur.SetSwapRecorder(swap_.get());
 				swap_->Attach(&cur);
+				cur.SetSwapRecorder(swap_->RecorderFor(&cur));
 				swap_->NotifyFilenameChanged(cur);
 			}
 			// Setup highlighting using registry (extension + shebang)
@@ -197,22 +197,18 @@ Editor::OpenFile(const std::string &path, std::string &err)
 					eng->InvalidateFrom(0);
 				}
 			}
-            // Defensive: ensure any active prompt is closed after a successful open
-            CancelPrompt();
-            return true;
-        }
-    }
+			// Defensive: ensure any active prompt is closed after a successful open
+			CancelPrompt();
+			return true;
+		}
+	}
 
 	Buffer b;
 	if (!b.OpenFromFile(path, err)) {
 		return false;
 	}
-	if (swap_) {
-		b.SetSwapRecorder(swap_.get());
-		// path is known, notify
-		swap_->Attach(&b);
-		swap_->NotifyFilenameChanged(b);
-	}
+	// NOTE: swap recorder/attach must happen after the buffer is stored in its
+	// final location (vector) because swap manager keys off Buffer*.
 	// Initialize syntax highlighting by extension + shebang via registry (v2)
 	b.EnsureHighlighter();
 	std::string first = "";
@@ -239,10 +235,13 @@ Editor::OpenFile(const std::string &path, std::string &err)
 	}
 	// Add as a new buffer and switch to it
 	std::size_t idx = AddBuffer(std::move(b));
-    SwitchTo(idx);
-    // Defensive: ensure any active prompt is closed after a successful open
-    CancelPrompt();
-    return true;
+	if (swap_) {
+		swap_->NotifyFilenameChanged(buffers_[idx]);
+	}
+	SwitchTo(idx);
+	// Defensive: ensure any active prompt is closed after a successful open
+	CancelPrompt();
+	return true;
 }
 
 
@@ -283,6 +282,10 @@ Editor::CloseBuffer(std::size_t index)
 {
 	if (index >= buffers_.size()) {
 		return false;
+	}
+	if (swap_) {
+		swap_->Detach(&buffers_[index]);
+		buffers_[index].SetSwapRecorder(nullptr);
 	}
 	buffers_.erase(buffers_.begin() + static_cast<std::ptrdiff_t>(index));
 	if (buffers_.empty()) {

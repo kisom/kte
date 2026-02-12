@@ -1988,21 +1988,44 @@ cmd_insert_text(CommandContext &ctx)
 		const std::size_t sy = buf->VisualLineStartY();
 		const std::size_t ey = buf->VisualLineEndY();
 		const auto &rows     = buf->Rows();
+		UndoSystem *u        = buf->Undo();
+		std::uint64_t gid    = 0;
+		if (u)
+			gid = u->BeginGroup();
+		(void) gid;
+
+		std::string ins;
+		if (repeat == 1) {
+			ins = ctx.arg;
+		} else {
+			ins.reserve(ctx.arg.size() * static_cast<std::size_t>(repeat));
+			for (int i = 0; i < repeat; ++i)
+				ins += ctx.arg;
+		}
 		for (std::size_t yy = sy; yy <= ey; ++yy) {
 			if (yy >= rows.size())
 				break;
 			std::size_t xx = x;
 			if (xx > rows[yy].size())
 				xx = rows[yy].size();
-			for (int i = 0; i < repeat; ++i) {
-				buf->insert_text(static_cast<int>(yy), static_cast<int>(xx), std::string_view(ctx.arg));
-				xx += ctx.arg.size();
+			if (!ins.empty()) {
+				buf->SetCursor(xx, yy);
+				if (u)
+					u->Begin(UndoType::Insert);
+				buf->insert_text(static_cast<int>(yy), static_cast<int>(xx), std::string_view(ins));
+				xx += ins.size();
+				if (u) {
+					u->Append(std::string_view(ins));
+					u->commit();
+				}
 			}
 			if (yy == y) {
 				cx = xx;
 				cy = yy;
 			}
 		}
+		if (u)
+			u->EndGroup();
 		buf->SetDirty(true);
 		buf->SetCursor(cx, cy);
 		ensure_cursor_visible(ctx.editor, *buf);
@@ -2933,26 +2956,41 @@ cmd_backspace(CommandContext &ctx)
 		const std::size_t sy = buf->VisualLineStartY();
 		const std::size_t ey = buf->VisualLineEndY();
 		const auto &rows     = buf->Rows();
-		std::size_t cx       = x;
+		std::uint64_t gid    = 0;
+		if (u)
+			gid = u->BeginGroup();
+		(void) gid;
+		std::size_t cx = x;
 		for (std::size_t yy = sy; yy <= ey; ++yy) {
 			if (yy >= rows.size())
 				break;
 			std::size_t xx = x;
 			if (xx > rows[yy].size())
 				xx = rows[yy].size();
+			std::string deleted;
 			for (int i = 0; i < repeat; ++i) {
 				if (xx == 0)
 					break;
+				const auto &rows_view = buf->Rows();
+				if (yy < rows_view.size() && (xx - 1) < rows_view[yy].size())
+					deleted.insert(deleted.begin(), rows_view[yy][xx - 1]);
 				buf->delete_text(static_cast<int>(yy), static_cast<int>(xx - 1), 1);
 				--xx;
+			}
+			if (u && !deleted.empty()) {
+				buf->SetCursor(xx, yy);
+				u->Begin(UndoType::Delete);
+				u->Append(std::string_view(deleted));
+				u->commit();
 			}
 			if (yy == y)
 				cx = xx;
 		}
+		if (u)
+			u->EndGroup();
 		buf->SetDirty(true);
 		buf->SetCursor(cx, y);
 		ensure_cursor_visible(ctx.editor, *buf);
-		(void) u;
 		return true;
 	}
 	for (int i = 0; i < repeat; ++i) {
@@ -3014,21 +3052,35 @@ cmd_delete_char(CommandContext &ctx)
 		const std::size_t sy = buf->VisualLineStartY();
 		const std::size_t ey = buf->VisualLineEndY();
 		const auto &rows     = buf->Rows();
+		std::uint64_t gid    = 0;
+		if (u)
+			gid = u->BeginGroup();
+		(void) gid;
 		for (std::size_t yy = sy; yy <= ey; ++yy) {
 			if (yy >= rows.size())
 				break;
 			std::size_t xx = x;
 			if (xx > rows[yy].size())
 				xx = rows[yy].size();
+			std::string deleted;
 			for (int i = 0; i < repeat; ++i) {
-				if (xx >= buf->Rows()[yy].size())
+				const auto &rows_view = buf->Rows();
+				if (yy >= rows_view.size() || xx >= rows_view[yy].size())
 					break;
+				deleted.push_back(rows_view[yy][xx]);
 				buf->delete_text(static_cast<int>(yy), static_cast<int>(xx), 1);
 			}
+			if (u && !deleted.empty()) {
+				buf->SetCursor(xx, yy);
+				u->Begin(UndoType::Delete);
+				u->Append(std::string_view(deleted));
+				u->commit();
+			}
 		}
+		if (u)
+			u->EndGroup();
 		buf->SetDirty(true);
 		ensure_cursor_visible(ctx.editor, *buf);
-		(void) u;
 		return true;
 	}
 	for (int i = 0; i < repeat; ++i) {
@@ -3218,8 +3270,63 @@ cmd_yank(CommandContext &ctx)
 	}
 	ensure_at_least_one_line(*buf);
 	int repeat = ctx.count > 0 ? ctx.count : 1;
-	for (int i = 0; i < repeat; ++i) {
-		insert_text_at_cursor(*buf, text);
+	std::string ins;
+	if (repeat == 1) {
+		ins = text;
+	} else {
+		ins.reserve(text.size() * static_cast<std::size_t>(repeat));
+		for (int i = 0; i < repeat; ++i)
+			ins += text;
+	}
+
+	UndoSystem *u = buf->Undo();
+	// Visual-line mode: broadcast yank to beginning-of-line on every affected line.
+	if (buf->VisualLineActive()) {
+		const std::size_t sy = buf->VisualLineStartY();
+		const std::size_t ey = buf->VisualLineEndY();
+		const std::size_t y0 = buf->Cury();
+
+		std::uint64_t gid = 0;
+		if (u)
+			gid = u->BeginGroup();
+		(void) gid;
+
+		// Iterate from bottom to top so insertions don't invalidate remaining line indices.
+		for (std::size_t yy = ey + 1; yy-- > sy;) {
+			buf->SetCursor(0, yy);
+			if (u)
+				u->Begin(UndoType::Paste);
+			insert_text_at_cursor(*buf, ins);
+			if (u) {
+				u->Append(std::string_view(ins));
+				u->commit();
+			}
+		}
+		if (u)
+			u->EndGroup();
+
+		// Keep the point on the primary cursor line (as it was before yank), at the end of the
+		// inserted text for that line.
+		std::size_t nl_count = 0;
+		std::size_t last_nl  = std::string::npos;
+		for (std::size_t i = 0; i < ins.size(); ++i) {
+			if (ins[i] == '\n') {
+				++nl_count;
+				last_nl = i;
+			}
+		}
+		const std::size_t delta_y = nl_count;
+		const std::size_t delta_x = (last_nl == std::string::npos) ? ins.size() : (ins.size() - last_nl - 1);
+		const std::size_t above   = (y0 >= sy) ? (y0 - sy) : 0;
+		buf->SetCursor(delta_x, y0 + delta_y + above * nl_count);
+	} else {
+		if (u)
+			u->Begin(UndoType::Paste);
+		insert_text_at_cursor(*buf, ins);
+		if (u) {
+			u->Append(std::string_view(ins));
+			u->commit();
+		}
 	}
 	// Yank is a paste operation; it should clear the mark/region and any selection highlighting.
 	buf->ClearMark();

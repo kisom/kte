@@ -32,7 +32,8 @@ Project Goals
 
 Keybindings
 -----------
-kte maintains ke’s command model while internals evolve. Highlights (subject to refinement):
+kte maintains ke’s command model while internals evolve. Highlights (
+subject to refinement):
 
 - K‑command prefix: `C-k` enters k‑command mode; exit with `ESC` or
   `C-g`.
@@ -52,7 +53,8 @@ See `ke.md` for the canonical ke reference retained for now.
 
 Build and Run
 -------------
-Prerequisites: C++17 compiler, CMake, and ncurses development headers/libs.
+Prerequisites: C++20 compiler, CMake, and ncurses development
+headers/libs.
 
 Dependencies by platform
 ------------------------
@@ -62,30 +64,38 @@ Dependencies by platform
         - `brew install ncurses`
     - Optional GUI (enable with `-DBUILD_GUI=ON`):
         - `brew install sdl2 freetype`
-        - OpenGL is provided by the system framework on macOS; no package needed.
+        - OpenGL is provided by the system framework on macOS; no
+          package needed.
 
 - Debian/Ubuntu
     - Terminal (default):
         - `sudo apt-get install -y libncurses5-dev libncursesw5-dev`
     - Optional GUI (enable with `-DBUILD_GUI=ON`):
-        - `sudo apt-get install -y libsdl2-dev libfreetype6-dev mesa-common-dev`
-        - The `mesa-common-dev` package provides OpenGL headers/libs (`libGL`).
+        -
+        `sudo apt-get install -y libsdl2-dev libfreetype6-dev mesa-common-dev`
+        - The `mesa-common-dev` package provides OpenGL headers/libs (
+          `libGL`).
 
 - NixOS/Nix
     - Terminal (default):
         - Ad-hoc shell: `nix-shell -p cmake gcc ncurses`
     - Optional GUI (enable with `-DBUILD_GUI=ON`):
-        - Ad-hoc shell: `nix-shell -p cmake gcc ncurses SDL2 freetype libGL`
-    - With flakes/devshell (example `flake.nix` inputs not provided): include
-      `ncurses` for TUI, and `SDL2`, `freetype`, `libGL` for GUI in your devShell.
+        - Ad-hoc shell:
+          `nix-shell -p cmake gcc ncurses SDL2 freetype libGL`
+    - With flakes/devshell (example `flake.nix` inputs not provided):
+      include
+      `ncurses` for TUI, and `SDL2`, `freetype`, `libGL` for GUI in your
+      devShell.
 
 Notes
 -----
 
-- The GUI is OFF by default to keep SDL/OpenGL/Freetype optional. Enable it by
+- The GUI is OFF by default to keep SDL/OpenGL/Freetype optional. Enable
+  it by
   configuring with `-DBUILD_GUI=ON` and ensuring the GUI deps above are
   installed for your platform.
-- If you previously configured with GUI ON and want to disable it, reconfigure
+- If you previously configured with GUI ON and want to disable it,
+  reconfigure
   the build directory with `-DBUILD_GUI=OFF`.
 
 Example build:
@@ -113,7 +123,8 @@ built as `kge`) or request the GUI from `kte`:
 GUI build example
 -----------------
 
-To build with the optional GUI (after installing the GUI dependencies listed above):
+To build with the optional GUI (after installing the GUI dependencies
+listed above):
 
 ```
 cmake -S . -B cmake-build-debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_GUI=ON

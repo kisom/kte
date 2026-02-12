@@ -8,6 +8,25 @@ UndoSystem::UndoSystem(Buffer &owner, UndoTree &tree)
 	: buf_(&owner), tree_(tree) {}
 
 
+std::uint64_t
+UndoSystem::BeginGroup()
+{
+	// Ensure any pending typed run is sealed so the group is a distinct undo step.
+	commit();
+	if (active_group_id_ == 0)
+		active_group_id_ = next_group_id_++;
+	return active_group_id_;
+}
+
+
+void
+UndoSystem::EndGroup()
+{
+	commit();
+	active_group_id_ = 0;
+}
+
+
 void
 UndoSystem::Begin(UndoType type)
 {
@@ -64,10 +83,11 @@ UndoSystem::Begin(UndoType type)
 	}
 
 	// Start a new pending node.
-	tree_.pending       = new UndoNode{};
-	tree_.pending->type = type;
-	tree_.pending->row  = row;
-	tree_.pending->col  = col;
+	tree_.pending           = new UndoNode{};
+	tree_.pending->type     = type;
+	tree_.pending->row      = row;
+	tree_.pending->col      = col;
+	tree_.pending->group_id = active_group_id_;
 	tree_.pending->text.clear();
 	tree_.pending->parent = nullptr;
 	tree_.pending->child  = nullptr;
@@ -158,8 +178,12 @@ UndoSystem::undo()
 	if (!tree_.current)
 		return;
 	debug_log("undo");
-	apply(tree_.current, -1);
-	tree_.current = tree_.current->parent;
+	const std::uint64_t gid = tree_.current->group_id;
+	do {
+		UndoNode *node = tree_.current;
+		apply(node, -1);
+		tree_.current = node->parent;
+	} while (gid != 0 && tree_.current && tree_.current->group_id == gid);
 	update_dirty_flag();
 }
 
@@ -195,8 +219,16 @@ UndoSystem::redo(int branch_index)
 	}
 
 	debug_log("redo");
-	apply(*head, +1);
-	tree_.current = *head;
+	UndoNode *node          = *head;
+	const std::uint64_t gid = node->group_id;
+	apply(node, +1);
+	tree_.current = node;
+	while (gid != 0 && tree_.current && tree_.current->child
+	       && tree_.current->child->group_id == gid) {
+		UndoNode *child = tree_.current->child;
+		apply(child, +1);
+		tree_.current = child;
+	}
 	update_dirty_flag();
 }
 
@@ -226,9 +258,11 @@ UndoSystem::clear()
 {
 	discard_pending();
 	free_node(tree_.root);
-	tree_.root    = nullptr;
-	tree_.current = nullptr;
-	tree_.saved   = nullptr;
+	tree_.root       = nullptr;
+	tree_.current    = nullptr;
+	tree_.saved      = nullptr;
+	active_group_id_ = 0;
+	next_group_id_   = 1;
 	update_dirty_flag();
 }
 

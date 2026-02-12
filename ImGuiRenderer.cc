@@ -308,14 +308,10 @@ ImGuiRenderer::Draw(Editor &ed)
 			}
 
 			// Draw selection background (over search highlight; under text)
-			if (sel_active || vsel_active) {
+			if (sel_active) {
 				bool line_has  = false;
 				std::size_t sx = 0, ex = 0;
-				if (vsel_active && i >= vsel_sy && i <= vsel_ey) {
-					sx       = 0;
-					ex       = line.size();
-					line_has = ex > sx;
-				} else if (i < sel_sy || i > sel_ey) {
+				if (i < sel_sy || i > sel_ey) {
 					line_has = false;
 				} else if (sel_sy == sel_ey) {
 					sx       = sel_sx;
@@ -349,6 +345,30 @@ ImGuiRenderer::Draw(Editor &ed)
 						ImU32 col = ImGui::GetColorU32(ImGuiCol_TextSelectedBg);
 						ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
 					}
+				}
+			}
+			if (vsel_active && i >= vsel_sy && i <= vsel_ey) {
+				// Visual-line (multi-cursor) mode: highlight only the per-line cursor spot.
+				const std::size_t spot_sx  = std::min(buf->Curx(), line.size());
+				const std::size_t rx_start = src_to_rx(spot_sx);
+				std::size_t rx_end         = rx_start;
+				if (spot_sx < line.size()) {
+					rx_end = src_to_rx(spot_sx + 1);
+				} else {
+					// EOL spot: draw a 1-cell highlight just past the last character.
+					rx_end = rx_start + 1;
+				}
+				if (rx_end > coloffs_now) {
+					std::size_t vx0 = (rx_start > coloffs_now)
+						                  ? (rx_start - coloffs_now)
+						                  : 0;
+					std::size_t vx1 = rx_end - coloffs_now;
+					ImVec2 p0       = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w,
+					                         line_pos.y);
+					ImVec2 p1 = ImVec2(line_pos.x + static_cast<float>(vx1) * space_w,
+					                   line_pos.y + line_h);
+					ImU32 col = ImGui::GetColorU32(ImGuiCol_TextSelectedBg);
+					ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
 				}
 			}
 			// Emit entire line to an expanded buffer (tabs -> spaces)

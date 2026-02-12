@@ -12,6 +12,12 @@ class UndoSystem {
 public:
 	explicit UndoSystem(Buffer &owner, UndoTree &tree);
 
+	// Begin an atomic group: subsequent committed nodes with the same group_id will be
+	// undone/redone as a single step. Returns the active group id.
+	std::uint64_t BeginGroup();
+
+	void EndGroup();
+
 	void Begin(UndoType type);
 
 	void Append(char ch);
@@ -65,6 +71,9 @@ private:
 	void update_dirty_flag();
 
 	PendingAppendMode pending_mode_ = PendingAppendMode::Append;
+
+	std::uint64_t active_group_id_ = 0;
+	std::uint64_t next_group_id_   = 1;
 
 	Buffer *buf_;
 	UndoTree &tree_;
