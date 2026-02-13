@@ -4,6 +4,7 @@
 #pragma once
 #include <cstddef>
 #include <ctime>
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -497,6 +498,30 @@ public:
 
 	bool OpenFile(const std::string &path, std::string &err);
 
+	// Request that a file be opened. The request is processed by calling
+	// ProcessPendingOpens() (typically once per frontend frame).
+	void RequestOpenFile(const std::string &path, std::size_t line1 = 0);
+
+	// If no modal prompt is active, process queued open requests.
+	// Returns true if a file was opened during this call.
+	bool ProcessPendingOpens();
+
+	[[nodiscard]] bool HasPendingOpens() const;
+
+	// Swap recovery confirmation state. When non-None, a `PromptKind::Confirm`
+	// prompt is active and the user's answer should be routed to ResolveRecoveryPrompt().
+	enum class RecoveryPromptKind {
+		None = 0,
+		RecoverOrDiscard, // y = recover swap, else discard swap and open clean
+		DeleteCorruptSwap // y = delete corrupt swap, else keep it
+	};
+
+	[[nodiscard]] RecoveryPromptKind PendingRecoveryPrompt() const;
+
+	bool ResolveRecoveryPrompt(bool yes);
+
+	void CancelRecoveryPrompt();
+
 	// Buffer switching/closing
 	bool SwitchTo(std::size_t index);
 
@@ -550,6 +575,11 @@ public:
 	}
 
 private:
+	struct PendingOpen {
+		std::string path;
+		std::size_t line1{0}; // 1-based; 0 = none
+	};
+
 	std::size_t rows_ = 0, cols_ = 0;
 	int mode_         = 0;
 	int kill_         = 0; // KILL CHAIN
@@ -592,6 +622,13 @@ private:
 	std::string prompt_label_;
 	std::string prompt_text_;
 	std::string pending_overwrite_path_;
+
+	// Deferred open + swap recovery prompt state
+	std::deque<PendingOpen> pending_open_;
+	RecoveryPromptKind pending_recovery_prompt_ = RecoveryPromptKind::None;
+	PendingOpen pending_recovery_open_{};
+	std::string pending_recovery_swap_path_;
+	std::string pending_recovery_replay_err_;
 
 	// GUI-only state (safe no-op in terminal builds)
 	bool file_picker_visible_ = false;

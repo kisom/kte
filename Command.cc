@@ -618,6 +618,8 @@ cmd_save(CommandContext &ctx)
 					return false;
 				}
 				buf->SetDirty(false);
+				if (auto *sm = ctx.editor.Swap())
+					sm->ResetJournal(*buf);
 				ctx.editor.SetStatus("Saved " + buf->Filename());
 				return true;
 			}
@@ -632,6 +634,8 @@ cmd_save(CommandContext &ctx)
 		return false;
 	}
 	buf->SetDirty(false);
+	if (auto *sm = ctx.editor.Swap())
+		sm->ResetJournal(*buf);
 	ctx.editor.SetStatus("Saved " + buf->Filename());
 	if (auto *u = buf->Undo())
 		u->mark_saved();
@@ -685,6 +689,10 @@ cmd_save_as(CommandContext &ctx)
 	if (!buf->SaveAs(ctx.arg, err)) {
 		ctx.editor.SetStatus(err);
 		return false;
+	}
+	if (auto *sm = ctx.editor.Swap()) {
+		sm->NotifyFilenameChanged(*buf);
+		sm->ResetJournal(*buf);
 	}
 	ctx.editor.SetStatus("Saved as " + ctx.arg);
 	if (auto *u = buf->Undo())
@@ -789,6 +797,7 @@ cmd_refresh(CommandContext &ctx)
 		ctx.editor.SetCloseConfirmPending(false);
 		ctx.editor.SetCloseAfterSave(false);
 		ctx.editor.ClearPendingOverwritePath();
+		ctx.editor.CancelRecoveryPrompt();
 		ctx.editor.CancelPrompt();
 		ctx.editor.SetStatus("Canceled");
 		return true;
@@ -2441,7 +2450,6 @@ cmd_newline(CommandContext &ctx)
 			ctx.editor.SetSearchIndex(-1);
 			return true;
 		} else if (kind == Editor::PromptKind::OpenFile) {
-			std::string err;
 			// Expand "~" to the user's home directory
 			auto expand_user_path = [](const std::string &in) -> std::string {
 				if (!in.empty() && in[0] == '~') {
@@ -2458,14 +2466,19 @@ cmd_newline(CommandContext &ctx)
 			value = expand_user_path(value);
 			if (value.empty()) {
 				ctx.editor.SetStatus("Open canceled (empty)");
-			} else if (!ctx.editor.OpenFile(value, err)) {
-				ctx.editor.SetStatus(err.empty() ? std::string("Failed to open ") + value : err);
 			} else {
-				ctx.editor.SetStatus(std::string("Opened ") + value);
-				// Center the view on the cursor (e.g. if the buffer restored a cursor position)
-				cmd_center_on_cursor(ctx);
-				// Close the prompt so subsequent typing edits the buffer, not the prompt
-				ctx.editor.CancelPrompt();
+				ctx.editor.RequestOpenFile(value);
+				const bool opened = ctx.editor.ProcessPendingOpens();
+				if (ctx.editor.PromptActive()) {
+					// A recovery confirmation prompt was started.
+					return true;
+				}
+				if (opened) {
+					// Center the view on the cursor (e.g. if the buffer restored a cursor position)
+					cmd_center_on_cursor(ctx);
+					// Close the prompt so subsequent typing edits the buffer, not the prompt
+					ctx.editor.CancelPrompt();
+				}
 			}
 		} else if (kind == Editor::PromptKind::BufferSwitch) {
 			// Resolve to a buffer index by exact match against path or basename;
@@ -2579,6 +2592,10 @@ cmd_newline(CommandContext &ctx)
 						ctx.editor.SetStatus(err);
 					} else {
 						buf->SetDirty(false);
+						if (auto *sm = ctx.editor.Swap()) {
+							sm->NotifyFilenameChanged(*buf);
+							sm->ResetJournal(*buf);
+						}
 						ctx.editor.SetStatus("Saved as " + target);
 						if (auto *u = buf->Undo())
 							u->mark_saved();
@@ -2612,6 +2629,16 @@ cmd_newline(CommandContext &ctx)
 				ctx.editor.ClearPendingOverwritePath();
 				// Regardless of answer, end any close-after-save pending state for safety.
 				ctx.editor.SetCloseAfterSave(false);
+			} else if (ctx.editor.PendingRecoveryPrompt() != Editor::RecoveryPromptKind::None) {
+				bool yes = false;
+				if (!value.empty()) {
+					char c = value[0];
+					yes    = (c == 'y' || c == 'Y');
+				}
+				(void) ctx.editor.ResolveRecoveryPrompt(yes);
+				ctx.editor.CancelPrompt();
+				// Continue any queued opens (e.g., startup argv files).
+				ctx.editor.ProcessPendingOpens();
 			} else if (ctx.editor.CloseConfirmPending() && buf) {
 				bool yes = false;
 				if (!value.empty()) {
@@ -2630,6 +2657,8 @@ cmd_newline(CommandContext &ctx)
 							proceed_to_close = false;
 						} else {
 							buf->SetDirty(false);
+							if (auto *sm = ctx.editor.Swap())
+								sm->ResetJournal(*buf);
 							if (auto *u = buf->Undo())
 								u->mark_saved();
 						}
@@ -2639,6 +2668,10 @@ cmd_newline(CommandContext &ctx)
 							proceed_to_close = false;
 						} else {
 							buf->SetDirty(false);
+							if (auto *sm = ctx.editor.Swap()) {
+								sm->NotifyFilenameChanged(*buf);
+								sm->ResetJournal(*buf);
+							}
 							if (auto *u = buf->Undo())
 								u->mark_saved();
 						}

@@ -494,6 +494,12 @@ public:
 	}
 
 
+	[[nodiscard]] kte::SwapRecorder *SwapRecorder() const
+	{
+		return swap_rec_;
+	}
+
+
 	// Raw, low-level editing APIs used by UndoSystem apply().
 	// These must NOT trigger undo recording. They also do not move the cursor.
 	void insert_text(int row, int col, std::string_view text);
@@ -507,6 +513,11 @@ public:
 	void insert_row(int row, std::string_view text);
 
 	void delete_row(int row);
+
+	// Replace the entire buffer content with raw bytes.
+	// Intended for crash recovery (swap replay) and test harnesses.
+	// This does not trigger swap or undo recording.
+	void replace_all_bytes(std::string_view bytes);
 
 	// Undo system accessors (created per-buffer)
 	[[nodiscard]] UndoSystem *Undo();

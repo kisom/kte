@@ -575,6 +575,16 @@ Buffer::delete_row(int row)
 }
 
 
+void
+Buffer::replace_all_bytes(const std::string_view bytes)
+{
+	content_.Clear();
+	if (!bytes.empty())
+		content_.Append(bytes.data(), bytes.size());
+	rows_cache_dirty_ = true;
+}
+
+
 // Undo system accessors
 UndoSystem *
 Buffer::Undo()

@@ -195,11 +195,12 @@ main(int argc, char *argv[])
 	} else if (req_term) {
 		use_gui = false;
 	} else {
-		// Default depends on build target: kge defaults to GUI, kte to terminal
+
+	// Default depends on build target: kge defaults to GUI, kte to terminal
 #if defined(KTE_DEFAULT_GUI)
-		use_gui = true;
+	use_gui = true;
 #else
-		use_gui = false;
+	use_gui = false;
 #endif
 	}
 #endif
@@ -207,6 +208,9 @@ main(int argc, char *argv[])
 	// Open files passed on the CLI; support +N to jump to line N in the next file.
 	// If no files are provided, create an empty buffer.
 	if (optind < argc) {
+		// Seed a scratch buffer so the UI has something to show while deferred opens
+		// (and potential swap recovery prompts) are processed.
+		editor.AddBuffer(Buffer());
 		std::size_t pending_line = 0; // 0 = no pending line
 		for (int i = optind; i < argc; ++i) {
 			const char *arg = argv[i];
@@ -242,29 +246,9 @@ main(int argc, char *argv[])
 				// Fall through: not a +number, treat as filename starting with '+'
 			}
 
-			std::string err;
 			const std::string path = arg;
-			if (!editor.OpenFile(path, err)) {
-				editor.SetStatus("open: " + err);
-				std::cerr << "kte: " << err << "\n";
-			} else if (pending_line > 0) {
-				// Apply pending +N to the just-opened (current) buffer
-				if (Buffer *b = editor.CurrentBuffer()) {
-					std::size_t nrows = b->Nrows();
-					std::size_t line  = pending_line > 0 ? pending_line - 1 : 0;
-					// 1-based to 0-based
-					if (nrows > 0) {
-						if (line >= nrows)
-							line = nrows - 1;
-					} else {
-						line = 0;
-					}
-					b->SetCursor(0, line);
-					// Do not force viewport offsets here; the frontend/renderer
-					// will establish dimensions and normalize visibility on first draw.
-				}
-				pending_line = 0; // consumed
-			}
+			editor.RequestOpenFile(path, pending_line);
+			pending_line = 0; // consumed (if set)
 		}
 		// If we ended with a pending +N but no subsequent file, ignore it.
 	} else {

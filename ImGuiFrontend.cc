@@ -298,6 +298,9 @@ GUIFrontend::Step(Editor &ed, bool &running)
 		}
 	}
 
+	// Allow deferred opens (including swap recovery prompts) to run.
+	ed.ProcessPendingOpens();
+
 	// Execute pending mapped inputs (drain queue) AFTER dimensions are updated
 	for (;;) {
 		MappedInput mi;

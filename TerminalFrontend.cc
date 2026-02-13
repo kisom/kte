@@ -94,6 +94,9 @@ TerminalFrontend::Step(Editor &ed, bool &running)
 	}
 	ed.SetDimensions(static_cast<std::size_t>(r), static_cast<std::size_t>(c));
 
+	// Allow deferred opens (including swap recovery prompts) to run.
+	ed.ProcessPendingOpens();
+
 	MappedInput mi;
 	if (input_.Poll(mi)) {
 		if (mi.hasCommand) {

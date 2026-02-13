@@ -16,6 +16,9 @@ TestFrontend::Init(int &argc, char **argv, Editor &ed)
 void
 TestFrontend::Step(Editor &ed, bool &running)
 {
+	// Allow deferred opens (including swap recovery prompts) to run.
+	ed.ProcessPendingOpens();
+
 	MappedInput mi;
 	if (input_.Poll(mi)) {
 		if (mi.hasCommand) {

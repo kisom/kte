@@ -71,8 +71,10 @@ TEST (SwapWriter_Header_Records_And_CRC)
 	                                       (std::string("kte_ut_xdg_state_") + std::to_string((int) ::getpid()));
 	std::filesystem::remove_all(xdg_root);
 
-	const char *old_xdg = std::getenv("XDG_STATE_HOME");
-	setenv("XDG_STATE_HOME", xdg_root.string().c_str(), 1);
+	const char *old_xdg_p        = std::getenv("XDG_STATE_HOME");
+	const std::string old_xdg    = old_xdg_p ? std::string(old_xdg_p) : std::string();
+	const std::string xdg_root_s = xdg_root.string();
+	setenv("XDG_STATE_HOME", xdg_root_s.c_str(), 1);
 
 	const std::string path = (xdg_root / "work" / "kte_ut_swap_writer.txt").string();
 	std::filesystem::create_directories((xdg_root / "work"));
@@ -148,14 +150,15 @@ TEST (SwapWriter_Header_Records_And_CRC)
 		off = crc_off + 4;
 	}
 
-	ASSERT_EQ(types.size(), (std::size_t) 2);
+	ASSERT_EQ(types.size(), (std::size_t) 3);
 	ASSERT_EQ(types[0], (std::uint8_t) kte::SwapRecType::INS);
 	ASSERT_EQ(types[1], (std::uint8_t) kte::SwapRecType::DEL);
+	ASSERT_EQ(types[2], (std::uint8_t) kte::SwapRecType::CHKPT);
 
 	std::remove(path.c_str());
 	std::remove(swp.c_str());
-	if (old_xdg) {
-		setenv("XDG_STATE_HOME", old_xdg, 1);
+	if (!old_xdg.empty()) {
+		setenv("XDG_STATE_HOME", old_xdg.c_str(), 1);
 	} else {
 		unsetenv("XDG_STATE_HOME");
 	}
@@ -171,8 +174,10 @@ TEST (SwapWriter_NoStomp_SameBasename)
 	std::filesystem::remove_all(xdg_root);
 	std::filesystem::create_directories(xdg_root);
 
-	const char *old_xdg = std::getenv("XDG_STATE_HOME");
-	setenv("XDG_STATE_HOME", xdg_root.string().c_str(), 1);
+	const char *old_xdg_p        = std::getenv("XDG_STATE_HOME");
+	const std::string old_xdg    = old_xdg_p ? std::string(old_xdg_p) : std::string();
+	const std::string xdg_root_s = xdg_root.string();
+	setenv("XDG_STATE_HOME", xdg_root_s.c_str(), 1);
 
 	const std::filesystem::path d1 = xdg_root / "p1";
 	const std::filesystem::path d2 = xdg_root / "p2";
@@ -227,8 +232,8 @@ TEST (SwapWriter_NoStomp_SameBasename)
 	std::remove(swp2.c_str());
 	std::remove(f1.string().c_str());
 	std::remove(f2.string().c_str());
-	if (old_xdg) {
-		setenv("XDG_STATE_HOME", old_xdg, 1);
+	if (!old_xdg.empty()) {
+		setenv("XDG_STATE_HOME", old_xdg.c_str(), 1);
 	} else {
 		unsetenv("XDG_STATE_HOME");
 	}

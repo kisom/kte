@@ -1,11 +1,47 @@
 #include <algorithm>
-#include <utility>
+#include <cstdio>
 #include <filesystem>
+#include <utility>
 
 #include "Editor.h"
 #include "syntax/HighlighterRegistry.h"
 #include "syntax/CppHighlighter.h"
 #include "syntax/NullHighlighter.h"
+
+
+namespace {
+static std::string
+buffer_bytes_via_views(const Buffer &b)
+{
+	const auto &rows = b.Rows();
+	std::string out;
+	for (std::size_t i = 0; i < rows.size(); i++) {
+		auto v = b.GetLineView(i);
+		out.append(v.data(), v.size());
+	}
+	return out;
+}
+
+
+static void
+apply_pending_line(Editor &ed, const std::size_t line1)
+{
+	if (line1 == 0)
+		return;
+	Buffer *b = ed.CurrentBuffer();
+	if (!b)
+		return;
+	const std::size_t nrows = b->Nrows();
+	std::size_t line        = line1 > 0 ? line1 - 1 : 0; // 1-based to 0-based
+	if (nrows > 0) {
+		if (line >= nrows)
+			line = nrows - 1;
+	} else {
+		line = 0;
+	}
+	b->SetCursor(0, line);
+}
+} // namespace
 
 
 Editor::Editor()
@@ -177,10 +213,10 @@ Editor::OpenFile(const std::string &path, std::string &err)
 			}
 			// Setup highlighting using registry (extension + shebang)
 			cur.EnsureHighlighter();
-			std::string first = "";
-			const auto &rows  = cur.Rows();
-			if (!rows.empty())
-				first = static_cast<std::string>(rows[0]);
+			std::string first    = "";
+			const auto &cur_rows = cur.Rows();
+			if (!cur_rows.empty())
+				first = static_cast<std::string>(cur_rows[0]);
 			std::string ft = kte::HighlighterRegistry::DetectForPath(path, first);
 			if (!ft.empty()) {
 				cur.SetFiletype(ft);
@@ -245,6 +281,172 @@ Editor::OpenFile(const std::string &path, std::string &err)
 }
 
 
+void
+Editor::RequestOpenFile(const std::string &path, const std::size_t line1)
+{
+	PendingOpen p;
+	p.path  = path;
+	p.line1 = line1;
+	pending_open_.push_back(std::move(p));
+}
+
+
+bool
+Editor::HasPendingOpens() const
+{
+	return !pending_open_.empty();
+}
+
+
+Editor::RecoveryPromptKind
+Editor::PendingRecoveryPrompt() const
+{
+	return pending_recovery_prompt_;
+}
+
+
+void
+Editor::CancelRecoveryPrompt()
+{
+	pending_recovery_prompt_ = RecoveryPromptKind::None;
+	pending_recovery_open_   = PendingOpen{};
+	pending_recovery_swap_path_.clear();
+	pending_recovery_replay_err_.clear();
+}
+
+
+bool
+Editor::ResolveRecoveryPrompt(const bool yes)
+{
+	const RecoveryPromptKind kind = pending_recovery_prompt_;
+	if (kind == RecoveryPromptKind::None)
+		return false;
+	const PendingOpen req    = pending_recovery_open_;
+	const std::string swp    = pending_recovery_swap_path_;
+	const std::string rerr_s = pending_recovery_replay_err_;
+	CancelRecoveryPrompt();
+
+	std::string err;
+	if (kind == RecoveryPromptKind::RecoverOrDiscard) {
+		if (yes) {
+			if (!OpenFile(req.path, err)) {
+				SetStatus(err);
+				return false;
+			}
+			Buffer *b = CurrentBuffer();
+			if (!b) {
+				SetStatus("Recovery failed: no buffer");
+				return false;
+			}
+			std::string rerr;
+			if (!kte::SwapManager::ReplayFile(*b, swp, rerr)) {
+				SetStatus("Swap recovery failed: " + rerr);
+				return false;
+			}
+			b->SetDirty(true);
+			apply_pending_line(*this, req.line1);
+			SetStatus("Recovered " + req.path);
+			return true;
+		}
+		// Discard: best-effort delete swap, then open clean.
+		(void) std::remove(swp.c_str());
+		if (!OpenFile(req.path, err)) {
+			SetStatus(err);
+			return false;
+		}
+		apply_pending_line(*this, req.line1);
+		SetStatus("Opened " + req.path);
+		return true;
+	}
+	if (kind == RecoveryPromptKind::DeleteCorruptSwap) {
+		if (yes) {
+			(void) std::remove(swp.c_str());
+		}
+		if (!OpenFile(req.path, err)) {
+			SetStatus(err);
+			return false;
+		}
+		apply_pending_line(*this, req.line1);
+		// Include a short hint that the swap was corrupt.
+		if (!rerr_s.empty()) {
+			SetStatus("Opened " + req.path + " (swap unreadable)");
+		} else {
+			SetStatus("Opened " + req.path);
+		}
+		return true;
+	}
+	return false;
+}
+
+
+bool
+Editor::ProcessPendingOpens()
+{
+	if (PromptActive())
+		return false;
+	if (pending_recovery_prompt_ != RecoveryPromptKind::None)
+		return false;
+
+	bool opened_any = false;
+	while (!pending_open_.empty()) {
+		PendingOpen req = std::move(pending_open_.front());
+		pending_open_.pop_front();
+		if (req.path.empty())
+			continue;
+
+		std::string swp = kte::SwapManager::ComputeSwapPathForFilename(req.path);
+		bool swp_exists = false;
+		try {
+			swp_exists = !swp.empty() && std::filesystem::exists(std::filesystem::path(swp));
+		} catch (...) {
+			swp_exists = false;
+		}
+		if (swp_exists) {
+			Buffer tmp;
+			std::string oerr;
+			if (tmp.OpenFromFile(req.path, oerr)) {
+				const std::string orig = buffer_bytes_via_views(tmp);
+				std::string rerr;
+				if (kte::SwapManager::ReplayFile(tmp, swp, rerr)) {
+					const std::string rec = buffer_bytes_via_views(tmp);
+					if (rec != orig) {
+						pending_recovery_prompt_    = RecoveryPromptKind::RecoverOrDiscard;
+						pending_recovery_open_      = req;
+						pending_recovery_swap_path_ = swp;
+						StartPrompt(PromptKind::Confirm, "Recover", "");
+						SetStatus("Recover swap edits for " + req.path + "? (y/N, C-g cancel)");
+						return opened_any;
+					}
+				} else {
+					pending_recovery_prompt_     = RecoveryPromptKind::DeleteCorruptSwap;
+					pending_recovery_open_       = req;
+					pending_recovery_swap_path_  = swp;
+					pending_recovery_replay_err_ = rerr;
+					StartPrompt(PromptKind::Confirm, "Swap", "");
+					SetStatus(
+						"Swap file unreadable for " + req.path +
+						". Delete it? (y/N, C-g cancel)");
+					return opened_any;
+				}
+			}
+		}
+
+		std::string err;
+		if (!OpenFile(req.path, err)) {
+			SetStatus(err);
+			opened_any = false;
+			continue;
+		}
+		apply_pending_line(*this, req.line1);
+		SetStatus("Opened " + req.path);
+		opened_any = true;
+		// Open at most one per call; frontends can call us again next frame.
+		break;
+	}
+	return opened_any;
+}
+
+
 bool
 Editor::SwitchTo(std::size_t index)
 {
@@ -284,7 +486,9 @@ Editor::CloseBuffer(std::size_t index)
 		return false;
 	}
 	if (swap_) {
-		swap_->Detach(&buffers_[index]);
+		// If the buffer is clean, remove its swap file when closing.
+		// (Crash recovery is unaffected: on crash, close paths are not executed.)
+		swap_->Detach(&buffers_[index], !buffers_[index].Dirty());
 		buffers_[index].SetSwapRecorder(nullptr);
 	}
 	buffers_.erase(buffers_.begin() + static_cast<std::ptrdiff_t>(index));

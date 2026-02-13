@@ -912,12 +912,8 @@ ImGuiRenderer::Draw(Editor &ed)
 						ed.SetFilePickerDir(e.path.string());
 					} else if (!e.is_dir && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
 						// Open file on single click
-						std::string err;
-						if (!ed.OpenFile(e.path.string(), err)) {
-							ed.SetStatus(std::string("open: ") + err);
-						} else {
-							ed.SetStatus(std::string("Opened: ") + e.name);
-						}
+						ed.RequestOpenFile(e.path.string());
+						(void) ed.ProcessPendingOpens();
 						ed.SetFilePickerVisible(false);
 					}
 				}

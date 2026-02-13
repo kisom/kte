@@ -775,6 +775,9 @@ GUIFrontend::Step(Editor &ed, bool &running)
 	if (app_)
 		app_->processEvents();
 
+	// Allow deferred opens (including swap recovery prompts) to run.
+	ed.ProcessPendingOpens();
+
 	// Drain input queue
 	for (;;) {
 		MappedInput mi;
@@ -801,14 +804,8 @@ GUIFrontend::Step(Editor &ed, bool &running)
 			const QStringList files = dlg.selectedFiles();
 			if (!files.isEmpty()) {
 				const QString fp = files.front();
-				std::string err;
-				if (ed.OpenFile(fp.toStdString(), err)) {
-					ed.SetStatus(std::string("Opened: ") + fp.toStdString());
-				} else if (!err.empty()) {
-					ed.SetStatus(std::string("Open failed: ") + err);
-				} else {
-					ed.SetStatus("Open failed");
-				}
+				ed.RequestOpenFile(fp.toStdString());
+				(void) ed.ProcessPendingOpens();
 				// Update picker dir for next time
 				QFileInfo info(fp);
 				ed.SetFilePickerDir(info.dir().absolutePath().toStdString());
