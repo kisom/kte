@@ -59,6 +59,25 @@ TEST (CommandSemantics_ToggleMark_JumpToMark)
 }
 
 
+TEST (CommandSemantics_CtrlGRefresh_ClearsMark_WhenNothingElseToCancel)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+
+	b.insert_text(0, 0, std::string("hello"));
+	b.SetCursor(2, 0);
+	ASSERT_EQ(b.MarkSet(), false);
+
+	ASSERT_TRUE(h.Exec(CommandId::ToggleMark));
+	ASSERT_EQ(b.MarkSet(), true);
+
+	// C-g is mapped to Refresh; when there's no prompt/search/visual-line mode to cancel,
+	// it should clear the mark.
+	ASSERT_TRUE(h.Exec(CommandId::Refresh));
+	ASSERT_EQ(b.MarkSet(), false);
+}
+
+
 TEST (CommandSemantics_CopyRegion_And_KillRegion)
 {
 	TestHarness h;

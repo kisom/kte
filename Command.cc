@@ -817,6 +817,14 @@ cmd_refresh(CommandContext &ctx)
 		ctx.editor.SetStatus("Find canceled");
 		return true;
 	}
+	// If nothing else to cancel, treat C-g/refresh as a mark clear (ke behavior).
+	if (Buffer *buf = ctx.editor.CurrentBuffer()) {
+		if (buf->MarkSet()) {
+			buf->ClearMark();
+			ctx.editor.SetStatus("Mark cleared");
+			return true;
+		}
+	}
 	// Otherwise just a hint; renderer will redraw
 	ctx.editor.SetStatus("");
 	return true;
