@@ -7,6 +7,13 @@
 #include <cstring>
 #include <string_view>
 
+#include <vector>
+
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #include "Buffer.h"
 #include "SwapRecorder.h"
 #include "UndoSystem.h"
@@ -21,6 +28,159 @@ Buffer::Buffer()
 	// Initialize undo system per buffer
 	undo_tree_ = std::make_unique<UndoTree>();
 	undo_sys_  = std::make_unique<UndoSystem>(*this, *undo_tree_);
+}
+
+
+bool
+Buffer::stat_identity(const std::string &path, FileIdentity &out)
+{
+	struct stat st{};
+	if (::stat(path.c_str(), &st) != 0) {
+		out.valid = false;
+		return false;
+	}
+	out.valid = true;
+	// Use nanosecond timestamp when available.
+	std::uint64_t ns = 0;
+#if defined(__APPLE__)
+	ns = static_cast<std::uint64_t>(st.st_mtimespec.tv_sec) * 1000000000ull
+	     + static_cast<std::uint64_t>(st.st_mtimespec.tv_nsec);
+#else
+	ns = static_cast<std::uint64_t>(st.st_mtim.tv_sec) * 1000000000ull
+	     + static_cast<std::uint64_t>(st.st_mtim.tv_nsec);
+#endif
+	out.mtime_ns = ns;
+	out.size     = static_cast<std::uint64_t>(st.st_size);
+	out.dev      = static_cast<std::uint64_t>(st.st_dev);
+	out.ino      = static_cast<std::uint64_t>(st.st_ino);
+	return true;
+}
+
+
+bool
+Buffer::current_disk_identity(FileIdentity &out) const
+{
+	if (!is_file_backed_ || filename_.empty()) {
+		out.valid = false;
+		return false;
+	}
+	return stat_identity(filename_, out);
+}
+
+
+bool
+Buffer::ExternallyModifiedOnDisk() const
+{
+	if (!is_file_backed_ || filename_.empty())
+		return false;
+	FileIdentity now{};
+	if (!current_disk_identity(now)) {
+		// If the file vanished, treat as modified when we previously had an identity.
+		return on_disk_identity_.valid;
+	}
+	if (!on_disk_identity_.valid)
+		return false;
+	return now.mtime_ns != on_disk_identity_.mtime_ns
+	       || now.size != on_disk_identity_.size
+	       || now.dev != on_disk_identity_.dev
+	       || now.ino != on_disk_identity_.ino;
+}
+
+
+void
+Buffer::RefreshOnDiskIdentity()
+{
+	FileIdentity id{};
+	if (current_disk_identity(id))
+		on_disk_identity_ = id;
+}
+
+
+static bool
+write_all_fd(int fd, const char *data, std::size_t len, std::string &err)
+{
+	std::size_t off = 0;
+	while (off < len) {
+		ssize_t n = ::write(fd, data + off, len - off);
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			err = std::string("Write failed: ") + std::strerror(errno);
+			return false;
+		}
+		off += static_cast<std::size_t>(n);
+	}
+	return true;
+}
+
+
+static void
+best_effort_fsync_dir(const std::string &path)
+{
+	try {
+		std::filesystem::path p(path);
+		std::filesystem::path dir = p.parent_path();
+		if (dir.empty())
+			return;
+		int dfd = ::open(dir.c_str(), O_RDONLY);
+		if (dfd < 0)
+			return;
+		(void) ::fsync(dfd);
+		(void) ::close(dfd);
+	} catch (...) {
+		// best-effort
+	}
+}
+
+
+static bool
+atomic_write_file(const std::string &path, const char *data, std::size_t len, std::string &err)
+{
+	// Create a temp file in the same directory so rename() is atomic.
+	std::filesystem::path p(path);
+	std::filesystem::path dir  = p.parent_path();
+	std::string base           = p.filename().string();
+	std::filesystem::path tmpl = dir / ("." + base + ".kte.tmp.XXXXXX");
+	std::string tmpl_s         = tmpl.string();
+
+	// mkstemp requires a mutable buffer.
+	std::vector<char> buf(tmpl_s.begin(), tmpl_s.end());
+	buf.push_back('\0');
+	int fd = ::mkstemp(buf.data());
+	if (fd < 0) {
+		err = std::string("Failed to create temp file for save: ") + std::strerror(errno);
+		return false;
+	}
+	std::string tmp_path(buf.data());
+
+	// If the destination exists, carry over its permissions.
+	struct stat dst_st{};
+	if (::stat(path.c_str(), &dst_st) == 0) {
+		(void) ::fchmod(fd, dst_st.st_mode);
+	}
+
+	bool ok = write_all_fd(fd, data, len, err);
+	if (ok) {
+		if (::fsync(fd) != 0) {
+			err = std::string("fsync failed: ") + std::strerror(errno);
+			ok  = false;
+		}
+	}
+	(void) ::close(fd);
+
+	if (ok) {
+		if (::rename(tmp_path.c_str(), path.c_str()) != 0) {
+			err = std::string("rename failed: ") + std::strerror(errno);
+			ok  = false;
+		}
+	}
+
+	if (!ok) {
+		(void) ::unlink(tmp_path.c_str());
+		return false;
+	}
+	best_effort_fsync_dir(path);
+	return true;
 }
 
 
@@ -271,6 +431,7 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 	filename_         = norm;
 	is_file_backed_   = true;
 	dirty_            = false;
+	RefreshOnDiskIdentity();
 
 	// Reset/initialize undo system for this loaded file
 	if (!undo_tree_)
@@ -297,22 +458,16 @@ Buffer::Save(std::string &err) const
 		err = "Buffer is not file-backed; use SaveAs()";
 		return false;
 	}
-	std::ofstream out(filename_, std::ios::out | std::ios::binary | std::ios::trunc);
-	if (!out) {
-		err = "Failed to open for write: " + filename_ + ". Error: " + std::string(std::strerror(errno));
+	const std::size_t sz = content_.Size();
+	const char *data     = sz ? content_.Data() : nullptr;
+	if (sz && !data) {
+		err = "Internal error: buffer materialization failed";
 		return false;
 	}
-	// Stream the content directly from the piece table to avoid relying on
-	// full materialization, which may yield an empty pointer when size > 0.
-	if (content_.Size() > 0) {
-		content_.WriteToStream(out);
-	}
-	// Ensure data hits the OS buffers
-	out.flush();
-	if (!out.good()) {
-		err = "Write error: " + filename_ + ". Error: " + std::string(std::strerror(errno));
+	if (!atomic_write_file(filename_, data ? data : "", sz, err))
 		return false;
-	}
+	// Update observed on-disk identity after a successful save.
+	const_cast<Buffer *>(this)->RefreshOnDiskIdentity();
 	// Note: const method cannot change dirty_. Intentionally const to allow UI code
 	// to decide when to flip dirty flag after successful save.
 	return true;
@@ -341,26 +496,19 @@ Buffer::SaveAs(const std::string &path, std::string &err)
 		out_path = path;
 	}
 
-	// Write to the given path
-	std::ofstream out(out_path, std::ios::out | std::ios::binary | std::ios::trunc);
-	if (!out) {
-		err = "Failed to open for write: " + out_path + ". Error: " + std::string(std::strerror(errno));
+	const std::size_t sz = content_.Size();
+	const char *data     = sz ? content_.Data() : nullptr;
+	if (sz && !data) {
+		err = "Internal error: buffer materialization failed";
 		return false;
 	}
-	// Stream content without forcing full materialization
-	if (content_.Size() > 0) {
-		content_.WriteToStream(out);
-	}
-	// Ensure data hits the OS buffers
-	out.flush();
-	if (!out.good()) {
-		err = "Write error: " + out_path + ". Error: " + std::string(std::strerror(errno));
+	if (!atomic_write_file(out_path, data ? data : "", sz, err))
 		return false;
-	}
 
 	filename_       = out_path;
 	is_file_backed_ = true;
 	dirty_          = false;
+	RefreshOnDiskIdentity();
 	return true;
 }
 
@@ -435,6 +583,21 @@ Buffer::content_LineCount_() const
 {
 	return content_.LineCount();
 }
+
+
+#if defined(KTE_TESTS)
+std::string
+Buffer::BytesForTests() const
+{
+	const std::size_t sz = content_.Size();
+	if (sz == 0)
+		return std::string();
+	const char *data = content_.Data();
+	if (!data)
+		return std::string();
+	return std::string(data, data + sz);
+}
+#endif
 
 
 void

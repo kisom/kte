@@ -42,6 +42,14 @@ public:
 	bool Save(std::string &err) const; // saves to existing filename; returns false if not file-backed
 	bool SaveAs(const std::string &path, std::string &err); // saves to path and makes buffer file-backed
 
+	// External modification detection.
+	// Returns true if the file on disk differs from the last observed identity recorded
+	// on open/save.
+	[[nodiscard]] bool ExternallyModifiedOnDisk() const;
+
+	// Refresh the stored on-disk identity to match current stat (used after open/save).
+	void RefreshOnDiskIdentity();
+
 	// Accessors
 	[[nodiscard]] std::size_t Curx() const
 	{
@@ -524,7 +532,26 @@ public:
 
 	[[nodiscard]] const UndoSystem *Undo() const;
 
+#if defined(KTE_TESTS)
+	// Test-only: return the raw buffer bytes (including newlines) as a string.
+	[[nodiscard]] std::string BytesForTests() const;
+#endif
+
 private:
+	struct FileIdentity {
+		bool valid             = false;
+		std::uint64_t mtime_ns = 0;
+		std::uint64_t size     = 0;
+		std::uint64_t dev      = 0;
+		std::uint64_t ino      = 0;
+	};
+
+	[[nodiscard]] static bool stat_identity(const std::string &path, FileIdentity &out);
+
+	[[nodiscard]] bool current_disk_identity(FileIdentity &out) const;
+
+	mutable FileIdentity on_disk_identity_{};
+
 	// State mirroring original C struct (without undo_tree)
 	std::size_t curx_    = 0, cury_ = 0; // cursor position in characters
 	std::size_t rx_      = 0; // render x (tabs expanded)

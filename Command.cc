@@ -629,6 +629,15 @@ cmd_save(CommandContext &ctx)
 		ctx.editor.SetStatus("Save as: ");
 		return true;
 	}
+	// External modification detection: if the on-disk file changed since we last observed it,
+	// require confirmation before overwriting.
+	if (buf->ExternallyModifiedOnDisk()) {
+		ctx.editor.StartPrompt(Editor::PromptKind::Confirm, "Overwrite", "");
+		ctx.editor.SetPendingOverwritePath(buf->Filename());
+		ctx.editor.SetStatus(
+			std::string("File changed on disk: overwrite '") + buf->Filename() + "'? (y/N)");
+		return true;
+	}
 	if (!buf->Save(err)) {
 		ctx.editor.SetStatus(err);
 		return false;
@@ -2596,15 +2605,19 @@ cmd_newline(CommandContext &ctx)
 				}
 				if (yes) {
 					std::string err;
-					if (!buf->SaveAs(target, err)) {
+					const bool is_same_target = (buf->Filename() == target) && buf->IsFileBacked();
+					const bool ok = is_same_target ? buf->Save(err) : buf->SaveAs(target, err);
+					if (!ok) {
 						ctx.editor.SetStatus(err);
 					} else {
 						buf->SetDirty(false);
 						if (auto *sm = ctx.editor.Swap()) {
-							sm->NotifyFilenameChanged(*buf);
+							if (!is_same_target)
+								sm->NotifyFilenameChanged(*buf);
 							sm->ResetJournal(*buf);
 						}
-						ctx.editor.SetStatus("Saved as " + target);
+						ctx.editor.SetStatus(
+							is_same_target ? ("Saved " + target) : ("Saved as " + target));
 						if (auto *u = buf->Undo())
 							u->mark_saved();
 						// If this overwrite confirm was part of a close-after-save flow, close now.
@@ -2716,6 +2729,8 @@ cmd_newline(CommandContext &ctx)
 				ctx.editor.SetStatus("No buffer");
 				return true;
 			}
+			if (auto *u = buf->Undo())
+				u->commit();
 			std::size_t nrows = buf->Nrows();
 			if (nrows == 0) {
 				buf->SetCursor(0, 0);
@@ -3387,6 +3402,8 @@ cmd_move_file_start(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
 	ensure_at_least_one_line(*buf);
 	buf->SetCursor(0, 0);
 	if (buf->VisualLineActive())
@@ -3402,6 +3419,8 @@ cmd_move_file_end(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
 	ensure_at_least_one_line(*buf);
 	const auto &rows = buf->Rows();
 	std::size_t y    = rows.empty() ? 0 : rows.size() - 1;
@@ -3449,6 +3468,8 @@ cmd_jump_to_mark(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
 	if (!buf->MarkSet()) {
 		ctx.editor.SetStatus("Mark not set");
 		return false;
@@ -3890,6 +3911,8 @@ cmd_scroll_up(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
 	ensure_at_least_one_line(*buf);
 	const auto &rows         = buf->Rows();
 	std::size_t content_rows = std::max<std::size_t>(1, ctx.editor.ContentRows());
@@ -3923,6 +3946,8 @@ cmd_scroll_down(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	if (auto *u = buf->Undo())
+		u->commit();
 	ensure_at_least_one_line(*buf);
 	const auto &rows         = buf->Rows();
 	std::size_t content_rows = std::max<std::size_t>(1, ctx.editor.ContentRows());
@@ -4287,6 +4312,27 @@ cmd_reflow_paragraph(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
+	struct GroupGuard {
+		UndoSystem *u;
+
+
+		explicit GroupGuard(UndoSystem *u_) : u(u_)
+		{
+			if (u)
+				u->BeginGroup();
+		}
+
+
+		~GroupGuard()
+		{
+			if (u)
+				u->EndGroup();
+		}
+	};
+	// Reflow performs a multi-edit transformation; make it a single standalone undo/redo step.
+	GroupGuard guard(buf->Undo());
+	if (auto *u = buf->Undo())
+		u->commit();
 	ensure_at_least_one_line(*buf);
 	auto &rows    = buf->Rows();
 	std::size_t y = buf->Cury();
@@ -4469,12 +4515,6 @@ cmd_reflow_paragraph(CommandContext &ctx)
 				std::size_t j = i + 1;
 				while (j <= para_end) {
 					std::string ns = static_cast<std::string>(rows[j]);
-					if (starts_with(ns, indent + "  ")) {
-						content += ' ';
-						content += ns.substr(indent.size() + 2);
-						++j;
-						continue;
-					}
 					// stop if next bullet at same indentation or different structure
 					std::string nindent;
 					char nmarker;
@@ -4485,6 +4525,13 @@ cmd_reflow_paragraph(CommandContext &ctx)
 					std::string nnmarker;
 					if (is_numbered_line(ns, nindent, nnmarker, nidx)) {
 						break; // next item
+					}
+					// Now check if it's a continuation line
+					if (starts_with(ns, indent + "  ")) {
+						content += ' ';
+						content += ns.substr(indent.size() + 2);
+						++j;
+						continue;
 					}
 					// Not a continuation and not a bullet: stop (treat as separate paragraph chunk)
 					break;

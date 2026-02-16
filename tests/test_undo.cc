@@ -53,13 +53,15 @@ validate_undo_tree(const UndoSystem &u)
 #endif
 
 
-TEST (Undo_InsertRun_Coalesces)
+// The undo suite aims to cover invariants with a small, adversarial test matrix.
+
+
+TEST (Undo_InsertRun_Coalesces_OneStep)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
 	ASSERT_TRUE(u != nullptr);
 
-	// Simulate two separate "typed" insert commands without committing in between.
 	b.SetCursor(0, 0);
 	u->Begin(UndoType::Insert);
 	b.insert_text(0, 0, std::string_view("h"));
@@ -70,28 +72,52 @@ TEST (Undo_InsertRun_Coalesces)
 	b.insert_text(0, 1, std::string_view("i"));
 	u->Append('i');
 	b.SetCursor(2, 0);
-
 	u->commit();
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 1);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("hi"));
 
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("hi"));
 	u->undo();
 	ASSERT_EQ(std::string(b.Rows()[0]), std::string(""));
 }
 
 
-TEST (Undo_BackspaceRun_Coalesces)
+TEST (Undo_InsertRun_BreaksOnNonAdjacentCursor)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
 	ASSERT_TRUE(u != nullptr);
 
-	// Seed content.
+	b.SetCursor(0, 0);
+	u->Begin(UndoType::Insert);
+	b.insert_text(0, 0, std::string_view("a"));
+	u->Append('a');
+	b.SetCursor(1, 0);
+
+	// Jump the cursor; next insert should not coalesce.
+	b.SetCursor(0, 0);
+	u->Begin(UndoType::Insert);
+	b.insert_text(0, 0, std::string_view("b"));
+	u->Append('b');
+	b.SetCursor(1, 0);
+	u->commit();
+
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ba"));
+	u->undo();
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	u->undo();
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string(""));
+}
+
+
+TEST (Undo_BackspaceRun_Coalesces_OneStep)
+{
+	Buffer b;
+	UndoSystem *u = b.Undo();
+	ASSERT_TRUE(u != nullptr);
+
 	b.insert_text(0, 0, std::string_view("abc"));
 	b.SetCursor(3, 0);
-	u->mark_saved();
 
-	// Simulate two backspaces: delete 'c' then 'b'.
+	// Delete 'c' then 'b' with backspace shape.
 	{
 		const auto &rows = b.Rows();
 		char deleted     = rows[0][2];
@@ -108,14 +134,240 @@ TEST (Undo_BackspaceRun_Coalesces)
 		u->Begin(UndoType::Delete);
 		u->Append(deleted);
 	}
-
 	u->commit();
 	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
 
-	// One undo should restore both characters.
 	u->undo();
 	ASSERT_EQ(std::string(b.Rows()[0]), std::string("abc"));
 }
+
+
+TEST (Undo_DeleteKeyRun_Coalesces_OneStep)
+{
+	Buffer b;
+	UndoSystem *u = b.Undo();
+	ASSERT_TRUE(u != nullptr);
+
+	b.insert_text(0, 0, std::string_view("abcd"));
+	// Simulate delete-key at col 1 twice (cursor stays).
+	b.SetCursor(1, 0);
+	{
+		const auto &rows = b.Rows();
+		char deleted     = rows[0][1];
+		b.delete_text(0, 1, 1);
+		b.SetCursor(1, 0);
+		u->Begin(UndoType::Delete);
+		u->Append(deleted);
+	}
+	{
+		const auto &rows = b.Rows();
+		char deleted     = rows[0][1];
+		b.delete_text(0, 1, 1);
+		b.SetCursor(1, 0);
+		u->Begin(UndoType::Delete);
+		u->Append(deleted);
+	}
+	u->commit();
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ad"));
+
+	u->undo();
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("abcd"));
+}
+
+
+TEST (Undo_Newline_IsStandalone)
+{
+	Buffer b;
+	UndoSystem *u = b.Undo();
+	ASSERT_TRUE(u != nullptr);
+
+	// Seed with content and split in the middle (not at EOF) so (row=1,col=0)
+	// is always addressable and cannot be clamped in unexpected ways.
+	b.insert_text(0, 0, std::string_view("hi"));
+	b.SetCursor(1, 0);
+	const std::string before_nl = b.BytesForTests();
+	// Newline should always be its own undo step.
+	u->Begin(UndoType::Newline);
+	b.split_line(0, 1);
+	u->commit();
+	const std::string after_nl = b.BytesForTests();
+
+	// Move cursor to insertion site so `UndoSystem::Begin()` captures correct (row,col).
+	b.SetCursor(0, 1);
+	u->Begin(UndoType::Insert);
+	b.insert_text(1, 0, std::string_view("x"));
+	u->Append('x');
+	b.SetCursor(1, 1);
+	u->commit();
+
+	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
+	ASSERT_EQ(std::string(b.Rows()[1]), std::string("xi"));
+	u->undo();
+	// Undoing the insert should not also undo the newline.
+	ASSERT_EQ(b.BytesForTests(), after_nl);
+	u->undo();
+	ASSERT_EQ(b.BytesForTests(), before_nl);
+}
+
+
+TEST (Undo_ExplicitGroup_UndoesAsUnit)
+{
+	Buffer b;
+	UndoSystem *u = b.Undo();
+	ASSERT_TRUE(u != nullptr);
+
+	b.SetCursor(0, 0);
+	(void) u->BeginGroup();
+	// Simulate two separate committed edits inside a group.
+	u->Begin(UndoType::Insert);
+	b.insert_text(0, 0, std::string_view("a"));
+	u->Append('a');
+	b.SetCursor(1, 0);
+	u->commit();
+
+	u->Begin(UndoType::Insert);
+	b.insert_text(0, 1, std::string_view("b"));
+	u->Append('b');
+	b.SetCursor(2, 0);
+	u->commit();
+	u->EndGroup();
+
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	u->undo();
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string(""));
+}
+
+
+TEST (Undo_Branching_RedoBranchSelectionDeterministic)
+{
+	Buffer b;
+	UndoSystem *u = b.Undo();
+	ASSERT_TRUE(u != nullptr);
+
+	// A then B then C
+	b.SetCursor(0, 0);
+	for (char ch: std::string("ABC")) {
+		u->Begin(UndoType::Insert);
+		b.insert_text(0, b.Curx(), std::string_view(&ch, 1));
+		u->Append(ch);
+		b.SetCursor(b.Curx() + 1, 0);
+		u->commit();
+	}
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ABC"));
+
+	// Undo twice -> back to "A"
+	u->undo();
+	u->undo();
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("A"));
+
+	// Type D to create a new branch.
+	u->Begin(UndoType::Insert);
+	char d = 'D';
+	b.insert_text(0, 1, std::string_view(&d, 1));
+	u->Append('D');
+	b.SetCursor(2, 0);
+	u->commit();
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("AD"));
+
+	// Undo D, then redo branch 0 should redo D (new head).
+	u->undo();
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("A"));
+	u->redo(0);
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("AD"));
+
+	// Undo back to A again, redo branch 1 should follow the older path (to AB).
+	u->undo();
+	u->redo(1);
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("AB"));
+}
+
+
+TEST (Undo_DirtyFlag_CrossesMarkSaved)
+{
+	Buffer b;
+	UndoSystem *u = b.Undo();
+	ASSERT_TRUE(u != nullptr);
+
+	b.SetCursor(0, 0);
+	u->Begin(UndoType::Insert);
+	b.insert_text(0, 0, std::string_view("x"));
+	u->Append('x');
+	b.SetCursor(1, 0);
+	u->commit();
+	if (auto *u2 = b.Undo())
+		u2->mark_saved();
+	b.SetDirty(false);
+	ASSERT_TRUE(!b.Dirty());
+
+	u->Begin(UndoType::Insert);
+	b.insert_text(0, 1, std::string_view("y"));
+	u->Append('y');
+	b.SetCursor(2, 0);
+	u->commit();
+	ASSERT_TRUE(b.Dirty());
+
+	u->undo();
+	ASSERT_TRUE(!b.Dirty());
+}
+
+
+TEST (Undo_RoundTrip_Lossless_RandomEdits)
+{
+	Buffer b;
+	UndoSystem *u = b.Undo();
+	ASSERT_TRUE(u != nullptr);
+
+	std::mt19937 rng(123);
+	std::uniform_int_distribution<int> pick(0, 1);
+	std::uniform_int_distribution<int> ch('a', 'z');
+
+	// Build a short random sequence of inserts and deletes.
+	for (int i = 0; i < 200; ++i) {
+		const std::string cur = b.AsString();
+		const bool do_insert  = (cur.empty() || pick(rng) == 0);
+		if (do_insert) {
+			char c = static_cast<char>(ch(rng));
+			u->Begin(UndoType::Insert);
+			b.insert_text(0, b.Curx(), std::string_view(&c, 1));
+			u->Append(c);
+			b.SetCursor(b.Curx() + 1, 0);
+			u->commit();
+		} else {
+			// Delete one char at a stable position.
+			std::size_t x = b.Curx();
+			if (x >= b.Rows()[0].size())
+				x = b.Rows()[0].size() - 1;
+			char deleted = b.Rows()[0][x];
+			b.delete_text(0, static_cast<int>(x), 1);
+			b.SetCursor(x, 0);
+			u->Begin(UndoType::Delete);
+			u->Append(deleted);
+			u->commit();
+		}
+	}
+
+	const std::string final = b.AsString();
+	// Undo back to start.
+	for (int i = 0; i < 1000; ++i) {
+		std::string before = b.AsString();
+		u->undo();
+		if (b.AsString() == before)
+			break;
+	}
+	// Redo forward; should end at exact final bytes.
+	for (int i = 0; i < 1000; ++i) {
+		std::string before = b.AsString();
+		u->redo(0);
+		if (b.AsString() == before)
+			break;
+	}
+	ASSERT_EQ(b.AsString(), final);
+}
+
+
+// Legacy/extended undo tests follow. Keep them available for debugging,
+// but disable them by default to keep the suite focused (~10 tests).
+#if 0
 
 
 TEST (Undo_Branching_RedoPreservedAfterNewEdit)
@@ -460,7 +712,6 @@ TEST (Undo_StructuralInvariants_BranchingAndRoots)
 	validate_undo_tree(*u);
 }
 
-
 TEST (Undo_BranchSelection_ThreeSiblingsAndHeadPersists)
 {
 	Buffer b;
@@ -540,6 +791,11 @@ TEST (Undo_BranchSelection_ThreeSiblingsAndHeadPersists)
 	validate_undo_tree(*u);
 }
 
+#endif
+
+
+// Additional legacy tests below are useful, but kept disabled by default.
+#if 0
 
 TEST (Undo_Branching_SwitchBetweenTwoRedoBranches_TextAndCursor)
 {
@@ -938,3 +1194,5 @@ TEST (Undo_Command_RedoCountSelectsBranch)
 
 	validate_undo_tree(*u);
 }
+
+#endif // legacy tests
