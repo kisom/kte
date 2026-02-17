@@ -158,17 +158,17 @@ map_key(const SDL_Keycode key,
 			ascii_key = static_cast<int>(key);
 		}
 		bool ctrl2 = (mod & KMOD_CTRL) != 0;
-  // If user typed a literal 'C' (uppercase) or '^' as a control qualifier, keep k-prefix active
-  // Do NOT treat lowercase 'c' as a qualifier; 'c' is a valid k-command (BufferClose).
-  if (ascii_key == 'C' || ascii_key == '^') {
-      k_ctrl_pending = true;
-      // Keep waiting for the next suffix; show status and suppress ensuing TEXTINPUT
-      if (ed)
-          ed->SetStatus("C-k C _");
-      suppress_textinput_once = true;
-      out.hasCommand          = false;
-      return true;
-  }
+		// If user typed a literal 'C' (uppercase) or '^' as a control qualifier, keep k-prefix active
+		// Do NOT treat lowercase 'c' as a qualifier; 'c' is a valid k-command (BufferClose).
+		if (ascii_key == 'C' || ascii_key == '^') {
+			k_ctrl_pending = true;
+			// Keep waiting for the next suffix; show status and suppress ensuing TEXTINPUT
+			if (ed)
+				ed->SetStatus("C-k C _");
+			suppress_textinput_once = true;
+			out.hasCommand          = false;
+			return true;
+		}
 		// Otherwise, consume the k-prefix now for the actual suffix
 		k_prefix = false;
 		if (ascii_key != 0) {
@@ -298,7 +298,7 @@ ImGuiInputHandler::ProcessSDLEvent(const SDL_Event &e)
 		// High-resolution trackpads can deliver fractional wheel deltas. Accumulate
 		// precise values and emit one scroll step per whole unit.
 		float dy = 0.0f;
-#if SDL_VERSION_ATLEAST(2,0,18)
+#if SDL_VERSION_ATLEAST(2, 0, 18)
 		dy = e.wheel.preciseY;
 #else
 		dy = static_cast<float>(e.wheel.y);
@@ -308,7 +308,7 @@ ImGuiInputHandler::ProcessSDLEvent(const SDL_Event &e)
 			dy = -dy;
 #endif
 		if (dy != 0.0f) {
-			wheel_accum_y_ += dy;
+			wheel_accum_y_  += dy;
 			float abs_accum = wheel_accum_y_ >= 0.0f ? wheel_accum_y_ : -wheel_accum_y_;
 			int steps       = static_cast<int>(abs_accum);
 			if (steps > 0) {
@@ -439,14 +439,12 @@ ImGuiInputHandler::ProcessSDLEvent(const SDL_Event &e)
 		}
 
 		// If editor universal argument is active, consume digit TEXTINPUT
-		if (ed_ &&ed_
+		if (ed_ && ed_
 
 
-		
-		->
-		UArg() != 0
-		)
-		{
+		    ->
+		    UArg() != 0
+		) {
 			const char *txt = e.text.text;
 			if (txt && *txt) {
 				unsigned char c0 = static_cast<unsigned char>(txt[0]);
@@ -473,16 +471,16 @@ ImGuiInputHandler::ProcessSDLEvent(const SDL_Event &e)
 					ascii_key = static_cast<int>(c0);
 				}
 				if (ascii_key != 0) {
-     // Qualifier via TEXTINPUT: uppercase 'C' or '^' only
-     if (ascii_key == 'C' || ascii_key == '^') {
-         k_ctrl_pending_ = true;
-         if (ed_)
-             ed_->SetStatus("C-k C _");
-         // Keep k-prefix active; do not emit a command
-         k_prefix_ = true;
-         produced  = true;
-         break;
-     }
+					// Qualifier via TEXTINPUT: uppercase 'C' or '^' only
+					if (ascii_key == 'C' || ascii_key == '^') {
+						k_ctrl_pending_ = true;
+						if (ed_)
+							ed_->SetStatus("C-k C _");
+						// Keep k-prefix active; do not emit a command
+						k_prefix_ = true;
+						produced  = true;
+						break;
+					}
 					// Map via k-prefix table; do not pass Ctrl for TEXTINPUT case
 					CommandId id;
 					bool pass_ctrl  = k_ctrl_pending_;

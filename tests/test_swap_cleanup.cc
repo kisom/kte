@@ -23,7 +23,7 @@ write_file_bytes(const std::string &path, const std::string &bytes)
 }
 
 
-TEST (SwapCleanup_ResetJournalOnSave)
+TEST(SwapCleanup_ResetJournalOnSave)
 {
 	ktet::InstallDefaultCommandsOnce();
 
@@ -82,7 +82,7 @@ TEST (SwapCleanup_ResetJournalOnSave)
 }
 
 
-TEST (SwapCleanup_PruneSwapDir_ByAge)
+TEST(SwapCleanup_PruneSwapDir_ByAge)
 {
 	const fs::path xdg_root = fs::temp_directory_path() /
 	                          (std::string("kte_ut_xdg_state_swap_prune_") + std::to_string((int) ::getpid()));

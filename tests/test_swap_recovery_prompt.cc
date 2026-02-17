@@ -71,7 +71,7 @@ struct ScopedXdgStateHome {
 } // namespace
 
 
-TEST (SwapRecoveryPrompt_Recover_ReplaysSwap)
+TEST(SwapRecoveryPrompt_Recover_ReplaysSwap)
 {
 	ktet::InstallDefaultCommandsOnce();
 
@@ -127,7 +127,7 @@ TEST (SwapRecoveryPrompt_Recover_ReplaysSwap)
 }
 
 
-TEST (SwapRecoveryPrompt_Discard_DeletesSwapAndOpensClean)
+TEST(SwapRecoveryPrompt_Discard_DeletesSwapAndOpensClean)
 {
 	ktet::InstallDefaultCommandsOnce();
 
@@ -178,7 +178,7 @@ TEST (SwapRecoveryPrompt_Discard_DeletesSwapAndOpensClean)
 }
 
 
-TEST (SwapRecoveryPrompt_Cancel_AbortsOpen)
+TEST(SwapRecoveryPrompt_Cancel_AbortsOpen)
 {
 	ktet::InstallDefaultCommandsOnce();
 
@@ -228,7 +228,7 @@ TEST (SwapRecoveryPrompt_Cancel_AbortsOpen)
 }
 
 
-TEST (SwapRecoveryPrompt_CorruptSwap_OffersDelete)
+TEST(SwapRecoveryPrompt_CorruptSwap_OffersDelete)
 {
 	ktet::InstallDefaultCommandsOnce();
 

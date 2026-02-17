@@ -65,7 +65,7 @@ crc32(const std::uint8_t *data, std::size_t len, std::uint32_t seed = 0)
 } // namespace
 
 
-TEST (SwapWriter_Header_Records_And_CRC)
+TEST(SwapWriter_Header_Records_And_CRC)
 {
 	const std::filesystem::path xdg_root = std::filesystem::temp_directory_path() /
 	                                       (std::string("kte_ut_xdg_state_") + std::to_string((int) ::getpid()));
@@ -166,7 +166,7 @@ TEST (SwapWriter_Header_Records_And_CRC)
 }
 
 
-TEST (SwapWriter_NoStomp_SameBasename)
+TEST(SwapWriter_NoStomp_SameBasename)
 {
 	const std::filesystem::path xdg_root = std::filesystem::temp_directory_path() /
 	                                       (std::string("kte_ut_xdg_state_nostomp_") + std::to_string(

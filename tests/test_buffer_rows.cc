@@ -82,7 +82,7 @@ check_buffer_matches_model(const Buffer &b, const std::string &model)
 }
 
 
-TEST (Buffer_RowsCache_MultiLineEdits_StayConsistent)
+TEST(Buffer_RowsCache_MultiLineEdits_StayConsistent)
 {
 	Buffer b;
 	std::string model;

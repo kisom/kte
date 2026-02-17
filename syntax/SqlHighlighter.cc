@@ -75,7 +75,7 @@ SqlHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<HighlightS
 			bool closed = false;
 			while (j + 1 <= n) {
 				if (j + 1 < n && s[j] == '*' && s[j + 1] == '/') {
-					j += 2;
+					j      += 2;
 					closed = true;
 					break;
 				}

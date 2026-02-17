@@ -40,7 +40,7 @@ buffer_bytes_via_views(const Buffer &b)
 }
 
 
-TEST (DailyWorkflow_OpenEditSave_Transcript)
+TEST(DailyWorkflow_OpenEditSave_Transcript)
 {
 	ktet::InstallDefaultCommandsOnce();
 
@@ -77,7 +77,7 @@ TEST (DailyWorkflow_OpenEditSave_Transcript)
 }
 
 
-TEST (DailyWorkflow_MultiBufferSwitchClose_Transcript)
+TEST(DailyWorkflow_MultiBufferSwitchClose_Transcript)
 {
 	ktet::InstallDefaultCommandsOnce();
 
@@ -123,7 +123,7 @@ TEST (DailyWorkflow_MultiBufferSwitchClose_Transcript)
 }
 
 
-TEST (DailyWorkflow_CrashRecovery_SwapReplay_Transcript)
+TEST(DailyWorkflow_CrashRecovery_SwapReplay_Transcript)
 {
 	ktet::InstallDefaultCommandsOnce();
 

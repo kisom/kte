@@ -3,7 +3,7 @@
 #include "tests/TestHarness.h"
 
 
-TEST (DailyDriverHarness_Smoke_CanCreateBufferAndInsertText)
+TEST(DailyDriverHarness_Smoke_CanCreateBufferAndInsertText)
 {
 	ktet::TestHarness h;
 

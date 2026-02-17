@@ -1109,33 +1109,34 @@ cmd_theme_set_by_name(const CommandContext &ctx)
 static bool
 cmd_theme_set_by_name(CommandContext &ctx)
 {
+
 #  if defined(KTE_BUILD_GUI) && defined(KTE_USE_QT)
-	// Qt GUI build: schedule theme change for frontend
-	std::string name = ctx.arg;
-	// trim spaces
-	auto ltrim = [](std::string &s) {
-		s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
-			return !std::isspace(ch);
-		}));
-	};
-	auto rtrim = [](std::string &s) {
-		s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
-			return !std::isspace(ch);
-		}).base(), s.end());
-	};
-	ltrim(name);
-	rtrim(name);
+// Qt GUI build: schedule theme change for frontend
+std::string name = ctx.arg;
+// trim spaces
+auto ltrim = [](std::string &s) {
+	s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
+		return !std::isspace(ch);
+	}));
+};
+auto rtrim = [](std::string &s) {
+	s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
+		return !std::isspace(ch);
+	}).base(), s.end());
+};
+ltrim (name);
+rtrim (name);
 	if (name.empty()) {
 		ctx.editor.SetStatus("theme: provide a name (e.g., nord, solarized-dark, gruvbox-light, eink)");
 		return true;
 	}
-	kte::gThemeChangeRequest = name;
-	kte::gThemeChangePending = true;
-	ctx.editor.SetStatus(std::string("Theme requested: ") + name);
+kte::gThemeChangeRequest= name;
+kte::gThemeChangePending=true;
+ctx.editor.SetStatus (std::string("Theme requested: ") + name);
 	return true;
 #  else
-	(void) ctx;
-	// No-op in terminal build
+(void) ctx;
+// No-op in terminal build
 	return true;
 #  endif
 }

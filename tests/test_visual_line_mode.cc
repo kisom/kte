@@ -33,7 +33,7 @@ dump_bytes(const std::string &s)
 }
 
 
-TEST (VisualLineMode_BroadcastInsert)
+TEST(VisualLineMode_BroadcastInsert)
 {
 	InstallDefaultCommands();
 
@@ -65,7 +65,7 @@ TEST (VisualLineMode_BroadcastInsert)
 }
 
 
-TEST (VisualLineMode_BroadcastInsert_UndoRedo)
+TEST(VisualLineMode_BroadcastInsert_UndoRedo)
 {
 	InstallDefaultCommands();
 
@@ -108,7 +108,7 @@ TEST (VisualLineMode_BroadcastInsert_UndoRedo)
 }
 
 
-TEST (VisualLineMode_BroadcastBackspace)
+TEST(VisualLineMode_BroadcastBackspace)
 {
 	InstallDefaultCommands();
 
@@ -135,7 +135,7 @@ TEST (VisualLineMode_BroadcastBackspace)
 }
 
 
-TEST (VisualLineMode_BroadcastBackspace_UndoRedo)
+TEST(VisualLineMode_BroadcastBackspace_UndoRedo)
 {
 	InstallDefaultCommands();
 
@@ -175,7 +175,7 @@ TEST (VisualLineMode_BroadcastBackspace_UndoRedo)
 }
 
 
-TEST (VisualLineMode_CancelWithCtrlG)
+TEST(VisualLineMode_CancelWithCtrlG)
 {
 	InstallDefaultCommands();
 
@@ -208,7 +208,7 @@ TEST (VisualLineMode_CancelWithCtrlG)
 }
 
 
-TEST (Yank_ClearsMarkAndVisualLine)
+TEST(Yank_ClearsMarkAndVisualLine)
 {
 	InstallDefaultCommands();
 
@@ -241,7 +241,7 @@ TEST (Yank_ClearsMarkAndVisualLine)
 }
 
 
-TEST (VisualLineMode_Yank_BroadcastsToBOL_AndUndo)
+TEST(VisualLineMode_Yank_BroadcastsToBOL_AndUndo)
 {
 	InstallDefaultCommands();
 
@@ -298,7 +298,7 @@ TEST (VisualLineMode_Yank_BroadcastsToBOL_AndUndo)
 }
 
 
-TEST (VisualLineMode_Highlight_IsPerLineCursorSpot)
+TEST(VisualLineMode_Highlight_IsPerLineCursorSpot)
 {
 	Buffer b;
 	// Note: buffers that end with a trailing '\n' have an extra empty row.

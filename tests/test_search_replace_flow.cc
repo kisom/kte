@@ -7,7 +7,7 @@ using ktet::TestHarness;
 // These tests intentionally drive the prompt-based search/replace UI headlessly
 // via `Execute(Editor&, CommandId, ...)` to lock down behavior without ncurses.
 
-TEST (SearchFlow_FindStart_Success_LeavesCursorOnMatch_And_ClearsSearchState)
+TEST(SearchFlow_FindStart_Success_LeavesCursorOnMatch_And_ClearsSearchState)
 {
 	TestHarness h;
 	Editor &ed = h.EditorRef();
@@ -39,7 +39,7 @@ TEST (SearchFlow_FindStart_Success_LeavesCursorOnMatch_And_ClearsSearchState)
 }
 
 
-TEST (SearchFlow_FindStart_NotFound_RestoresOrigin_And_ClearsSearchState)
+TEST(SearchFlow_FindStart_NotFound_RestoresOrigin_And_ClearsSearchState)
 {
 	TestHarness h;
 	Editor &ed = h.EditorRef();
@@ -71,7 +71,7 @@ TEST (SearchFlow_FindStart_NotFound_RestoresOrigin_And_ClearsSearchState)
 }
 
 
-TEST (SearchFlow_SearchReplace_EmptyFind_DoesNotMutateBuffer_And_ClearsState)
+TEST(SearchFlow_SearchReplace_EmptyFind_DoesNotMutateBuffer_And_ClearsState)
 {
 	TestHarness h;
 	Editor &ed = h.EditorRef();
@@ -101,7 +101,7 @@ TEST (SearchFlow_SearchReplace_EmptyFind_DoesNotMutateBuffer_And_ClearsState)
 }
 
 
-TEST (SearchFlow_RegexFind_InvalidPattern_FailsSafely_And_ClearsStateOnEnter)
+TEST(SearchFlow_RegexFind_InvalidPattern_FailsSafely_And_ClearsStateOnEnter)
 {
 	TestHarness h;
 	Editor &ed = h.EditorRef();

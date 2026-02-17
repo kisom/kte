@@ -20,7 +20,7 @@ to_string_rows(const Buffer &buf)
 }
 
 
-TEST (ReflowParagraph_IndentedBullets_PreserveStructure)
+TEST(ReflowParagraph_IndentedBullets_PreserveStructure)
 {
 	InstallDefaultCommands();
 

@@ -5,7 +5,7 @@
 #include <ncurses.h>
 
 
-TEST (KKeymap_KPrefix_CanonicalChords)
+TEST(KKeymap_KPrefix_CanonicalChords)
 {
 	CommandId id{};
 
@@ -37,7 +37,7 @@ TEST (KKeymap_KPrefix_CanonicalChords)
 }
 
 
-TEST (KKeymap_CtrlChords_CanonicalChords)
+TEST(KKeymap_CtrlChords_CanonicalChords)
 {
 	CommandId id{};
 
@@ -60,7 +60,7 @@ TEST (KKeymap_CtrlChords_CanonicalChords)
 }
 
 
-TEST (KKeymap_EscChords_CanonicalChords)
+TEST(KKeymap_EscChords_CanonicalChords)
 {
 	CommandId id{};
 

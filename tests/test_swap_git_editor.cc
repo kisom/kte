@@ -25,7 +25,7 @@ write_file_bytes(const std::string &path, const std::string &bytes)
 
 // Simulate git editor workflow: open file, edit, save, edit more, close.
 // The swap file should be deleted on close, not left behind.
-TEST (SwapCleanup_GitEditorWorkflow)
+TEST(SwapCleanup_GitEditorWorkflow)
 {
 	ktet::InstallDefaultCommandsOnce();
 

@@ -50,7 +50,7 @@ public:
 } // namespace
 
 
-TEST (SwapRecorder_InsertABC)
+TEST(SwapRecorder_InsertABC)
 {
 	Buffer b;
 	FakeSwapRecorder rec;
@@ -66,7 +66,7 @@ TEST (SwapRecorder_InsertABC)
 }
 
 
-TEST (SwapRecorder_InsertNewline)
+TEST(SwapRecorder_InsertNewline)
 {
 	Buffer b;
 	FakeSwapRecorder rec;
@@ -82,7 +82,7 @@ TEST (SwapRecorder_InsertNewline)
 }
 
 
-TEST (SwapRecorder_DeleteSpanningNewline)
+TEST(SwapRecorder_DeleteSpanningNewline)
 {
 	Buffer b;
 	// Prepare content without a recorder (should be no-op)

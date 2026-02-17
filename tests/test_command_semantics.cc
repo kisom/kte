@@ -5,7 +5,7 @@
 using ktet::TestHarness;
 
 
-TEST (CommandSemantics_KillToEOL_KillChain_And_Yank)
+TEST(CommandSemantics_KillToEOL_KillChain_And_Yank)
 {
 	TestHarness h;
 	Editor &ed = h.EditorRef();
@@ -34,7 +34,7 @@ TEST (CommandSemantics_KillToEOL_KillChain_And_Yank)
 }
 
 
-TEST (CommandSemantics_ToggleMark_JumpToMark)
+TEST(CommandSemantics_ToggleMark_JumpToMark)
 {
 	TestHarness h;
 	Buffer &b = h.Buf();
@@ -59,7 +59,7 @@ TEST (CommandSemantics_ToggleMark_JumpToMark)
 }
 
 
-TEST (CommandSemantics_CtrlGRefresh_ClearsMark_WhenNothingElseToCancel)
+TEST(CommandSemantics_CtrlGRefresh_ClearsMark_WhenNothingElseToCancel)
 {
 	TestHarness h;
 	Buffer &b = h.Buf();
@@ -78,7 +78,7 @@ TEST (CommandSemantics_CtrlGRefresh_ClearsMark_WhenNothingElseToCancel)
 }
 
 
-TEST (CommandSemantics_CopyRegion_And_KillRegion)
+TEST(CommandSemantics_CopyRegion_And_KillRegion)
 {
 	TestHarness h;
 	Editor &ed = h.EditorRef();

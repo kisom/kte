@@ -63,7 +63,7 @@ record_types_from_bytes(const std::string &bytes)
 }
 
 
-TEST (SwapReplay_RecordFlushReopenReplay_ExactBytesMatch)
+TEST(SwapReplay_RecordFlushReopenReplay_ExactBytesMatch)
 {
 	const std::string path = "./.kte_ut_swap_replay_1.txt";
 	std::remove(path.c_str());
@@ -103,7 +103,7 @@ TEST (SwapReplay_RecordFlushReopenReplay_ExactBytesMatch)
 }
 
 
-TEST (SwapReplay_TruncatedLog_FailsSafely)
+TEST(SwapReplay_TruncatedLog_FailsSafely)
 {
 	const std::string path = "./.kte_ut_swap_replay_2.txt";
 	std::remove(path.c_str());
@@ -140,7 +140,7 @@ TEST (SwapReplay_TruncatedLog_FailsSafely)
 }
 
 
-TEST (SwapReplay_Checkpoint_Midstream_ExactBytesMatch)
+TEST(SwapReplay_Checkpoint_Midstream_ExactBytesMatch)
 {
 	const std::string path = "./.kte_ut_swap_replay_chkpt_1.txt";
 	std::remove(path.c_str());
@@ -177,7 +177,7 @@ TEST (SwapReplay_Checkpoint_Midstream_ExactBytesMatch)
 }
 
 
-TEST (SwapCompaction_RewritesToSingleCheckpoint)
+TEST(SwapCompaction_RewritesToSingleCheckpoint)
 {
 	const std::string path = "./.kte_ut_swap_compact_1.txt";
 	std::remove(path.c_str());

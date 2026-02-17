@@ -44,7 +44,7 @@ CreateTreeSitterHighlighter(const char *filetype,
                             const void * (*get_lang)())
 {
 	const auto *lang = reinterpret_cast<const TSLanguage *>(get_lang ? get_lang() : nullptr);
-	return std::make_unique < TreeSitterHighlighter > (lang, filetype ? std::string(filetype) : std::string());
+	return std::make_unique<TreeSitterHighlighter>(lang, filetype ? std::string(filetype) : std::string());
 }
 } // namespace kte
 

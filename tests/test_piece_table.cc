@@ -34,7 +34,7 @@ LineContentFor(const std::string &s, std::size_t line_num)
 }
 
 
-TEST (PieceTable_Insert_Delete_LineCount)
+TEST(PieceTable_Insert_Delete_LineCount)
 {
 	PieceTable pt;
 	// start empty
@@ -61,7 +61,7 @@ TEST (PieceTable_Insert_Delete_LineCount)
 }
 
 
-TEST (PieceTable_LineCol_Conversions)
+TEST(PieceTable_LineCol_Conversions)
 {
 	PieceTable pt;
 	std::string s = "hello\nworld\n"; // two lines with trailing NL
@@ -84,7 +84,7 @@ TEST (PieceTable_LineCol_Conversions)
 }
 
 
-TEST (PieceTable_ReferenceModel_RandomEdits_Deterministic)
+TEST(PieceTable_ReferenceModel_RandomEdits_Deterministic)
 {
 	PieceTable pt;
 	std::string model;

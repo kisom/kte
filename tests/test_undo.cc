@@ -10,6 +10,7 @@
 #if defined(KTE_TESTS)
 #include <unordered_set>
 
+
 static void
 validate_undo_subtree(const UndoNode *node, const UndoNode *expected_parent,
                       std::unordered_set<const UndoNode *> &seen)
@@ -56,7 +57,7 @@ validate_undo_tree(const UndoSystem &u)
 // The undo suite aims to cover invariants with a small, adversarial test matrix.
 
 
-TEST (Undo_InsertRun_Coalesces_OneStep)
+TEST(Undo_InsertRun_Coalesces_OneStep)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -80,7 +81,7 @@ TEST (Undo_InsertRun_Coalesces_OneStep)
 }
 
 
-TEST (Undo_InsertRun_BreaksOnNonAdjacentCursor)
+TEST(Undo_InsertRun_BreaksOnNonAdjacentCursor)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -108,7 +109,7 @@ TEST (Undo_InsertRun_BreaksOnNonAdjacentCursor)
 }
 
 
-TEST (Undo_BackspaceRun_Coalesces_OneStep)
+TEST(Undo_BackspaceRun_Coalesces_OneStep)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -142,7 +143,7 @@ TEST (Undo_BackspaceRun_Coalesces_OneStep)
 }
 
 
-TEST (Undo_DeleteKeyRun_Coalesces_OneStep)
+TEST(Undo_DeleteKeyRun_Coalesces_OneStep)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -175,7 +176,7 @@ TEST (Undo_DeleteKeyRun_Coalesces_OneStep)
 }
 
 
-TEST (Undo_Newline_IsStandalone)
+TEST(Undo_Newline_IsStandalone)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -210,7 +211,7 @@ TEST (Undo_Newline_IsStandalone)
 }
 
 
-TEST (Undo_ExplicitGroup_UndoesAsUnit)
+TEST(Undo_ExplicitGroup_UndoesAsUnit)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -238,7 +239,7 @@ TEST (Undo_ExplicitGroup_UndoesAsUnit)
 }
 
 
-TEST (Undo_Branching_RedoBranchSelectionDeterministic)
+TEST(Undo_Branching_RedoBranchSelectionDeterministic)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -282,7 +283,7 @@ TEST (Undo_Branching_RedoBranchSelectionDeterministic)
 }
 
 
-TEST (Undo_DirtyFlag_CrossesMarkSaved)
+TEST(Undo_DirtyFlag_CrossesMarkSaved)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -311,7 +312,7 @@ TEST (Undo_DirtyFlag_CrossesMarkSaved)
 }
 
 
-TEST (Undo_RoundTrip_Lossless_RandomEdits)
+TEST(Undo_RoundTrip_Lossless_RandomEdits)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();

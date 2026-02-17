@@ -20,7 +20,7 @@ to_string_rows(const Buffer &buf)
 }
 
 
-TEST (ReflowParagraph_NumberedList_HangingIndent)
+TEST(ReflowParagraph_NumberedList_HangingIndent)
 {
 	InstallDefaultCommands();
 

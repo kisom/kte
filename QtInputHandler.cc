@@ -283,12 +283,11 @@ QtInputHandler::ProcessKeyEvent(const QKeyEvent &e)
 	const bool ctrl_like = (mods & Qt::ControlModifier);
 
 	// 1) Universal argument digits (when active), consume digits without enqueuing commands
-	if (ed_ &&ed_
-	
-	->
-	UArg() != 0
-	)
-	{
+	if (ed_ && ed_
+
+	    ->
+	    UArg() != 0
+	) {
 		if (!(mods & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))) {
 			if (e.key() >= Qt::Key_0 && e.key() <= Qt::Key_9) {
 				int d = e.key() - Qt::Key_0;
@@ -379,10 +378,9 @@ QtInputHandler::ProcessKeyEvent(const QKeyEvent &e)
 	// ESC/meta chords: on macOS, do NOT treat Meta as ESC; only Alt (Option) should trigger.
 #if defined(__APPLE__)
 	if (esc_meta_ || (mods & Qt::AltModifier)) {
-
-
 #else
-	if (esc_meta_ || (mods & (Qt::AltModifier | Qt::MetaModifier))) {
+		if (esc_meta_ || (mods & (Qt::AltModifier | Qt::MetaModifier))) {
+
 #endif
 		int ascii_key = 0;
 		if (e.key() == Qt::Key_Backspace) {
