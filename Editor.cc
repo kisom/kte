@@ -486,9 +486,10 @@ Editor::CloseBuffer(std::size_t index)
 		return false;
 	}
 	if (swap_) {
-		// If the buffer is clean, remove its swap file when closing.
-		// (Crash recovery is unaffected: on crash, close paths are not executed.)
-		swap_->Detach(&buffers_[index], !buffers_[index].Dirty());
+		// Always remove swap file when closing a buffer on normal exit.
+		// Swap files are for crash recovery; on clean close, we don't need them.
+		// This prevents stale swap files from accumulating (e.g., when used as git editor).
+		swap_->Detach(&buffers_[index], true);
 		buffers_[index].SetSwapRecorder(nullptr);
 	}
 	buffers_.erase(buffers_.begin() + static_cast<std::ptrdiff_t>(index));

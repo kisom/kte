@@ -4,7 +4,7 @@ project(kte)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 20)
-set(KTE_VERSION "1.6.4")
+set(KTE_VERSION "1.6.5")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
@@ -310,6 +310,7 @@ if (BUILD_TESTS)
             tests/test_swap_replay.cc
             tests/test_swap_recovery_prompt.cc
             tests/test_swap_cleanup.cc
+            tests/test_swap_git_editor.cc
             tests/test_piece_table.cc
             tests/test_search.cc
             tests/test_search_replace_flow.cc
