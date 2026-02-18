@@ -318,6 +318,8 @@ if (BUILD_TESTS)
             tests/test_reflow_indented_bullets.cc
             tests/test_undo.cc
             tests/test_visual_line_mode.cc
+            tests/test_benchmarks.cc
+            tests/test_migration_coverage.cc
 
             # minimal engine sources required by Buffer
             PieceTable.cc

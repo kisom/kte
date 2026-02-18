@@ -1,3 +1,24 @@
+/*
+ * test_daily_workflows.cc - Integration tests for real-world editing scenarios
+ *
+ * This file demonstrates end-to-end testing of kte functionality by simulating
+ * complete user workflows without requiring a UI. Tests execute commands directly
+ * through the command system, validating that the entire stack (Editor, Buffer,
+ * PieceTable, UndoSystem, SwapManager) works together correctly.
+ *
+ * Key workflows tested:
+ * - Open file → Edit → Save: Basic editing lifecycle
+ * - Multi-buffer management: Opening, switching, and closing multiple files
+ * - Crash recovery: Swap file recording and replay after simulated crash
+ *
+ * These tests are valuable examples for developers because they show:
+ * 1. How to test complex interactions without a frontend
+ * 2. How commands compose to implement user workflows
+ * 3. How to verify end-to-end behavior including file I/O and crash recovery
+ *
+ * When adding new features, consider adding integration tests here to validate
+ * that they work correctly in realistic scenarios.
+ */
 #include "Test.h"
 
 #include "Command.h"
@@ -40,7 +61,7 @@ buffer_bytes_via_views(const Buffer &b)
 }
 
 
-TEST(DailyWorkflow_OpenEditSave_Transcript)
+TEST (DailyWorkflow_OpenEditSave_Transcript)
 {
 	ktet::InstallDefaultCommandsOnce();
 
@@ -77,7 +98,7 @@ TEST(DailyWorkflow_OpenEditSave_Transcript)
 }
 
 
-TEST(DailyWorkflow_MultiBufferSwitchClose_Transcript)
+TEST (DailyWorkflow_MultiBufferSwitchClose_Transcript)
 {
 	ktet::InstallDefaultCommandsOnce();
 
@@ -123,7 +144,7 @@ TEST(DailyWorkflow_MultiBufferSwitchClose_Transcript)
 }
 
 
-TEST(DailyWorkflow_CrashRecovery_SwapReplay_Transcript)
+TEST (DailyWorkflow_CrashRecovery_SwapReplay_Transcript)
 {
 	ktet::InstallDefaultCommandsOnce();
 

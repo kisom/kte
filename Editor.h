@@ -1,5 +1,42 @@
 /*
  * Editor.h - top-level editor state and buffer management
+ *
+ * Editor is the top-level coordinator in kte. It manages:
+ *
+ * - Buffer collection: Multiple open documents (buffers_), current buffer selection
+ * - UI state: Dimensions, status messages, prompts, search state
+ * - Kill ring: Shared clipboard for cut/copy/paste operations across buffers
+ * - Universal argument: Repeat count mechanism (C-u)
+ * - Mode flags: Editor modes (normal, k-command, search, prompt, etc.)
+ * - Swap/crash recovery: SwapManager integration for journaling
+ * - File operations: Opening files, managing pending opens, recovery prompts
+ *
+ * Key responsibilities:
+ *
+ * 1. Buffer lifecycle:
+ *    - AddBuffer(): Add new buffers to the collection
+ *    - OpenFile(): Load files into buffers
+ *    - SwitchTo(): Change active buffer
+ *    - CloseBuffer(): Remove buffers with dirty checks
+ *
+ * 2. UI coordination:
+ *    - SetDimensions(): Terminal/window size for viewport calculations
+ *    - SetStatus(): Status line messages with timestamps
+ *    - Prompt system: Multi-step prompts for file open, buffer switch, etc.
+ *    - Search state: Active search, query, match position, origin tracking
+ *
+ * 3. Shared editor state:
+ *    - Kill ring: Circular buffer of killed text (max 60 entries)
+ *    - Universal argument: C-u digit collection for command repetition
+ *    - Mode tracking: Current input mode (normal, k-command, ESC, prompt)
+ *
+ * 4. Integration points:
+ *    - Commands operate on Editor and current Buffer
+ *    - Frontend (Terminal/GUI) queries Editor for rendering
+ *    - SwapManager journals all buffer modifications
+ *
+ * Design note: Editor owns the buffer collection but doesn't directly edit content.
+ * Commands modify buffers through Buffer's API, and Editor coordinates the UI state.
  */
 #pragma once
 #include <cstddef>

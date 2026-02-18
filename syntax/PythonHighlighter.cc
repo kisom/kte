@@ -50,10 +50,9 @@ PythonHighlighter::HighlightLineStateful(const Buffer &buf, int row, const LineS
                                          std::vector<HighlightSpan> &out) const
 {
 	StatefulHighlighter::LineState state = prev;
-	const auto &rows                     = buf.Rows();
-	if (row < 0 || static_cast<std::size_t>(row) >= rows.size())
+	if (row < 0 || static_cast<std::size_t>(row) >= buf.Nrows())
 		return state;
-	std::string s = static_cast<std::string>(rows[static_cast<std::size_t>(row)]);
+	std::string s = buf.GetLineString(static_cast<std::size_t>(row));
 	int n         = static_cast<int>(s.size());
 
 	// Triple-quoted string continuation uses in_raw_string with raw_delim either "'''" or "\"\"\""

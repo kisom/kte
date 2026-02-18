@@ -14,10 +14,9 @@ push(std::vector<HighlightSpan> &out, int a, int b, TokenKind k)
 void
 ShellHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<HighlightSpan> &out) const
 {
-	const auto &rows = buf.Rows();
-	if (row < 0 || static_cast<std::size_t>(row) >= rows.size())
+	if (row < 0 || static_cast<std::size_t>(row) >= buf.Nrows())
 		return;
-	std::string s = static_cast<std::string>(rows[static_cast<std::size_t>(row)]);
+	std::string s = buf.GetLineString(static_cast<std::size_t>(row));
 	int n         = static_cast<int>(s.size());
 	int i         = 0;
 	// if first non-space is '#', whole line is comment

@@ -1,3 +1,19 @@
+/*
+ * test_buffer_io.cc - Tests for Buffer file I/O operations
+ *
+ * This file validates the Buffer's file handling capabilities, which are
+ * critical for a text editor. Buffer manages the relationship between
+ * in-memory content and files on disk.
+ *
+ * Key functionality tested:
+ * - SaveAs() creates a new file and makes the buffer file-backed
+ * - Save() writes to the existing file (requires file-backed buffer)
+ * - OpenFromFile() loads existing files or creates empty buffers for new files
+ * - The dirty flag is properly managed across save operations
+ *
+ * These tests demonstrate the Buffer I/O contract that commands rely on.
+ * When adding new file operations, follow these patterns.
+ */
 #include "Test.h"
 #include <fstream>
 #include <cstdio>
@@ -13,7 +29,7 @@ read_all(const std::string &path)
 }
 
 
-TEST(Buffer_SaveAs_and_Save_new_file)
+TEST (Buffer_SaveAs_and_Save_new_file)
 {
 	const std::string path = "./.kte_ut_buffer_io_1.tmp";
 	std::remove(path.c_str());
@@ -40,7 +56,7 @@ TEST(Buffer_SaveAs_and_Save_new_file)
 }
 
 
-TEST(Buffer_Save_after_Open_existing)
+TEST (Buffer_Save_after_Open_existing)
 {
 	const std::string path = "./.kte_ut_buffer_io_2.tmp";
 	std::remove(path.c_str());
@@ -65,7 +81,7 @@ TEST(Buffer_Save_after_Open_existing)
 }
 
 
-TEST(Buffer_Open_nonexistent_then_SaveAs)
+TEST (Buffer_Open_nonexistent_then_SaveAs)
 {
 	const std::string path = "./.kte_ut_buffer_io_3.tmp";
 	std::remove(path.c_str());

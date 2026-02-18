@@ -123,8 +123,7 @@ protected:
 		if (ed_ && viewport.height() > 0 && viewport.width() > 0) {
 			const Buffer *buf = ed_->CurrentBuffer();
 			if (buf) {
-				const auto &lines         = buf->Rows();
-				const std::size_t nrows   = lines.size();
+				const std::size_t nrows   = buf->Nrows();
 				const std::size_t rowoffs = buf->Rowoffs();
 				const std::size_t coloffs = buf->Coloffs();
 				const std::size_t cy      = buf->Cury();
@@ -144,9 +143,8 @@ protected:
 
 				// Iterate visible lines
 				for (std::size_t i = rowoffs, vis_idx = 0; i < last_row; ++i, ++vis_idx) {
-					// Materialize the Buffer::Line into a std::string for
-					// regex/iterator usage and general string ops.
-					const std::string line = static_cast<std::string>(lines[i]);
+					// Get line as string for regex/iterator usage and general string ops.
+					const std::string line = buf->GetLineString(i);
 					const int y            = viewport.y() + static_cast<int>(vis_idx) * line_h;
 					const int baseline     = y + fm.ascent();
 

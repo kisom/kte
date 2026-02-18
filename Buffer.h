@@ -1,5 +1,37 @@
 /*
  * Buffer.h - editor buffer representing an open document
+ *
+ * Buffer is the central document model in kte. Each Buffer represents one open file
+ * or scratch document and manages:
+ *
+ * - Content storage: Uses PieceTable for efficient text operations
+ * - Cursor state: Current position (curx_, cury_), rendered column (rx_)
+ * - Viewport: Scroll offsets (rowoffs_, coloffs_) for display
+ * - File backing: Optional association with a file on disk
+ * - Undo/Redo: Integrated UndoSystem for operation history
+ * - Syntax highlighting: Optional HighlighterEngine for language-aware coloring
+ * - Swap/crash recovery: Integration with SwapRecorder for journaling
+ * - Dirty tracking: Modification state for save prompts
+ *
+ * Key concepts:
+ *
+ * 1. Cursor coordinates:
+ *    - (curx_, cury_): Logical character position in the document
+ *    - rx_: Rendered column accounting for tab expansion
+ *
+ * 2. File backing:
+ *    - Buffers can be file-backed (associated with a path) or scratch (unnamed)
+ *    - File identity tracking detects external modifications
+ *
+ * 3. Legacy Line wrapper:
+ *    - Buffer::Line provides a string-like interface for legacy command code
+ *    - New code should prefer direct PieceTable operations
+ *    - See DEVELOPER_GUIDE.md for migration guidance
+ *
+ * 4. Content access:
+ *    - Rows(): Materialized line cache (legacy, being phased out)
+ *    - GetLineView(): Zero-copy line access via string_view (preferred)
+ *    - Direct PieceTable access for new editing operations
  */
 #pragma once
 

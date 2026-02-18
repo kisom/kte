@@ -25,14 +25,14 @@ constexpr std::uint32_t VERSION = 1;
 static std::string
 snapshot_buffer_bytes(const Buffer &b)
 {
-	const auto &rows = b.Rows();
+	const std::size_t nrows = b.Nrows();
 	std::string out;
 	// Cheap lower bound: sum of row sizes.
 	std::size_t approx = 0;
-	for (const auto &r: rows)
-		approx += r.size();
+	for (std::size_t i = 0; i < nrows; i++)
+		approx += b.GetLineView(i).size();
 	out.reserve(approx);
-	for (std::size_t i = 0; i < rows.size(); i++) {
+	for (std::size_t i = 0; i < nrows; i++) {
 		auto v = b.GetLineView(i);
 		out.append(v.data(), v.size());
 	}
@@ -284,8 +284,10 @@ SwapManager::Attach(Buffer *buf)
 void
 SwapManager::Detach(Buffer *buf, const bool remove_file)
 {
-	if (!buf)
+	if (!buf) {
 		return;
+	}
+
 	// Write a best-effort final checkpoint before suspending and closing.
 	// If the caller requested removal, skip the final checkpoint so the file can be deleted.
 	if (!remove_file)
@@ -297,6 +299,7 @@ SwapManager::Detach(Buffer *buf, const bool remove_file)
 			it->second.suspended = true;
 		}
 	}
+
 	Flush(buf);
 	std::string path;
 	{
@@ -309,6 +312,7 @@ SwapManager::Detach(Buffer *buf, const bool remove_file)
 		}
 		recorders_.erase(buf);
 	}
+
 	if (remove_file && !path.empty()) {
 		(void) std::remove(path.c_str());
 	}

@@ -82,7 +82,7 @@ HighlighterEngine::GetLine(const Buffer &buf, int row, std::uint64_t buf_version
 			// Only use cached state if it's for the current version and row still exists
 			if (r <= row - 1 && kv.second.version == buf_version) {
 				// Validate that the cached row index is still valid in the buffer
-				if (r >= 0 && static_cast<std::size_t>(r) < buf.Rows().size()) {
+				if (r >= 0 && static_cast<std::size_t>(r) < buf.Nrows()) {
 					if (r > best)
 						best = r;
 				}

@@ -1,5 +1,39 @@
 /*
  * PieceTable.h - Alternative to GapBuffer using a piece table representation
+ *
+ * PieceTable is kte's core text storage data structure. It provides efficient
+ * insert/delete operations without copying the entire buffer by maintaining a
+ * sequence of "pieces" that reference ranges in two underlying buffers:
+ * - original_: Initial file content (currently unused, reserved for future)
+ * - add_: All text added during editing
+ *
+ * Key advantages:
+ * - O(1) append/prepend operations (common case)
+ * - O(n) insert/delete at arbitrary positions (n = number of pieces, not bytes)
+ * - Efficient undo: just restore the piece list
+ * - Memory efficient: no gap buffer waste
+ *
+ * Performance characteristics:
+ * - Piece count grows with edit operations; automatic consolidation prevents unbounded growth
+ * - Materialization (Data() call) is O(total_size) but cached until next edit
+ * - Line index is lazily rebuilt on first line-based query after edits
+ * - Range and Find operations use lightweight caches for repeated queries
+ *
+ * API evolution:
+ * 1. Legacy API (GapBuffer compatibility):
+ *    - Append/Prepend: Build content sequentially
+ *    - Data(): Materialize entire buffer
+ *
+ * 2. New buffer-wide API (Phase 1):
+ *    - Insert/Delete: Edit at arbitrary byte offsets
+ *    - Line-based queries: LineCount, GetLine, GetLineRange
+ *    - Position conversion: ByteOffsetToLineCol, LineColToByteOffset
+ *    - Efficient extraction: GetRange, Find, WriteToStream
+ *
+ * Implementation notes:
+ * - Consolidation heuristics prevent piece fragmentation (configurable via SetConsolidationParams)
+ * - Thread-safe for concurrent reads (mutex protects caches and lazy rebuilds)
+ * - Version tracking invalidates caches on mutations
  */
 #pragma once
 #include <cstddef>

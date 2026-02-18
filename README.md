@@ -39,15 +39,13 @@ subject to refinement):
   `C-g`.
 - Save/Exit: `C-k s` (save), `C-k x` or `C-k C-x` (save and exit),
   `C-k q` (quit with confirm), `C-k C-q` (quit immediately).
-- Editing: `C-k d` (kill to EOL), `C-k C-d` (kill line), `C-k
-  BACKSPACE` (kill to BOL), `C-w` (kill region), `C-y` ( yank), `C-u`
-  (universal argument).
+- Editing: `C-k d` (kill to EOL), `C-k C-d` (kill line), `C-w` (kill
+  region), `C-y` (yank), `C-u` (universal argument).
 - Navigation/Search: `C-s` (incremental find), `C-r` (regex search),
   `ESC f/b` (word next/prev), `ESC BACKSPACE` (delete previous word).
 - Buffers/Files: `C-k e` (open), `C-k b`/`C-k p` (switch), `C-k c`
-  (close), `C-k C-r` (reload).
-- Misc: `C-l` (refresh), `C-g` (cancel), `C-k m` (run make), `C-k g`
-  (goto line).
+  (close), `C-k l` (reload).
+- Misc: `C-l` (refresh), `C-g` (cancel), `C-k g` (goto line).
 
 See `ke.md` for the canonical ke reference retained for now.
 
@@ -71,8 +69,8 @@ Dependencies by platform
     - Terminal (default):
         - `sudo apt-get install -y libncurses5-dev libncursesw5-dev`
     - Optional GUI (enable with `-DBUILD_GUI=ON`):
-        -
-        `sudo apt-get install -y libsdl2-dev libfreetype6-dev mesa-common-dev`
+      -
+      `sudo apt-get install -y libsdl2-dev libfreetype6-dev mesa-common-dev`
         - The `mesa-common-dev` package provides OpenGL headers/libs (
           `libGL`).
 

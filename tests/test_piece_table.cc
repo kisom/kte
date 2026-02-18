@@ -1,3 +1,21 @@
+/*
+ * test_piece_table.cc - Tests for the PieceTable data structure
+ *
+ * This file validates the core text storage mechanism used by kte.
+ * PieceTable provides efficient insert/delete operations without copying
+ * the entire buffer, using a list of "pieces" that reference ranges in
+ * original and add buffers.
+ *
+ * Key functionality tested:
+ * - Insert/delete operations maintain correct content
+ * - Line counting and line-based queries work correctly
+ * - Position conversion (byte offset ↔ line/column) is accurate
+ * - Random edits against a reference model (string) produce identical results
+ *
+ * The random edit test is particularly important - it performs hundreds of
+ * random insertions and deletions, comparing PieceTable results against a
+ * simple std::string to ensure correctness under all conditions.
+ */
 #include "Test.h"
 #include "PieceTable.h"
 #include <algorithm>
@@ -34,7 +52,7 @@ LineContentFor(const std::string &s, std::size_t line_num)
 }
 
 
-TEST(PieceTable_Insert_Delete_LineCount)
+TEST (PieceTable_Insert_Delete_LineCount)
 {
 	PieceTable pt;
 	// start empty
@@ -61,7 +79,7 @@ TEST(PieceTable_Insert_Delete_LineCount)
 }
 
 
-TEST(PieceTable_LineCol_Conversions)
+TEST (PieceTable_LineCol_Conversions)
 {
 	PieceTable pt;
 	std::string s = "hello\nworld\n"; // two lines with trailing NL
@@ -84,7 +102,7 @@ TEST(PieceTable_LineCol_Conversions)
 }
 
 
-TEST(PieceTable_ReferenceModel_RandomEdits_Deterministic)
+TEST (PieceTable_ReferenceModel_RandomEdits_Deterministic)
 {
 	PieceTable pt;
 	std::string model;

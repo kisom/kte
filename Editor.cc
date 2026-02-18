@@ -13,9 +13,9 @@ namespace {
 static std::string
 buffer_bytes_via_views(const Buffer &b)
 {
-	const auto &rows = b.Rows();
+	const std::size_t nrows = b.Nrows();
 	std::string out;
-	for (std::size_t i = 0; i < rows.size(); i++) {
+	for (std::size_t i = 0; i < nrows; i++) {
 		auto v = b.GetLineView(i);
 		out.append(v.data(), v.size());
 	}
@@ -198,9 +198,9 @@ Editor::OpenFile(const std::string &path, std::string &err)
 		Buffer &cur                  = buffers_[curbuf_];
 		const bool unnamed           = cur.Filename().empty() && !cur.IsFileBacked();
 		const bool clean             = !cur.Dirty();
-		const auto &rows             = cur.Rows();
-		const bool rows_empty        = rows.empty();
-		const bool single_empty_line = (!rows.empty() && rows.size() == 1 && rows[0].size() == 0);
+		const std::size_t nrows      = cur.Nrows();
+		const bool rows_empty        = (nrows == 0);
+		const bool single_empty_line = (nrows == 1 && cur.GetLineView(0).size() == 0);
 		if (unnamed && clean && (rows_empty || single_empty_line)) {
 			bool ok = cur.OpenFromFile(path, err);
 			if (!ok)
@@ -213,10 +213,9 @@ Editor::OpenFile(const std::string &path, std::string &err)
 			}
 			// Setup highlighting using registry (extension + shebang)
 			cur.EnsureHighlighter();
-			std::string first    = "";
-			const auto &cur_rows = cur.Rows();
-			if (!cur_rows.empty())
-				first = static_cast<std::string>(cur_rows[0]);
+			std::string first = "";
+			if (cur.Nrows() > 0)
+				first = cur.GetLineString(0);
 			std::string ft = kte::HighlighterRegistry::DetectForPath(path, first);
 			if (!ft.empty()) {
 				cur.SetFiletype(ft);
@@ -248,11 +247,8 @@ Editor::OpenFile(const std::string &path, std::string &err)
 	// Initialize syntax highlighting by extension + shebang via registry (v2)
 	b.EnsureHighlighter();
 	std::string first = "";
-	{
-		const auto &rows = b.Rows();
-		if (!rows.empty())
-			first = static_cast<std::string>(rows[0]);
-	}
+	if (b.Nrows() > 0)
+		first = b.GetLineString(0);
 	std::string ft = kte::HighlighterRegistry::DetectForPath(path, first);
 	if (!ft.empty()) {
 		b.SetFiletype(ft);

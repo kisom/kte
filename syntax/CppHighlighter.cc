@@ -60,11 +60,10 @@ CppHighlighter::HighlightLineStateful(const Buffer &buf,
                                       const LineState &prev,
                                       std::vector<HighlightSpan> &out) const
 {
-	const auto &rows                     = buf.Rows();
 	StatefulHighlighter::LineState state = prev;
-	if (row < 0 || static_cast<std::size_t>(row) >= rows.size())
+	if (row < 0 || static_cast<std::size_t>(row) >= buf.Nrows())
 		return state;
-	std::string s = static_cast<std::string>(rows[static_cast<std::size_t>(row)]);
+	std::string s = buf.GetLineString(static_cast<std::size_t>(row));
 	if (s.empty())
 		return state;
 
