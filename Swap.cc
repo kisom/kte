@@ -530,8 +530,7 @@ SwapManager::ComputeSidecarPath(const Buffer &buf)
 	// Unnamed buffers: unique within the process.
 	static std::atomic<std::uint64_t> ctr{0};
 	const std::uint64_t n  = ++ctr;
-	const int pid          = (int) ::getpid();
-	const std::string name = "unnamed-" + std::to_string(pid) + "-" + std::to_string(n) + ".swp";
+	const std::string name = "unnamed-" + std::to_string(n) + ".swp";
 	return (root / name).string();
 }
 
