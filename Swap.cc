@@ -1,5 +1,7 @@
 #include "Swap.h"
 #include "Buffer.h"
+#include "ErrorHandler.h"
+#include "SyscallWrappers.h"
 
 #include <algorithm>
 #include <chrono>
@@ -611,36 +613,36 @@ SwapManager::open_ctx(JournalCtx &ctx, const std::string &path, std::string &err
 #ifdef O_CLOEXEC
 	flags |= O_CLOEXEC;
 #endif
-	int fd = ::open(path.c_str(), flags, 0600);
+	int fd = kte::syscall::Open(path.c_str(), flags, 0600);
 	if (fd < 0) {
 		int saved_errno = errno;
 		err             = "Failed to open swap file '" + path + "': " + std::strerror(saved_errno);
 		return false;
 	}
 	// Ensure permissions even if file already existed.
-	(void) ::fchmod(fd, 0600);
+	(void) kte::syscall::Fchmod(fd, 0600);
 	struct stat st{};
-	if (fstat(fd, &st) != 0) {
+	if (kte::syscall::Fstat(fd, &st) != 0) {
 		int saved_errno = errno;
-		::close(fd);
+		kte::syscall::Close(fd);
 		err = "Failed to fstat swap file '" + path + "': " + std::strerror(saved_errno);
 		return false;
 	}
 	// If an existing file is too small to contain the fixed header, truncate
 	// and restart.
 	if (st.st_size > 0 && st.st_size < 64) {
-		::close(fd);
+		kte::syscall::Close(fd);
 		int tflags = O_CREAT | O_WRONLY | O_TRUNC | O_APPEND;
 #ifdef O_CLOEXEC
 		tflags |= O_CLOEXEC;
 #endif
-		fd = ::open(path.c_str(), tflags, 0600);
+		fd = kte::syscall::Open(path.c_str(), tflags, 0600);
 		if (fd < 0) {
 			int saved_errno = errno;
 			err = "Failed to reopen swap file for truncation '" + path + "': " + std::strerror(saved_errno);
 			return false;
 		}
-		(void) ::fchmod(fd, 0600);
+		(void) kte::syscall::Fchmod(fd, 0600);
 		st.st_size = 0;
 	}
 	ctx.fd   = fd;
@@ -663,8 +665,8 @@ void
 SwapManager::close_ctx(JournalCtx &ctx)
 {
 	if (ctx.fd >= 0) {
-		(void) ::fsync(ctx.fd);
-		::close(ctx.fd);
+		(void) kte::syscall::Fsync(ctx.fd);
+		kte::syscall::Close(ctx.fd);
 		ctx.fd = -1;
 	}
 	ctx.header_ok = false;
@@ -686,8 +688,8 @@ SwapManager::compact_to_checkpoint(JournalCtx &ctx, const std::vector<std::uint8
 
 	// Close existing file before rename.
 	if (ctx.fd >= 0) {
-		(void) ::fsync(ctx.fd);
-		::close(ctx.fd);
+		(void) kte::syscall::Fsync(ctx.fd);
+		kte::syscall::Close(ctx.fd);
 		ctx.fd = -1;
 	}
 	ctx.header_ok = false;
@@ -703,24 +705,24 @@ SwapManager::compact_to_checkpoint(JournalCtx &ctx, const std::vector<std::uint8
 #ifdef O_CLOEXEC
 	flags |= O_CLOEXEC;
 #endif
-	int tfd = ::open(tmp_path.c_str(), flags, 0600);
+	int tfd = kte::syscall::Open(tmp_path.c_str(), flags, 0600);
 	if (tfd < 0) {
 		int saved_errno = errno;
 		err             = "Failed to open temp swap file '" + tmp_path + "': " + std::strerror(saved_errno);
 		return false;
 	}
-	(void) ::fchmod(tfd, 0600);
+	(void) kte::syscall::Fchmod(tfd, 0600);
 	bool ok = write_header(tfd);
 	if (ok)
 		ok = write_full(tfd, chkpt_record.data(), chkpt_record.size());
 	if (ok) {
-		if (::fsync(tfd) != 0) {
+		if (kte::syscall::Fsync(tfd) != 0) {
 			int saved_errno = errno;
 			err = "Failed to fsync temp swap file '" + tmp_path + "': " + std::strerror(saved_errno);
 			ok = false;
 		}
 	}
-	::close(tfd);
+	kte::syscall::Close(tfd);
 	if (!ok) {
 		if (err.empty()) {
 			err = "Failed to write temp swap file: " + tmp_path;
@@ -747,10 +749,10 @@ SwapManager::compact_to_checkpoint(JournalCtx &ctx, const std::vector<std::uint8
 #ifdef O_DIRECTORY
 			dflags |= O_DIRECTORY;
 #endif
-			int dfd = ::open(dir.string().c_str(), dflags);
+			int dfd = kte::syscall::Open(dir.string().c_str(), dflags);
 			if (dfd >= 0) {
-				(void) ::fsync(dfd);
-				::close(dfd);
+				(void) kte::syscall::Fsync(dfd);
+				kte::syscall::Close(dfd);
 			}
 		}
 	} catch (...) {
@@ -1041,7 +1043,7 @@ SwapManager::writer_loop()
 				}
 			}
 			for (int fd: to_sync) {
-				(void) ::fsync(fd);
+				(void) kte::syscall::Fsync(fd);
 			}
 		} catch (const std::exception &e) {
 			report_error(std::string("Exception in fsync operations: ") + e.what());
@@ -1125,7 +1127,7 @@ SwapManager::process_one(const Pending &p)
 		}
 		ctxp->approx_size_bytes += static_cast<std::uint64_t>(rec.size());
 		if (p.urgent_flush) {
-			if (::fsync(ctxp->fd) != 0) {
+			if (kte::syscall::Fsync(ctxp->fd) != 0) {
 				int err = errno;
 				report_error("Failed to fsync swap file '" + path + "': " + std::strerror(err), p.buf);
 			}
@@ -1379,17 +1381,24 @@ SwapManager::ReplayFile(Buffer &buf, const std::string &swap_path, std::string &
 void
 SwapManager::report_error(const std::string &message, Buffer *buf)
 {
+	std::string context;
+	if (buf && !buf->Filename().empty()) {
+		context = buf->Filename();
+	} else if (buf) {
+		context = "<unnamed>";
+	} else {
+		context = "<unknown>";
+	}
+
+	// Report to centralized error handler
+	ErrorHandler::Instance().Error("SwapManager", message, context);
+
+	// Maintain local error tracking for backward compatibility
 	std::lock_guard<std::mutex> lg(mtx_);
 	SwapError err;
 	err.timestamp_ns = now_ns();
 	err.message      = message;
-	if (buf && !buf->Filename().empty()) {
-		err.buffer_name = buf->Filename();
-	} else if (buf) {
-		err.buffer_name = "<unnamed>";
-	} else {
-		err.buffer_name = "<unknown>";
-	}
+	err.buffer_name  = context;
 	errors_.push_back(err);
 	// Bound the error queue to 100 entries
 	while (errors_.size() > 100) {

@@ -11,7 +11,8 @@ codebase, make changes, and contribute effectively.
 4. [Building and Testing](#building-and-testing)
 5. [Making Changes](#making-changes)
 6. [Code Style](#code-style)
-7. [Common Tasks](#common-tasks)
+7. [Error Handling Conventions](#error-handling-conventions)
+8. [Common Tasks](#common-tasks)
 
 ## Architecture Overview
 
@@ -536,6 +537,320 @@ void maybeConsolidate() {
     // ... implementation
 }
 ```
+
+## Error Handling Conventions
+
+kte uses standardized error handling patterns to ensure consistency and
+reliability across the codebase. This section documents when to use each
+pattern and how to integrate with the centralized error handling system.
+
+### Error Propagation Patterns
+
+kte uses three standard patterns for error handling:
+
+#### 1. `bool` + `std::string &err` (I/O and Fallible Operations)
+
+**When to use**: Operations that can fail and need detailed error
+messages
+(file I/O, network operations, parsing, resource allocation).
+
+**Pattern**:
+
+```cpp
+bool OperationName(args..., std::string &err) {
+    err.clear();
+    
+    // Attempt operation
+    if (/* operation failed */) {
+        err = "Detailed error message with context";
+        ErrorHandler::Instance().Error("ComponentName", err, "optional_context");
+        return false;
+    }
+    
+    return true;
+}
+```
+
+**Examples**:
+
+- `Buffer::OpenFromFile(const std::string &path, std::string &err)`
+- `Buffer::Save(std::string &err)`
+-
+
+`SwapManager::ReplayFile(Buffer &buf, const std::string &path, std::string &err)`
+
+**Guidelines**:
+
+- Always clear `err` at the start of the function
+- Provide actionable error messages with context (file paths, operation
+  details)
+- Call `ErrorHandler::Instance().Error()` for centralized logging
+- Return `false` on failure, `true` on success
+- Capture `errno` immediately after syscall failures: `int saved_errno =
+  errno;`
+- Use `std::strerror(saved_errno)` for syscall error messages
+
+#### 2. `void` (Infallible State Changes)
+
+**When to use**: Operations that modify internal state and cannot fail
+(setters, cursor movement, flag toggles).
+
+**Pattern**:
+
+```cpp
+void SetProperty(Type value) {
+    property_ = value;
+    // Update related state if needed
+}
+```
+
+**Examples**:
+
+- `Buffer::SetCursor(std::size_t x, std::size_t y)`
+- `Buffer::SetDirty(bool d)`
+- `Editor::SetStatus(const std::string &msg)`
+
+**Guidelines**:
+
+- Use for simple state changes that cannot fail
+- No error reporting needed
+- Keep operations atomic and side-effect free when possible
+
+#### 3. `bool` without error parameter (Control Flow)
+
+**When to use**: Operations where success/failure is sufficient
+information
+and detailed error messages aren't needed (validation checks, control
+flow
+decisions).
+
+**Pattern**:
+
+```cpp
+bool CheckCondition() const {
+    return condition_is_met;
+}
+```
+
+**Examples**:
+
+- `Editor::SwitchTo(std::size_t index)` - returns false if index invalid
+- `Editor::CloseBuffer(std::size_t index)` - returns false if can't
+  close
+
+**Guidelines**:
+
+- Use when the caller only needs to know success/failure
+- Typically for validation or control flow decisions
+- Don't use for operations that need error diagnostics
+
+### ErrorHandler Integration
+
+All error-prone operations should report errors to the centralized
+`ErrorHandler` for logging and UI integration.
+
+**Severity Levels**:
+
+```cpp
+ErrorHandler::Instance().Info("Component", "message", "context");     // Informational
+ErrorHandler::Instance().Warning("Component", "message", "context");  // Warning
+ErrorHandler::Instance().Error("Component", "message", "context");    // Error
+ErrorHandler::Instance().Critical("Component", "message", "context"); // Critical
+```
+
+**When to use each severity**:
+
+- **Info**: Non-error events (file saved, operation completed)
+- **Warning**: Recoverable issues (external file modification detected)
+- **Error**: Operation failures (file I/O errors, allocation failures)
+- **Critical**: Fatal errors (unhandled exceptions, data corruption)
+
+**Component names**: Use the class name ("Buffer", "SwapManager",
+"Editor", "main")
+
+**Context**: Optional string providing additional context (filename,
+buffer
+name, operation details)
+
+### Error Handling in Different Contexts
+
+#### File I/O Operations
+
+```cpp
+bool Buffer::Save(std::string &err) const {
+    if (!is_file_backed_ || filename_.empty()) {
+        err = "Buffer is not file-backed; use SaveAs()";
+        return false;
+    }
+    
+    const std::size_t sz = content_.Size();
+    const char *data = sz ? content_.Data() : nullptr;
+    
+    if (!atomic_write_file(filename_, data ? data : "", sz, err)) {
+        ErrorHandler::Instance().Error("Buffer", err, filename_);
+        return false;
+    }
+    
+    return true;
+}
+```
+
+#### Syscall Error Handling with EINTR-Safe Wrappers
+
+kte provides EINTR-safe syscall wrappers in `SyscallWrappers.h` that
+automatically retry on `EINTR`. **Always use these wrappers instead of
+direct syscalls.**
+
+```cpp
+#include "SyscallWrappers.h"
+
+bool open_file(const std::string &path, std::string &err) {
+    int fd = kte::syscall::Open(path.c_str(), O_RDONLY);
+    if (fd < 0) {
+        int saved_errno = errno;  // Capture immediately!
+        err = "Failed to open file '" + path + "': " + std::strerror(saved_errno);
+        ErrorHandler::Instance().Error("Component", err, path);
+        return false;
+    }
+    // ... use fd
+    kte::syscall::Close(fd);
+    return true;
+}
+```
+
+**Available EINTR-safe wrappers**:
+
+- `kte::syscall::Open(path, flags, mode)` - wraps `open(2)`
+- `kte::syscall::Close(fd)` - wraps `close(2)`
+- `kte::syscall::Fsync(fd)` - wraps `fsync(2)`
+- `kte::syscall::Fstat(fd, buf)` - wraps `fstat(2)`
+- `kte::syscall::Fchmod(fd, mode)` - wraps `fchmod(2)`
+- `kte::syscall::Mkstemp(template)` - wraps `mkstemp(3)`
+
+**Note**: `rename(2)` and `unlink(2)` are NOT wrapped because they
+operate on filesystem metadata atomically and don't need EINTR retry.
+
+#### Background Thread Errors
+
+```cpp
+void background_worker() {
+    try {
+        // ... work
+    } catch (const std::exception &e) {
+        std::string msg = std::string("Exception in worker: ") + e.what();
+        ErrorHandler::Instance().Error("WorkerThread", msg);
+    } catch (...) {
+        ErrorHandler::Instance().Error("WorkerThread", "Unknown exception");
+    }
+}
+```
+
+#### Top-Level Exception Handling
+
+```cpp
+int main(int argc, char *argv[]) {
+    try {
+        // ... main logic
+        return 0;
+    } catch (const std::exception &e) {
+        std::string msg = std::string("Unhandled exception: ") + e.what();
+        ErrorHandler::Instance().Critical("main", msg);
+        std::cerr << "FATAL ERROR: " << e.what() << "\n";
+        return 1;
+    } catch (...) {
+        ErrorHandler::Instance().Critical("main", "Unknown exception");
+        std::cerr << "FATAL ERROR: Unknown exception\n";
+        return 1;
+    }
+}
+```
+
+### Error Handling Anti-Patterns
+
+**❌ Don't**: Silently ignore errors
+
+```cpp
+// BAD
+void process() {
+    std::string err;
+    if (!operation(err)) {
+        // Error ignored!
+    }
+}
+```
+
+**✅ Do**: Always handle or propagate errors
+
+```cpp
+// GOOD
+bool process(std::string &err) {
+    if (!operation(err)) {
+        // err already set by operation()
+        return false;
+    }
+    return true;
+}
+```
+
+**❌ Don't**: Use generic error messages
+
+```cpp
+// BAD
+err = "Operation failed";
+```
+
+**✅ Do**: Provide specific, actionable error messages
+
+```cpp
+// GOOD
+err = "Failed to open file '" + path + "': " + std::strerror(errno);
+```
+
+**❌ Don't**: Forget to capture errno
+
+```cpp
+// BAD
+if (::write(fd, data, len) < 0) {
+    // errno might be overwritten by other calls!
+    err = std::strerror(errno);
+}
+```
+
+**✅ Do**: Capture errno immediately
+
+```cpp
+// GOOD
+if (::write(fd, data, len) < 0) {
+    int saved_errno = errno;
+    err = std::strerror(saved_errno);
+}
+```
+
+### Error Log Location
+
+All errors are automatically logged to:
+
+```
+~/.local/state/kte/error.log
+```
+
+Log format:
+
+```
+[2026-02-17 20:12:34.567] [ERROR] SwapManager (buffer.txt): Failed to write swap record
+[2026-02-17 20:12:35.123] [CRITICAL] main: Unhandled exception: out of memory
+```
+
+### Migration Guide
+
+When updating existing code to follow these conventions:
+
+1. **Identify error-prone operations** - File I/O, syscalls, allocations
+2. **Add `std::string &err` parameter** if not present
+3. **Add ErrorHandler calls** at all error sites
+4. **Capture errno** for syscall failures
+5. **Update callers** to handle the error parameter
+6. **Write tests** that verify error handling
 
 ## Common Tasks
 

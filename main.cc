@@ -20,6 +20,7 @@
 #include "Editor.h"
 #include "Frontend.h"
 #include "TerminalFrontend.h"
+#include "ErrorHandler.h"
 
 #if defined(KTE_BUILD_GUI)
 #if defined(KTE_USE_QT)
@@ -199,6 +200,8 @@ main(int argc, char *argv[])
 			use_gui = false;
 		} else {
 
+
+
 		// Default depends on build target: kge defaults to GUI, kte to terminal
 #if defined(KTE_DEFAULT_GUI)
 		use_gui = true;
@@ -306,11 +309,14 @@ main(int argc, char *argv[])
 
 		return 0;
 	} catch (const std::exception &e) {
+		std::string msg = std::string("Unhandled exception: ") + e.what();
+		kte::ErrorHandler::Instance().Critical("main", msg);
 		std::cerr << "\n*** FATAL ERROR ***\n"
 			<< "kte encountered an unhandled exception: " << e.what() << "\n"
 			<< "The editor will now exit. Any unsaved changes may be recovered from swap files.\n";
 		return 1;
 	} catch (...) {
+		kte::ErrorHandler::Instance().Critical("main", "Unknown exception");
 		std::cerr << "\n*** FATAL ERROR ***\n"
 			<< "kte encountered an unknown exception.\n"
 			<< "The editor will now exit. Any unsaved changes may be recovered from swap files.\n";

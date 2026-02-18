@@ -18,6 +18,8 @@
 #include "SwapRecorder.h"
 #include "UndoSystem.h"
 #include "UndoTree.h"
+#include "ErrorHandler.h"
+#include "SyscallWrappers.h"
 // For reconstructing highlighter state on copies
 #include "syntax/HighlighterRegistry.h"
 #include "syntax/NullHighlighter.h"
@@ -122,11 +124,11 @@ best_effort_fsync_dir(const std::string &path)
 		std::filesystem::path dir = p.parent_path();
 		if (dir.empty())
 			return;
-		int dfd = ::open(dir.c_str(), O_RDONLY);
+		int dfd = kte::syscall::Open(dir.c_str(), O_RDONLY);
 		if (dfd < 0)
 			return;
-		(void) ::fsync(dfd);
-		(void) ::close(dfd);
+		(void) kte::syscall::Fsync(dfd);
+		(void) kte::syscall::Close(dfd);
 	} catch (...) {
 		// best-effort
 	}
@@ -146,7 +148,7 @@ atomic_write_file(const std::string &path, const char *data, std::size_t len, st
 	// mkstemp requires a mutable buffer.
 	std::vector<char> buf(tmpl_s.begin(), tmpl_s.end());
 	buf.push_back('\0');
-	int fd = ::mkstemp(buf.data());
+	int fd = kte::syscall::Mkstemp(buf.data());
 	if (fd < 0) {
 		err = std::string("Failed to create temp file for save: ") + std::strerror(errno);
 		return false;
@@ -156,17 +158,17 @@ atomic_write_file(const std::string &path, const char *data, std::size_t len, st
 	// If the destination exists, carry over its permissions.
 	struct stat dst_st{};
 	if (::stat(path.c_str(), &dst_st) == 0) {
-		(void) ::fchmod(fd, dst_st.st_mode);
+		(void) kte::syscall::Fchmod(fd, dst_st.st_mode);
 	}
 
 	bool ok = write_all_fd(fd, data, len, err);
 	if (ok) {
-		if (::fsync(fd) != 0) {
+		if (kte::syscall::Fsync(fd) != 0) {
 			err = std::string("fsync failed: ") + std::strerror(errno);
 			ok  = false;
 		}
 	}
-	(void) ::close(fd);
+	(void) kte::syscall::Close(fd);
 
 	if (ok) {
 		if (::rename(tmp_path.c_str(), path.c_str()) != 0) {
@@ -411,6 +413,7 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 	std::ifstream in(norm, std::ios::in | std::ios::binary);
 	if (!in) {
 		err = "Failed to open file: " + norm;
+		kte::ErrorHandler::Instance().Error("Buffer", err, norm);
 		return false;
 	}
 
@@ -419,11 +422,13 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 	in.seekg(0, std::ios::end);
 	if (!in) {
 		err = "Failed to seek to end of file: " + norm;
+		kte::ErrorHandler::Instance().Error("Buffer", err, norm);
 		return false;
 	}
 	auto sz = in.tellg();
 	if (sz < 0) {
 		err = "Failed to get file size: " + norm;
+		kte::ErrorHandler::Instance().Error("Buffer", err, norm);
 		return false;
 	}
 	if (sz > 0) {
@@ -431,11 +436,13 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		in.seekg(0, std::ios::beg);
 		if (!in) {
 			err = "Failed to seek to beginning of file: " + norm;
+			kte::ErrorHandler::Instance().Error("Buffer", err, norm);
 			return false;
 		}
 		in.read(data.data(), static_cast<std::streamsize>(data.size()));
 		if (!in && !in.eof()) {
 			err = "Failed to read file: " + norm;
+			kte::ErrorHandler::Instance().Error("Buffer", err, norm);
 			return false;
 		}
 		// Validate we read the expected number of bytes
@@ -443,6 +450,7 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		if (bytes_read != static_cast<std::streamsize>(data.size())) {
 			err = "Partial read of file (expected " + std::to_string(data.size()) +
 			      " bytes, got " + std::to_string(bytes_read) + "): " + norm;
+			kte::ErrorHandler::Instance().Error("Buffer", err, norm);
 			return false;
 		}
 	}
@@ -487,8 +495,10 @@ Buffer::Save(std::string &err) const
 		err = "Internal error: buffer materialization failed";
 		return false;
 	}
-	if (!atomic_write_file(filename_, data ? data : "", sz, err))
+	if (!atomic_write_file(filename_, data ? data : "", sz, err)) {
+		kte::ErrorHandler::Instance().Error("Buffer", err, filename_);
 		return false;
+	}
 	// Update observed on-disk identity after a successful save.
 	const_cast<Buffer *>(this)->RefreshOnDiskIdentity();
 	// Note: const method cannot change dirty_. Intentionally const to allow UI code
@@ -525,8 +535,10 @@ Buffer::SaveAs(const std::string &path, std::string &err)
 		err = "Internal error: buffer materialization failed";
 		return false;
 	}
-	if (!atomic_write_file(out_path, data ? data : "", sz, err))
+	if (!atomic_write_file(out_path, data ? data : "", sz, err)) {
+		kte::ErrorHandler::Instance().Error("Buffer", err, out_path);
 		return false;
+	}
 
 	filename_       = out_path;
 	is_file_backed_ = true;
