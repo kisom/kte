@@ -73,6 +73,12 @@ set(CURSES_NEED_WIDE)
 find_package(Curses REQUIRED)
 include_directories(${CURSES_INCLUDE_DIR})
 
+# On Linux, explicitly link ncursesw for wide-character support
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_library(NCURSESW_LIBRARY NAMES ncursesw REQUIRED)
+    set(CURSES_LIBRARIES ${NCURSESW_LIBRARY})
+endif ()
+
 set(SYNTAX_SOURCES
         syntax/GoHighlighter.cc
         syntax/CppHighlighter.cc
