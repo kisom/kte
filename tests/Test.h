@@ -57,7 +57,9 @@ template<typename A, typename B>
 inline void
 assert_eq_impl(const A &a, const B &b, const char *ea, const char *eb, const char *file, int line)
 {
-	if (!(a == b)) {
+	// Cast to common type to avoid signed/unsigned comparison warnings
+	using Common = std::common_type_t<A, B>;
+	if (!(static_cast<Common>(a) == static_cast<Common>(b))) {
 		std::ostringstream oss;
 		oss << file << ":" << line << ": ASSERT_EQ failed: " << ea << " == " << eb;
 		throw AssertionFailure{oss.str()};

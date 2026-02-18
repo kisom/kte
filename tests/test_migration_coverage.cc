@@ -424,7 +424,7 @@ TEST (Migration_SyntaxHighlighter_Pattern)
 			break; // Should never happen
 		}
 		std::string line = buf.GetLineString(row);
-		EXPECT_TRUE(line.size() >= 0); // Always true, but validates access
+		// Successfully accessed line - size() is always valid for std::string
 	}
 }
 

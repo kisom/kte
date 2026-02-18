@@ -292,6 +292,129 @@ Test files by category:
 **Total**: 98 tests across 22 test files. See `docs/BENCHMARKS.md` for
 performance benchmark results.
 
+### Docker/Podman for Linux Builds
+
+A minimal `Dockerfile` is provided for **testing Linux builds** without
+requiring a native Linux system. The Dockerfile creates a build
+environment container with all necessary dependencies. Your source tree
+is mounted into the container at runtime, allowing you to test
+compilation and run tests on Linux.
+
+**Important**: This is intended for testing Linux builds, not for
+running
+kte locally. The container expects the source tree to be mounted when
+run.
+
+This is particularly useful for:
+
+- **macOS/Windows developers** testing Linux compatibility
+- **CI/CD pipelines** ensuring cross-platform builds
+- **Reproducible builds** with a known Ubuntu 22.04 environment
+
+#### Prerequisites
+
+Install Docker or Podman:
+
+- **macOS**: `brew install podman` (Docker Desktop also works)
+- **Linux**: Use your distribution's package manager
+- **Windows**: Docker Desktop or Podman Desktop
+
+If using Podman on macOS, start the VM:
+
+```bash
+podman machine init
+podman machine start
+```
+
+#### Building the Docker Image
+
+The Dockerfile only installs build dependencies (g++ 11.4.0, CMake 3.22,
+libncursesw5-dev). It does not copy or build the source code.
+
+From the project root:
+
+```bash
+# Build the environment image
+docker build -t kte-linux .
+
+# Or with Podman
+podman build -t kte-linux .
+```
+
+#### Testing Linux Builds
+
+Mount your source tree and run the build + tests:
+
+```bash
+# Build and test (default command)
+docker run --rm -v "$(pwd):/kte" kte-linux
+
+# Expected output: "98 tests passed, 0 failed"
+```
+
+The default command builds kte in terminal-only mode (`-DBUILD_GUI=OFF`)
+and runs the full test suite.
+
+#### Custom Build Commands
+
+```bash
+# Open a shell in the build environment
+docker run --rm -it -v "$(pwd):/kte" kte-linux /bin/bash
+
+# Then inside the container:
+cmake -B build -DBUILD_GUI=OFF -DBUILD_TESTS=ON
+cmake --build build --target kte
+cmake --build build --target kte_tests
+./build/kte_tests
+
+# Or run kte directly
+./build/kte --help
+```
+
+#### Running kte Interactively
+
+To test kte's terminal UI on Linux:
+
+```bash
+# Run kte with a file from your host system
+docker run --rm -it -v "$(pwd):/kte" kte-linux sh -c "cmake -B build -DBUILD_GUI=OFF && cmake --build build --target kte && ./build/kte README.md"
+```
+
+#### CI/CD Integration
+
+Example GitHub Actions workflow:
+
+```yaml
+- name: Test Linux Build
+  run: |
+    docker build -t kte-linux .
+    docker run --rm -v "${{ github.workspace }}:/kte" kte-linux
+```
+
+#### Troubleshooting
+
+**"Cannot connect to Podman socket"** (macOS):
+
+```bash
+podman machine start
+```
+
+**"Permission denied"** (Linux):
+
+```bash
+# Add your user to the docker group
+sudo usermod -aG docker $USER
+# Log out and back in
+```
+
+**Build fails with ncurses errors**:
+The Dockerfile explicitly installs `libncursesw5-dev` (wide-character
+ncurses). If you modify the Dockerfile, ensure this dependency remains.
+
+**"No such file or directory" errors**:
+Ensure you're mounting the source tree with `-v "$(pwd):/kte"` when
+running the container.
+
 ### Writing Tests
 
 When adding new functionality:
