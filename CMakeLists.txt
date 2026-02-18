@@ -68,15 +68,17 @@ if (BUILD_GUI)
 endif ()
 
 # NCurses for terminal mode
-set(CURSES_NEED_NCURSES)
-set(CURSES_NEED_WIDE)
+set(CURSES_NEED_NCURSES TRUE)
+set(CURSES_NEED_WIDE TRUE)
 find_package(Curses REQUIRED)
 include_directories(${CURSES_INCLUDE_DIR})
 
-# On Linux, explicitly link ncursesw for wide-character support
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    find_library(NCURSESW_LIBRARY NAMES ncursesw REQUIRED)
-    set(CURSES_LIBRARIES ${NCURSESW_LIBRARY})
+# On Alpine Linux, CMake's FindCurses looks in wrong paths
+# Manually find the correct ncurses library
+if (EXISTS "/etc/alpine-release")
+    find_library(NCURSESW_LIB NAMES ncursesw PATHS /usr/lib /lib REQUIRED)
+    set(CURSES_LIBRARIES ${NCURSESW_LIB})
+    message(STATUS "Alpine Linux detected, using ncurses at: ${NCURSESW_LIB}")
 endif ()
 
 set(SYNTAX_SOURCES

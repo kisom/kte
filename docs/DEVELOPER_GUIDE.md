@@ -309,7 +309,7 @@ This is particularly useful for:
 
 - **macOS/Windows developers** testing Linux compatibility
 - **CI/CD pipelines** ensuring cross-platform builds
-- **Reproducible builds** with a known Ubuntu 22.04 environment
+- **Reproducible builds** with a known Alpine Linux 3.19 environment
 
 #### Prerequisites
 
@@ -328,8 +328,9 @@ podman machine start
 
 #### Building the Docker Image
 
-The Dockerfile only installs build dependencies (g++ 11.4.0, CMake 3.22,
-libncursesw5-dev). It does not copy or build the source code.
+The Dockerfile installs all build dependencies including GUI support (
+g++ 13.2.1, CMake 3.27.8, ncurses-dev, SDL2, OpenGL/Mesa, Freetype). It
+does not copy or build the source code.
 
 From the project root:
 
@@ -352,8 +353,9 @@ docker run --rm -v "$(pwd):/kte" kte-linux
 # Expected output: "98 tests passed, 0 failed"
 ```
 
-The default command builds kte in terminal-only mode (`-DBUILD_GUI=OFF`)
-and runs the full test suite.
+The default command builds both `kte` (terminal) and `kge` (GUI)
+executables with full GUI support (`-DBUILD_GUI=ON`) and runs the
+complete test suite.
 
 #### Custom Build Commands
 
@@ -362,13 +364,18 @@ and runs the full test suite.
 docker run --rm -it -v "$(pwd):/kte" kte-linux /bin/bash
 
 # Then inside the container:
-cmake -B build -DBUILD_GUI=OFF -DBUILD_TESTS=ON
-cmake --build build --target kte
+cmake -B build -DBUILD_GUI=ON -DBUILD_TESTS=ON
+cmake --build build --target kte      # Terminal version
+cmake --build build --target kge      # GUI version
 cmake --build build --target kte_tests
 ./build/kte_tests
 
 # Or run kte directly
 ./build/kte --help
+
+# Terminal-only build (smaller, faster)
+cmake -B build -DBUILD_GUI=OFF -DBUILD_TESTS=ON
+cmake --build build --target kte
 ```
 
 #### Running kte Interactively
@@ -408,7 +415,7 @@ sudo usermod -aG docker $USER
 ```
 
 **Build fails with ncurses errors**:
-The Dockerfile explicitly installs `libncursesw5-dev` (wide-character
+The Dockerfile explicitly installs `ncurses-dev` (wide-character
 ncurses). If you modify the Dockerfile, ensure this dependency remains.
 
 **"No such file or directory" errors**:
