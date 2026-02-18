@@ -181,124 +181,139 @@ main(int argc, char *argv[])
 		return RunStressHighlighter(stress_seconds);
 	}
 
-	// Determine frontend
+	// Top-level exception handler to prevent data loss and ensure cleanup
+	try {
+		// Determine frontend
 #if !defined(KTE_BUILD_GUI)
-	if (req_gui) {
-		std::cerr << "kte: GUI not built. Reconfigure with -DBUILD_GUI=ON and required deps installed." <<
-			std::endl;
-		return 2;
-	}
+		if (req_gui) {
+			std::cerr << "kte: GUI not built. Reconfigure with -DBUILD_GUI=ON and required deps installed."
+				<<
+				std::endl;
+			return 2;
+		}
 #else
-	bool use_gui = false;
-	if (req_gui) {
-		use_gui = true;
-	} else if (req_term) {
-		use_gui = false;
-	} else {
+		bool use_gui = false;
+		if (req_gui) {
+			use_gui = true;
+		} else if (req_term) {
+			use_gui = false;
+		} else {
+
 		// Default depends on build target: kge defaults to GUI, kte to terminal
 #if defined(KTE_DEFAULT_GUI)
 		use_gui = true;
 #else
 		use_gui = false;
 #endif
-	}
-#endif
-
-	// Open files passed on the CLI; support +N to jump to line N in the next file.
-	// If no files are provided, create an empty buffer.
-	if (optind < argc) {
-		// Seed a scratch buffer so the UI has something to show while deferred opens
-		// (and potential swap recovery prompts) are processed.
-		editor.AddBuffer(Buffer());
-		std::size_t pending_line = 0; // 0 = no pending line
-		for (int i = optind; i < argc; ++i) {
-			const char *arg = argv[i];
-			if (arg && arg[0] == '+') {
-				// Parse +<digits>
-				const char *p = arg + 1;
-				if (*p != '\0') {
-					bool all_digits = true;
-					for (const char *q = p; *q; ++q) {
-						if (!std::isdigit(static_cast<unsigned char>(*q))) {
-							all_digits = false;
-							break;
-						}
-					}
-					if (all_digits) {
-						// Clamp to >=1 later; 0 disables.
-						try {
-							unsigned long v = std::stoul(p);
-							if (v > std::numeric_limits<std::size_t>::max()) {
-								std::cerr <<
-									"kte: Warning: Line number too large, ignoring\n";
-								pending_line = 0;
-							} else {
-								pending_line = static_cast<std::size_t>(v);
-							}
-						} catch (...) {
-							// Ignore malformed huge numbers
-							pending_line = 0;
-						}
-						continue; // look for the next file arg
-					}
-				}
-				// Fall through: not a +number, treat as filename starting with '+'
-			}
-
-			const std::string path = arg;
-			editor.RequestOpenFile(path, pending_line);
-			pending_line = 0; // consumed (if set)
 		}
-		// If we ended with a pending +N but no subsequent file, ignore it.
-	} else {
-		// Create a single empty buffer
-		editor.AddBuffer(Buffer());
-		editor.SetStatus("new: empty buffer");
-	}
-
-	// Install built-in commands
-	InstallDefaultCommands();
-
-	// Select frontend
-	std::unique_ptr<Frontend> fe;
-#if defined(KTE_BUILD_GUI)
-	if (use_gui) {
-		fe = std::make_unique<GUIFrontend>();
-	} else
 #endif
-	{
-		fe = std::make_unique<TerminalFrontend>();
-	}
+
+		// Open files passed on the CLI; support +N to jump to line N in the next file.
+		// If no files are provided, create an empty buffer.
+		if (optind < argc) {
+			// Seed a scratch buffer so the UI has something to show while deferred opens
+			// (and potential swap recovery prompts) are processed.
+			editor.AddBuffer(Buffer());
+			std::size_t pending_line = 0; // 0 = no pending line
+			for (int i = optind; i < argc; ++i) {
+				const char *arg = argv[i];
+				if (arg && arg[0] == '+') {
+					// Parse +<digits>
+					const char *p = arg + 1;
+					if (*p != '\0') {
+						bool all_digits = true;
+						for (const char *q = p; *q; ++q) {
+							if (!std::isdigit(static_cast<unsigned char>(*q))) {
+								all_digits = false;
+								break;
+							}
+						}
+						if (all_digits) {
+							// Clamp to >=1 later; 0 disables.
+							try {
+								unsigned long v = std::stoul(p);
+								if (v > std::numeric_limits<std::size_t>::max()) {
+									std::cerr <<
+										"kte: Warning: Line number too large, ignoring\n";
+									pending_line = 0;
+								} else {
+									pending_line = static_cast<std::size_t>(v);
+								}
+							} catch (...) {
+								// Ignore malformed huge numbers
+								pending_line = 0;
+							}
+							continue; // look for the next file arg
+						}
+					}
+					// Fall through: not a +number, treat as filename starting with '+'
+				}
+
+				const std::string path = arg;
+				editor.RequestOpenFile(path, pending_line);
+				pending_line = 0; // consumed (if set)
+			}
+			// If we ended with a pending +N but no subsequent file, ignore it.
+		} else {
+			// Create a single empty buffer
+			editor.AddBuffer(Buffer());
+			editor.SetStatus("new: empty buffer");
+		}
+
+		// Install built-in commands
+		InstallDefaultCommands();
+
+		// Select frontend
+		std::unique_ptr<Frontend> fe;
+#if defined(KTE_BUILD_GUI)
+		if (use_gui) {
+			fe = std::make_unique<GUIFrontend>();
+		} else
+#endif
+		{
+			fe = std::make_unique<TerminalFrontend>();
+		}
 
 #if defined(KTE_BUILD_GUI) && defined(__APPLE__)
-	if (use_gui) {
-		/* likely using the .app, so need to cd */
-		const char *home = getenv("HOME");
-		if (!home) {
-			std::cerr << "kge.app: HOME environment variable not set" << std::endl;
-			return 1;
+		if (use_gui) {
+			/* likely using the .app, so need to cd */
+			const char *home = getenv("HOME");
+			if (!home) {
+				std::cerr << "kge.app: HOME environment variable not set" << std::endl;
+				return 1;
+			}
+			if (chdir(home) != 0) {
+				std::cerr << "kge.app: failed to chdir to " << home << ": "
+					<< std::strerror(errno) << std::endl;
+				return 1;
+			}
 		}
-		if (chdir(home) != 0) {
-			std::cerr << "kge.app: failed to chdir to " << home << ": "
-				<< std::strerror(errno) << std::endl;
-			return 1;
-		}
-	}
 #endif
 
-	if (!fe->Init(argc, argv, editor)) {
-		std::cerr << "kte: failed to initialize frontend" << std::endl;
+		if (!fe->Init(argc, argv, editor)) {
+			std::cerr << "kte: failed to initialize frontend" << std::endl;
+			return 1;
+		}
+
+		Execute(editor, CommandId::CenterOnCursor);
+
+		bool running = true;
+		while (running) {
+			fe->Step(editor, running);
+		}
+
+		fe->Shutdown();
+
+		return 0;
+	} catch (const std::exception &e) {
+		std::cerr << "\n*** FATAL ERROR ***\n"
+			<< "kte encountered an unhandled exception: " << e.what() << "\n"
+			<< "The editor will now exit. Any unsaved changes may be recovered from swap files.\n";
+		return 1;
+	} catch (...) {
+		std::cerr << "\n*** FATAL ERROR ***\n"
+			<< "kte encountered an unknown exception.\n"
+			<< "The editor will now exit. Any unsaved changes may be recovered from swap files.\n";
 		return 1;
 	}
-
-	Execute(editor, CommandId::CenterOnCursor);
-
-	bool running = true;
-	while (running) {
-		fe->Step(editor, running);
-	}
-
-	fe->Shutdown();
-
-	return 0;
 }

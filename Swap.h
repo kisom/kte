@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <condition_variable>
+#include <deque>
 #include <thread>
 #include <atomic>
 
@@ -131,6 +132,20 @@ public:
 	// Per-buffer toggle
 	void SetSuspended(Buffer &buf, bool on);
 
+	// Error reporting for background thread
+	struct SwapError {
+		std::uint64_t timestamp_ns{0};
+		std::string message;
+		std::string buffer_name; // filename or "<unnamed>"
+	};
+
+	// Query error state (thread-safe)
+	bool HasErrors() const;
+
+	std::string GetLastError() const;
+
+	std::size_t GetErrorCount() const;
+
 private:
 	class BufferRecorder final : public SwapRecorder {
 	public:
@@ -190,11 +205,12 @@ private:
 
 	static bool write_header(int fd);
 
-	static bool open_ctx(JournalCtx &ctx, const std::string &path);
+	static bool open_ctx(JournalCtx &ctx, const std::string &path, std::string &err);
 
 	static void close_ctx(JournalCtx &ctx);
 
-	static bool compact_to_checkpoint(JournalCtx &ctx, const std::vector<std::uint8_t> &chkpt_record);
+	static bool compact_to_checkpoint(JournalCtx &ctx, const std::vector<std::uint8_t> &chkpt_record,
+	                                  std::string &err);
 
 	static std::uint32_t crc32(const std::uint8_t *data, std::size_t len, std::uint32_t seed = 0);
 
@@ -210,11 +226,14 @@ private:
 
 	void process_one(const Pending &p);
 
+	// Error reporting helper (called from writer thread)
+	void report_error(const std::string &message, Buffer *buf = nullptr);
+
 	// State
 	SwapConfig cfg_{};
 	std::unordered_map<Buffer *, JournalCtx> journals_;
 	std::unordered_map<Buffer *, std::unique_ptr<BufferRecorder> > recorders_;
-	std::mutex mtx_;
+	mutable std::mutex mtx_;
 	std::condition_variable cv_;
 	std::vector<Pending> queue_;
 	std::uint64_t next_seq_{0};
@@ -222,5 +241,9 @@ private:
 	std::uint64_t inflight_{0};
 	std::atomic<bool> running_{false};
 	std::thread worker_;
+
+	// Error tracking (protected by mtx_)
+	std::deque<SwapError> errors_; // bounded to max 100 entries
+	std::size_t total_error_count_{0};
 };
 } // namespace kte

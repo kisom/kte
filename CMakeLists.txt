@@ -316,6 +316,7 @@ if (BUILD_TESTS)
             tests/test_swap_recorder.cc
             tests/test_swap_writer.cc
             tests/test_swap_replay.cc
+            tests/test_swap_edge_cases.cc
             tests/test_swap_recovery_prompt.cc
             tests/test_swap_cleanup.cc
             tests/test_swap_git_editor.cc

@@ -417,11 +417,34 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 	// Read entire file into PieceTable as-is
 	std::string data;
 	in.seekg(0, std::ios::end);
+	if (!in) {
+		err = "Failed to seek to end of file: " + norm;
+		return false;
+	}
 	auto sz = in.tellg();
+	if (sz < 0) {
+		err = "Failed to get file size: " + norm;
+		return false;
+	}
 	if (sz > 0) {
 		data.resize(static_cast<std::size_t>(sz));
 		in.seekg(0, std::ios::beg);
+		if (!in) {
+			err = "Failed to seek to beginning of file: " + norm;
+			return false;
+		}
 		in.read(data.data(), static_cast<std::streamsize>(data.size()));
+		if (!in && !in.eof()) {
+			err = "Failed to read file: " + norm;
+			return false;
+		}
+		// Validate we read the expected number of bytes
+		const std::streamsize bytes_read = in.gcount();
+		if (bytes_read != static_cast<std::streamsize>(data.size())) {
+			err = "Partial read of file (expected " + std::to_string(data.size()) +
+			      " bytes, got " + std::to_string(bytes_read) + "): " + norm;
+			return false;
+		}
 	}
 	content_.Clear();
 	if (!data.empty())
