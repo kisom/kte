@@ -144,6 +144,7 @@ set(COMMON_SOURCES
         Swap.cc
         ErrorHandler.cc
         SyscallWrappers.cc
+        ErrorRecovery.cc
         TerminalInputHandler.cc
         TerminalRenderer.cc
         TerminalFrontend.cc
@@ -341,6 +342,7 @@ if (BUILD_TESTS)
             Swap.cc
             ErrorHandler.cc
             SyscallWrappers.cc
+            ErrorRecovery.cc
             KKeymap.cc
             SwapRecorder.h
             OptimizedSearch.cc

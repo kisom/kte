@@ -852,6 +852,177 @@ When updating existing code to follow these conventions:
 5. **Update callers** to handle the error parameter
 6. **Write tests** that verify error handling
 
+### Error Recovery Mechanisms
+
+kte implements automatic error recovery for transient failures using
+retry logic and circuit breaker patterns.
+
+#### Transient Error Classification
+
+Transient errors are temporary failures that may succeed on retry:
+
+```cpp
+#include "ErrorRecovery.h"
+
+bool IsTransientError(int err);  // Returns true for EAGAIN, EWOULDBLOCK, EBUSY, EIO, ETIMEDOUT, ENOSPC, EDQUOT
+```
+
+**Transient errors**:
+
+- `EAGAIN` / `EWOULDBLOCK` - Resource temporarily unavailable
+- `EBUSY` - Device or resource busy
+- `EIO` - I/O error (may be transient on network filesystems)
+- `ETIMEDOUT` - Operation timed out
+- `ENOSPC` - No space left on device (may become available)
+- `EDQUOT` - Disk quota exceeded (may become available)
+
+**Permanent errors** (don't retry):
+
+- `ENOENT` - File not found
+- `EACCES` - Permission denied
+- `EINVAL` - Invalid argument
+- `ENOTDIR` - Not a directory
+
+#### Retry Policies
+
+Three predefined retry policies are available:
+
+```cpp
+// Default: 3 attempts, 100ms initial delay, 2x backoff, 5s max delay
+RetryPolicy::Default()
+
+// Aggressive: 5 attempts, 50ms initial delay, 1.5x backoff, 2s max delay
+// Use for critical operations (swap files, file saves)
+RetryPolicy::Aggressive()
+
+// Conservative: 2 attempts, 200ms initial delay, 2.5x backoff, 10s max delay
+// Use for non-critical operations
+RetryPolicy::Conservative()
+```
+
+#### Using RetryOnTransientError
+
+Wrap syscalls with automatic retry on transient errors:
+
+```cpp
+#include "ErrorRecovery.h"
+#include "SyscallWrappers.h"
+
+bool save_file(const std::string &path, std::string &err) {
+    int fd = -1;
+    auto open_fn = [&]() -> bool {
+        fd = kte::syscall::Open(path.c_str(), O_CREAT | O_WRONLY, 0644);
+        return fd >= 0;
+    };
+    
+    if (!kte::RetryOnTransientError(open_fn, kte::RetryPolicy::Aggressive(), err)) {
+        if (fd < 0) {
+            int saved_errno = errno;
+            err = "Failed to open file '" + path + "': " + std::strerror(saved_errno) + err;
+        }
+        return false;
+    }
+    
+    // ... use fd
+    kte::syscall::Close(fd);
+    return true;
+}
+```
+
+**Key points**:
+
+- Lambda must return `bool` (true = success, false = failure)
+- Lambda must set `errno` on failure for transient error detection
+- Use EINTR-safe syscall wrappers (`kte::syscall::*`) inside lambdas
+- Capture errno immediately after failure
+- Append retry info to error message (automatically added by
+  RetryOnTransientError)
+
+#### Circuit Breaker Pattern
+
+The circuit breaker prevents repeated attempts to failing operations,
+enabling graceful degradation.
+
+**States**:
+
+- **Closed** (normal): All requests allowed
+- **Open** (failing): Requests rejected immediately, operation disabled
+- **HalfOpen** (testing): Limited requests allowed to test recovery
+
+**Configuration** (SwapManager example):
+
+```cpp
+CircuitBreaker::Config cfg;
+cfg.failure_threshold = 5;      // Open after 5 failures
+cfg.timeout = std::chrono::seconds(30);  // Try recovery after 30s
+cfg.success_threshold = 2;      // Close after 2 successes in HalfOpen
+cfg.window = std::chrono::seconds(60);   // Count failures in 60s window
+
+CircuitBreaker breaker(cfg);
+```
+
+**Usage**:
+
+```cpp
+// Check before operation
+if (!breaker.AllowRequest()) {
+    // Circuit is open - graceful degradation
+    log_warning("Operation disabled due to repeated failures");
+    return;  // Skip operation
+}
+
+// Perform operation
+if (operation_succeeds()) {
+    breaker.RecordSuccess();
+} else {
+    breaker.RecordFailure();
+}
+```
+
+**SwapManager Integration**:
+
+The SwapManager uses a circuit breaker to handle repeated swap file
+failures:
+
+1. After 5 swap write failures in 60 seconds, circuit opens
+2. Swap recording is disabled (graceful degradation)
+3. Warning logged once per 60 seconds to avoid spam
+4. After 30 seconds, circuit enters HalfOpen state
+5. If 2 consecutive operations succeed, circuit closes and swap
+   recording resumes
+
+This ensures the editor remains functional even when swap files are
+unavailable (disk full, quota exceeded, filesystem errors).
+
+#### Graceful Degradation Strategies
+
+When operations fail repeatedly:
+
+1. **Disable non-critical features** - Swap recording can be disabled
+   without affecting editing
+2. **Log warnings** - Inform user of degraded operation via ErrorHandler
+3. **Rate-limit warnings** - Avoid log spam (e.g., once per 60 seconds)
+4. **Automatic recovery** - Circuit breaker automatically tests recovery
+5. **Preserve core functionality** - Editor remains usable without swap
+   files
+
+**Example** (from SwapManager):
+
+```cpp
+if (circuit_open) {
+    // Graceful degradation: skip swap write
+    static std::atomic<std::uint64_t> last_warning_ns{0};
+    const std::uint64_t now = now_ns();
+    if (now - last_warning_ns.load() > 60000000000ULL) {
+        last_warning_ns.store(now);
+        ErrorHandler::Instance().Warning("SwapManager", 
+            "Swap operations temporarily disabled due to repeated failures",
+            buffer_name);
+    }
+    return;  // Skip operation, editor continues normally
+}
+```
+
 ## Common Tasks
 
 ### Adding a New Command

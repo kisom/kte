@@ -20,6 +20,7 @@
 #include "UndoTree.h"
 #include "ErrorHandler.h"
 #include "SyscallWrappers.h"
+#include "ErrorRecovery.h"
 // For reconstructing highlighter state on copies
 #include "syntax/HighlighterRegistry.h"
 #include "syntax/NullHighlighter.h"
@@ -148,9 +149,21 @@ atomic_write_file(const std::string &path, const char *data, std::size_t len, st
 	// mkstemp requires a mutable buffer.
 	std::vector<char> buf(tmpl_s.begin(), tmpl_s.end());
 	buf.push_back('\0');
-	int fd = kte::syscall::Mkstemp(buf.data());
-	if (fd < 0) {
-		err = std::string("Failed to create temp file for save: ") + std::strerror(errno);
+
+	// Retry on transient errors for temp file creation
+	int fd          = -1;
+	auto mkstemp_fn = [&]() -> bool {
+		// Reset buffer for each retry attempt
+		buf.assign(tmpl_s.begin(), tmpl_s.end());
+		buf.push_back('\0');
+		fd = kte::syscall::Mkstemp(buf.data());
+		return fd >= 0;
+	};
+
+	if (!kte::RetryOnTransientError(mkstemp_fn, kte::RetryPolicy::Aggressive(), err)) {
+		if (fd < 0) {
+			err = std::string("Failed to create temp file for save: ") + std::strerror(errno) + err;
+		}
 		return false;
 	}
 	std::string tmp_path(buf.data());
@@ -163,8 +176,14 @@ atomic_write_file(const std::string &path, const char *data, std::size_t len, st
 
 	bool ok = write_all_fd(fd, data, len, err);
 	if (ok) {
-		if (kte::syscall::Fsync(fd) != 0) {
-			err = std::string("fsync failed: ") + std::strerror(errno);
+		// Retry fsync on transient errors
+		auto fsync_fn = [&]() -> bool {
+			return kte::syscall::Fsync(fd) == 0;
+		};
+
+		std::string fsync_err;
+		if (!kte::RetryOnTransientError(fsync_fn, kte::RetryPolicy::Aggressive(), fsync_err)) {
+			err = std::string("fsync failed: ") + std::strerror(errno) + fsync_err;
 			ok  = false;
 		}
 	}

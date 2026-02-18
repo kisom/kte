@@ -15,6 +15,7 @@
 #include <atomic>
 
 #include "SwapRecorder.h"
+#include "ErrorRecovery.h"
 
 class Buffer;
 
@@ -245,5 +246,8 @@ private:
 	// Error tracking (protected by mtx_)
 	std::deque<SwapError> errors_; // bounded to max 100 entries
 	std::size_t total_error_count_{0};
+
+	// Circuit breaker for swap operations (protected by mtx_)
+	CircuitBreaker circuit_breaker_;
 };
 } // namespace kte
