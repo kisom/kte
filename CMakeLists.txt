@@ -4,7 +4,7 @@ project(kte)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 20)
-set(KTE_VERSION "1.6.6")
+set(KTE_VERSION "1.7.0")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
@@ -39,7 +39,6 @@ if (MSVC)
     add_compile_options("/W4" "$<$<CONFIG:RELEASE>:/O2>")
 else ()
     add_compile_options(
-            "-static"
             "-Wall"
             "-Wextra"
             "-Werror"
@@ -285,6 +284,11 @@ endif ()
 
 target_link_libraries(kte ${CURSES_LIBRARIES})
 
+# Static linking on Linux only (macOS does not support static linking of system libraries)
+if (NOT APPLE)
+    target_link_options(kte PRIVATE -static)
+endif ()
+
 if (KTE_ENABLE_TREESITTER)
     # Users can provide their own tree-sitter include/lib via cache variables
     set(TREESITTER_INCLUDE_DIR "" CACHE PATH "Path to tree-sitter include directory")
@@ -367,6 +371,11 @@ if (BUILD_TESTS)
             target_link_libraries(kte_tests ${TREESITTER_LIBRARY})
         endif ()
     endif ()
+
+    # Static linking on Linux only (macOS does not support static linking of system libraries)
+    if (NOT APPLE)
+        target_link_options(kte_tests PRIVATE -static)
+    endif ()
 endif ()
 
 if (BUILD_GUI)
@@ -404,6 +413,11 @@ if (BUILD_GUI)
         target_link_libraries(kge ${CURSES_LIBRARIES} Qt6::Widgets)
     else ()
         target_link_libraries(kge ${CURSES_LIBRARIES} imgui)
+    endif ()
+
+    # Static linking on Linux only (macOS does not support static linking of system libraries)
+    if (NOT APPLE)
+        target_link_options(kge PRIVATE -static)
     endif ()
 
     # On macOS, build kge as a proper .app bundle
