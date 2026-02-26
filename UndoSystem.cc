@@ -36,7 +36,8 @@ UndoSystem::Begin(UndoType type)
 	const int col = static_cast<int>(buf_->Curx());
 
 	// Some operations should always be standalone undo steps.
-	const bool always_standalone = (type == UndoType::Newline || type == UndoType::DeleteRow);
+	const bool always_standalone = (type == UndoType::Newline || type == UndoType::DeleteRow || type ==
+	                                UndoType::InsertRow);
 	if (always_standalone) {
 		commit();
 	}
@@ -75,6 +76,7 @@ UndoSystem::Begin(UndoType type)
 			}
 			case UndoType::Newline:
 			case UndoType::DeleteRow:
+			case UndoType::InsertRow:
 				break;
 			}
 		}
@@ -314,6 +316,15 @@ UndoSystem::apply(const UndoNode *node, int direction)
 			buf_->SetCursor(0, static_cast<std::size_t>(node->row));
 		}
 		break;
+	case UndoType::InsertRow:
+		if (direction > 0) {
+			buf_->insert_row(node->row, node->text);
+			buf_->SetCursor(0, static_cast<std::size_t>(node->row));
+		} else {
+			buf_->delete_row(node->row);
+			buf_->SetCursor(0, static_cast<std::size_t>(node->row));
+		}
+		break;
 	}
 }
 
@@ -411,6 +422,8 @@ UndoSystem::type_str(UndoType t)
 		return "Newline";
 	case UndoType::DeleteRow:
 		return "DeleteRow";
+	case UndoType::InsertRow:
+		return "InsertRow";
 	}
 	return "?";
 }

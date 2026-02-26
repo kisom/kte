@@ -9,6 +9,7 @@ enum class UndoType : std::uint8_t {
 	Paste,
 	Newline,
 	DeleteRow,
+	InsertRow,
 };
 
 struct UndoNode {

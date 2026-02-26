@@ -337,6 +337,7 @@ if (BUILD_TESTS)
             tests/test_benchmarks.cc
             tests/test_migration_coverage.cc
             tests/test_smart_newline.cc
+            tests/test_reflow_undo.cc
 
             # minimal engine sources required by Buffer
             PieceTable.cc

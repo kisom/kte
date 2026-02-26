@@ -4675,7 +4675,14 @@ cmd_reflow_paragraph(CommandContext &ctx)
 		new_lines.push_back("");
 
 	// Replace paragraph lines via PieceTable-backed operations
+	UndoSystem *u = buf->Undo();
 	for (std::size_t i = para_end; i + 1 > para_start; --i) {
+		if (u) {
+			buf->SetCursor(0, i);
+			u->Begin(UndoType::DeleteRow);
+			u->Append(static_cast<std::string>(buf->Rows()[i]));
+			u->commit();
+		}
 		buf->delete_row(static_cast<int>(i));
 		if (i == 0)
 			break; // prevent wrap on size_t
@@ -4684,6 +4691,12 @@ cmd_reflow_paragraph(CommandContext &ctx)
 	std::size_t insert_y = para_start;
 	for (const auto &ln: new_lines) {
 		buf->insert_row(static_cast<int>(insert_y), std::string_view(ln));
+		if (u) {
+			buf->SetCursor(0, insert_y);
+			u->Begin(UndoType::InsertRow);
+			u->Append(std::string_view(ln));
+			u->commit();
+		}
 		insert_y += 1;
 	}
 

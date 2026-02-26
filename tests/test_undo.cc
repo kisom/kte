@@ -57,7 +57,7 @@ validate_undo_tree(const UndoSystem &u)
 // The undo suite aims to cover invariants with a small, adversarial test matrix.
 
 
-TEST(Undo_InsertRun_Coalesces_OneStep)
+TEST (Undo_InsertRun_Coalesces_OneStep)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -81,7 +81,7 @@ TEST(Undo_InsertRun_Coalesces_OneStep)
 }
 
 
-TEST(Undo_InsertRun_BreaksOnNonAdjacentCursor)
+TEST (Undo_InsertRun_BreaksOnNonAdjacentCursor)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -109,7 +109,7 @@ TEST(Undo_InsertRun_BreaksOnNonAdjacentCursor)
 }
 
 
-TEST(Undo_BackspaceRun_Coalesces_OneStep)
+TEST (Undo_BackspaceRun_Coalesces_OneStep)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -143,7 +143,7 @@ TEST(Undo_BackspaceRun_Coalesces_OneStep)
 }
 
 
-TEST(Undo_DeleteKeyRun_Coalesces_OneStep)
+TEST (Undo_DeleteKeyRun_Coalesces_OneStep)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -176,7 +176,7 @@ TEST(Undo_DeleteKeyRun_Coalesces_OneStep)
 }
 
 
-TEST(Undo_Newline_IsStandalone)
+TEST (Undo_Newline_IsStandalone)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -211,7 +211,7 @@ TEST(Undo_Newline_IsStandalone)
 }
 
 
-TEST(Undo_ExplicitGroup_UndoesAsUnit)
+TEST (Undo_ExplicitGroup_UndoesAsUnit)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -239,7 +239,7 @@ TEST(Undo_ExplicitGroup_UndoesAsUnit)
 }
 
 
-TEST(Undo_Branching_RedoBranchSelectionDeterministic)
+TEST (Undo_Branching_RedoBranchSelectionDeterministic)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -283,7 +283,7 @@ TEST(Undo_Branching_RedoBranchSelectionDeterministic)
 }
 
 
-TEST(Undo_DirtyFlag_CrossesMarkSaved)
+TEST (Undo_DirtyFlag_CrossesMarkSaved)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -312,7 +312,7 @@ TEST(Undo_DirtyFlag_CrossesMarkSaved)
 }
 
 
-TEST(Undo_RoundTrip_Lossless_RandomEdits)
+TEST (Undo_RoundTrip_Lossless_RandomEdits)
 {
 	Buffer b;
 	UndoSystem *u = b.Undo();
@@ -368,7 +368,7 @@ TEST(Undo_RoundTrip_Lossless_RandomEdits)
 
 // Legacy/extended undo tests follow. Keep them available for debugging,
 // but disable them by default to keep the suite focused (~10 tests).
-#if 0
+#if 1
 
 
 TEST (Undo_Branching_RedoPreservedAfterNewEdit)
@@ -713,6 +713,7 @@ TEST (Undo_StructuralInvariants_BranchingAndRoots)
 	validate_undo_tree(*u);
 }
 
+
 TEST (Undo_BranchSelection_ThreeSiblingsAndHeadPersists)
 {
 	Buffer b;
@@ -796,7 +797,7 @@ TEST (Undo_BranchSelection_ThreeSiblingsAndHeadPersists)
 
 
 // Additional legacy tests below are useful, but kept disabled by default.
-#if 0
+#if 1
 
 TEST (Undo_Branching_SwitchBetweenTwoRedoBranches_TextAndCursor)
 {
@@ -1195,5 +1196,168 @@ TEST (Undo_Command_RedoCountSelectsBranch)
 
 	validate_undo_tree(*u);
 }
+
+
+TEST (Undo_InsertRow_UndoDeletesRow)
+{
+	Buffer b;
+	UndoSystem *u = b.Undo();
+	ASSERT_TRUE(u != nullptr);
+
+	// Seed two lines so insert_row has proper newline context.
+	b.insert_text(0, 0, std::string_view("first\nlast"));
+	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
+
+	// Insert a row at position 1 (between first and last), then record it.
+	b.insert_row(1, std::string_view("second"));
+	ASSERT_EQ(b.Rows().size(), (std::size_t) 3);
+	ASSERT_EQ(std::string(b.Rows()[1]), std::string("second"));
+
+	b.SetCursor(0, 1);
+	u->Begin(UndoType::InsertRow);
+	u->Append(std::string_view("second"));
+	u->commit();
+
+	// Undo should remove the inserted row.
+	u->undo();
+	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("first"));
+	ASSERT_EQ(std::string(b.Rows()[1]), std::string("last"));
+
+	// Redo should re-insert it.
+	u->redo();
+	ASSERT_EQ(b.Rows().size(), (std::size_t) 3);
+	ASSERT_EQ(std::string(b.Rows()[1]), std::string("second"));
+
+	validate_undo_tree(*u);
+}
+
+
+TEST (Undo_DeleteRow_UndoRestoresRow)
+{
+	Buffer b;
+	UndoSystem *u = b.Undo();
+	ASSERT_TRUE(u != nullptr);
+
+	b.insert_text(0, 0, std::string_view("alpha\nbeta\ngamma"));
+	ASSERT_EQ(b.Rows().size(), (std::size_t) 3);
+
+	// Record a DeleteRow for row 1 ("beta").
+	b.SetCursor(0, 1);
+	u->Begin(UndoType::DeleteRow);
+	u->Append(static_cast<std::string>(b.Rows()[1]));
+	u->commit();
+	b.delete_row(1);
+
+	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("alpha"));
+	ASSERT_EQ(std::string(b.Rows()[1]), std::string("gamma"));
+
+	// Undo should restore "beta" at row 1.
+	u->undo();
+	ASSERT_EQ(b.Rows().size(), (std::size_t) 3);
+	ASSERT_EQ(std::string(b.Rows()[1]), std::string("beta"));
+
+	// Redo should delete it again.
+	u->redo();
+	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
+	ASSERT_EQ(std::string(b.Rows()[1]), std::string("gamma"));
+
+	validate_undo_tree(*u);
+}
+
+
+TEST (Undo_InsertRow_IsStandalone)
+{
+	Buffer b;
+	UndoSystem *u = b.Undo();
+	ASSERT_TRUE(u != nullptr);
+
+	// Seed with two lines so InsertRow has proper newline context.
+	b.insert_text(0, 0, std::string_view("x\nend"));
+	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
+
+	// Start a pending insert on row 0.
+	b.SetCursor(1, 0);
+	u->Begin(UndoType::Insert);
+	b.insert_text(0, 1, std::string_view("y"));
+	u->Append('y');
+	b.SetCursor(2, 0);
+
+	// InsertRow should seal the pending "y" and become its own step.
+	b.insert_row(1, std::string_view("row2"));
+	b.SetCursor(0, 1);
+	u->Begin(UndoType::InsertRow);
+	u->Append(std::string_view("row2"));
+	u->commit();
+
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("xy"));
+	ASSERT_EQ(std::string(b.Rows()[1]), std::string("row2"));
+	ASSERT_EQ(b.Rows().size(), (std::size_t) 3);
+
+	// Undo InsertRow only.
+	u->undo();
+	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("xy"));
+
+	// Undo the insert "y".
+	u->undo();
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string("x"));
+
+	validate_undo_tree(*u);
+}
+
+
+TEST (Undo_GroupedDeleteAndInsertRows_UndoesAsUnit)
+{
+	Buffer b;
+	UndoSystem *u = b.Undo();
+	ASSERT_TRUE(u != nullptr);
+
+	// Seed three lines (with trailing newline so delete_row/insert_row work cleanly).
+	b.insert_text(0, 0, std::string_view("aaa\nbbb\nccc\n"));
+	ASSERT_EQ(b.Rows().size(), (std::size_t) 4); // 3 content + 1 empty trailing
+	const std::string original = b.AsString();
+
+	// Group: delete content rows then insert replacements (simulates reflow).
+	(void) u->BeginGroup();
+
+	// Delete rows 2,1,0 in reverse order (like reflow does).
+	for (int i = 2; i >= 0; --i) {
+		b.SetCursor(0, static_cast<std::size_t>(i));
+		u->Begin(UndoType::DeleteRow);
+		u->Append(static_cast<std::string>(b.Rows()[static_cast<std::size_t>(i)]));
+		u->commit();
+		b.delete_row(i);
+	}
+
+	// Insert replacement rows.
+	b.insert_row(0, std::string_view("aaa bbb"));
+	b.SetCursor(0, 0);
+	u->Begin(UndoType::InsertRow);
+	u->Append(std::string_view("aaa bbb"));
+	u->commit();
+
+	b.insert_row(1, std::string_view("ccc"));
+	b.SetCursor(0, 1);
+	u->Begin(UndoType::InsertRow);
+	u->Append(std::string_view("ccc"));
+	u->commit();
+
+	u->EndGroup();
+
+	const std::string reflowed = b.AsString();
+
+	// Single undo should restore original content.
+	u->undo();
+	ASSERT_EQ(b.AsString(), original);
+
+	// Redo should restore the reflowed state.
+	u->redo();
+	ASSERT_EQ(b.AsString(), reflowed);
+
+	validate_undo_tree(*u);
+}
+
 
 #endif // legacy tests
