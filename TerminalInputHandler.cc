@@ -67,13 +67,20 @@ map_key_to_command(const int ch,
 				if (pressed) {
 					mouse_selecting = true;
 					Execute(*ed, CommandId::MoveCursorTo, std::string(buf));
-					if (Buffer *b = ed->CurrentBuffer()) {
-						b->SetMark(b->Curx(), b->Cury());
-					}
+					// We don't set the mark on simple click anymore in ncurses either,
+					// to be consistent. ncurses doesn't easily support double-click
+					// or drag-threshold in a platform-independent way here,
+					// but we can at least only set mark on MOVED.
 					out.hasCommand = false;
 					return true;
 				}
 				if (mouse_selecting && moved) {
+					if (Buffer *b = ed->CurrentBuffer()) {
+						if (!b->MarkSet()) {
+							// Set mark at CURRENT cursor position (which is where we were before this move)
+							b->SetMark(b->Curx(), b->Cury());
+						}
+					}
 					Execute(*ed, CommandId::MoveCursorTo, std::string(buf));
 					out.hasCommand = false;
 					return true;

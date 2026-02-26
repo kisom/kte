@@ -209,19 +209,35 @@ ImGuiRenderer::Draw(Editor &ed)
 			return {by, best_col};
 		};
 
-		// Mouse-driven selection: set mark on press, update cursor on drag
+		// Mouse-driven selection: set mark on double-click or drag, update cursor on any press/drag
 		if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
 			mouse_selecting = true;
 			auto [by, bx]   = mouse_pos_to_buf();
 			char tmp[64];
 			std::snprintf(tmp, sizeof(tmp), "%zu:%zu", by, bx);
 			Execute(ed, CommandId::MoveCursorTo, std::string(tmp));
-			if (Buffer *mbuf = const_cast<Buffer *>(buf)) {
-				mbuf->SetMark(bx, by);
+
+			// Only set mark on double click.
+			// Dragging will also set the mark if not already set (handled below).
+			if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+				if (Buffer *mbuf = const_cast<Buffer *>(buf)) {
+					mbuf->SetMark(bx, by);
+				}
 			}
 		}
 		if (mouse_selecting && ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
 			auto [by, bx] = mouse_pos_to_buf();
+			// If we are dragging (mouse moved while down), ensure mark is set to start selection
+			if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 1.0f)) {
+				if (Buffer *mbuf = const_cast<Buffer *>(buf)) {
+					if (!mbuf->MarkSet()) {
+						// We'd need to convert click_pos to buf coords, but it's complex here.
+						// Setting it to where the cursor was *before* we started moving it
+						// in this frame is a good approximation, or just using current.
+						mbuf->SetMark(mbuf->Curx(), mbuf->Cury());
+					}
+				}
+			}
 			char tmp[64];
 			std::snprintf(tmp, sizeof(tmp), "%zu:%zu", by, bx);
 			Execute(ed, CommandId::MoveCursorTo, std::string(tmp));

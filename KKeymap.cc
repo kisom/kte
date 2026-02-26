@@ -226,6 +226,10 @@ KLookupEscCommand(const int ascii_key, CommandId &out) -> bool
 	case 'q':
 		out = CommandId::ReflowParagraph; // Esc q (reflow paragraph)
 		return true;
+	case '\n':
+	case '\r':
+		out = CommandId::SmartNewline; // Shift+Enter (some terminals send this as Alt+Enter sequences)
+		return true;
 	default:
 		break;
 	}

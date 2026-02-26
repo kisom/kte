@@ -38,6 +38,7 @@ enum class CommandId {
 	// Editing
 	InsertText, // arg: text to insert at cursor (UTF-8, no newlines)
 	Newline, // insert a newline at cursor
+	SmartNewline, // insert a newline with auto-indent (Shift-Enter)
 	Backspace, // delete char before cursor (may join lines)
 	DeleteChar, // delete char at cursor (may join lines)
 	KillToEOL, // delete from cursor to end of line; if at EOL, delete newline

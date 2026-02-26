@@ -1109,34 +1109,33 @@ cmd_theme_set_by_name(const CommandContext &ctx)
 static bool
 cmd_theme_set_by_name(CommandContext &ctx)
 {
-
 #  if defined(KTE_BUILD_GUI) && defined(KTE_USE_QT)
-// Qt GUI build: schedule theme change for frontend
-std::string name = ctx.arg;
-// trim spaces
-auto ltrim = [](std::string &s) {
-	s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
-		return !std::isspace(ch);
-	}));
-};
-auto rtrim = [](std::string &s) {
-	s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
-		return !std::isspace(ch);
-	}).base(), s.end());
-};
-ltrim (name);
-rtrim (name);
+	// Qt GUI build: schedule theme change for frontend
+	std::string name = ctx.arg;
+	// trim spaces
+	auto ltrim = [](std::string &s) {
+		s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}));
+	};
+	auto rtrim = [](std::string &s) {
+		s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
+			return !std::isspace(ch);
+		}).base(), s.end());
+	};
+	ltrim(name);
+	rtrim(name);
 	if (name.empty()) {
 		ctx.editor.SetStatus("theme: provide a name (e.g., nord, solarized-dark, gruvbox-light, eink)");
 		return true;
 	}
-kte::gThemeChangeRequest= name;
-kte::gThemeChangePending=true;
-ctx.editor.SetStatus (std::string("Theme requested: ") + name);
+	kte::gThemeChangeRequest = name;
+	kte::gThemeChangePending = true;
+	ctx.editor.SetStatus(std::string("Theme requested: ") + name);
 	return true;
 #  else
-(void) ctx;
-// No-op in terminal build
+	(void) ctx;
+	// No-op in terminal build
 	return true;
 #  endif
 }
@@ -2944,6 +2943,58 @@ cmd_newline(CommandContext &ctx)
 		u->Begin(UndoType::Newline);
 		u->commit();
 	}
+	ensure_cursor_visible(ctx.editor, *buf);
+	return true;
+}
+
+
+static bool
+cmd_smart_newline(CommandContext &ctx)
+{
+	Buffer *buf = ctx.editor.CurrentBuffer();
+	if (!buf) {
+		ctx.editor.SetStatus("No buffer to edit");
+		return false;
+	}
+
+	if (buf->IsReadOnly()) {
+		ctx.editor.SetStatus("Read-only buffer");
+		return true;
+	}
+
+	// Smart newline behavior: add a newline with the same indentation as the current line.
+	// Find indentation of current line
+	std::size_t y    = buf->Cury();
+	std::string line = buf->GetLineString(y);
+	std::string indent;
+	for (char c: line) {
+		if (c == ' ' || c == '\t') {
+			indent += c;
+		} else {
+			break;
+		}
+	}
+
+	// Perform standard newline first
+	if (!cmd_newline(ctx)) {
+		return false;
+	}
+
+	// Now insert the indentation at the new cursor position
+	if (!indent.empty()) {
+		std::size_t new_y = buf->Cury();
+		std::size_t new_x = buf->Curx();
+		buf->insert_text(static_cast<int>(new_y), static_cast<int>(new_x), indent);
+		buf->SetCursor(new_x + indent.size(), new_y);
+		buf->SetDirty(true);
+
+		if (auto *u = buf->Undo()) {
+			u->Begin(UndoType::Insert);
+			u->Append(indent);
+			u->commit();
+		}
+	}
+
 	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
 }
@@ -4806,6 +4857,9 @@ InstallDefaultCommands()
 		CommandId::InsertText, "insert", "Insert text at cursor (no newlines)", cmd_insert_text, false, true
 	});
 	CommandRegistry::Register({CommandId::Newline, "newline", "Insert newline at cursor", cmd_newline});
+	CommandRegistry::Register({
+		CommandId::SmartNewline, "smart-newline", "Insert newline with auto-indent", cmd_smart_newline
+	});
 	CommandRegistry::Register({CommandId::Backspace, "backspace", "Delete char before cursor", cmd_backspace});
 	CommandRegistry::Register({CommandId::DeleteChar, "delete-char", "Delete char at cursor", cmd_delete_char});
 	CommandRegistry::Register({CommandId::KillToEOL, "kill-to-eol", "Delete to end of line", cmd_kill_to_eol});

@@ -125,7 +125,11 @@ map_key(const SDL_Keycode key,
 	case SDLK_KP_ENTER:
 		k_prefix = false;
 		k_ctrl_pending = false;
-		out            = {true, CommandId::Newline, "", 0};
+		if (mod & KMOD_SHIFT) {
+			out = {true, CommandId::SmartNewline, "", 0};
+		} else {
+			out = {true, CommandId::Newline, "", 0};
+		}
 		return true;
 	case SDLK_ESCAPE:
 		k_prefix = false;
@@ -439,12 +443,14 @@ ImGuiInputHandler::ProcessSDLEvent(const SDL_Event &e)
 		}
 
 		// If editor universal argument is active, consume digit TEXTINPUT
-		if (ed_ && ed_
+		if (ed_ &&ed_
 
 
-		    ->
-		    UArg() != 0
-		) {
+		    
+		->
+		UArg() != 0
+		)
+		{
 			const char *txt = e.text.text;
 			if (txt && *txt) {
 				unsigned char c0 = static_cast<unsigned char>(txt[0]);
