@@ -117,6 +117,9 @@ main(int argc, char *argv[])
 {
 	std::setlocale(LC_ALL, "");
 
+	// Ensure the error handler (and its log file) is initialised early.
+	kte::ErrorHandler::Instance();
+
 	Editor editor;
 
 	// CLI parsing using getopt_long

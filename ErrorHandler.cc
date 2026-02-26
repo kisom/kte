@@ -20,6 +20,8 @@ ErrorHandler::ErrorHandler()
 				fs::create_directories(log_dir);
 			}
 			log_file_path_ = (log_dir / "error.log").string();
+			// Create the log file immediately so it exists in the state directory
+			ensure_log_file();
 		} catch (...) {
 			// If we can't create the directory, disable file logging
 			file_logging_enabled_ = false;
@@ -34,11 +36,7 @@ ErrorHandler::ErrorHandler()
 ErrorHandler::~ErrorHandler()
 {
 	std::lock_guard<std::mutex> lg(mtx_);
-	if (log_file_ &&log_file_
-	->
-	is_open()
-	)
-	{
+	if (log_file_ && log_file_->is_open()) {
 		log_file_->flush();
 		log_file_->close();
 	}
@@ -249,11 +247,8 @@ void
 ErrorHandler::ensure_log_file()
 {
 	// Must be called with mtx_ held
-	if (log_file_ &&log_file_
-	->
-	is_open()
-	)
-	return;
+	if (log_file_ && log_file_->is_open())
+		return;
 
 	if (log_file_path_.empty())
 		return;
@@ -313,6 +308,6 @@ std::uint64_t
 ErrorHandler::now_ns()
 {
 	using namespace std::chrono;
-	return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+	return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 }
 } // namespace kte
