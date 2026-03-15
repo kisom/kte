@@ -337,6 +337,18 @@ ImGuiInputHandler::ProcessSDLEvent(const SDL_Event &e)
 		SDL_Keymod mods         = SDL_Keymod(e.key.keysym.mod);
 		const SDL_Keycode key   = e.key.keysym.sym;
 
+		// New window: Cmd+N (macOS) or Ctrl+Shift+N (Linux/Windows)
+		{
+			const bool gui_n   = (mods & KMOD_GUI) && !(mods & KMOD_CTRL) && (key == SDLK_n);
+			const bool ctrl_sn = (mods & KMOD_CTRL) && (mods & KMOD_SHIFT) && (key == SDLK_n);
+			if (gui_n || ctrl_sn) {
+				std::lock_guard<std::mutex> lk(mu_);
+				q_.push(MappedInput{true, CommandId::NewWindow, std::string(), 0});
+				suppress_text_input_once_ = true;
+				return true;
+			}
+		}
+
 		// Handle Paste: Ctrl+V (Windows/Linux) or Cmd+V (macOS)
 		// Note: SDL defines letter keycodes in lowercase only (e.g., SDLK_v). Shift does not change keycode.
 		if ((mods & (KMOD_CTRL | KMOD_GUI)) && (key == SDLK_v)) {
@@ -446,7 +458,7 @@ ImGuiInputHandler::ProcessSDLEvent(const SDL_Event &e)
 		if (ed_ &&ed_
 
 
-		    
+		
 		->
 		UArg() != 0
 		)

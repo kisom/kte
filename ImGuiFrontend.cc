@@ -29,20 +29,85 @@
 
 static auto kGlslVersion = "#version 150"; // GL 3.2 core (macOS compatible)
 
+// ---------------------------------------------------------------------------
+// Helpers shared between Init and OpenNewWindow_
+// ---------------------------------------------------------------------------
+
+static void
+apply_syntax_to_buffer(Buffer *b, const GUIConfig &cfg)
+{
+	if (!b)
+		return;
+	if (cfg.syntax) {
+		b->SetSyntaxEnabled(true);
+		b->EnsureHighlighter();
+		if (auto *eng = b->Highlighter()) {
+			if (!eng->HasHighlighter()) {
+				std::string first_line;
+				const auto &rows = b->Rows();
+				if (!rows.empty())
+					first_line = static_cast<std::string>(rows[0]);
+				std::string ft = kte::HighlighterRegistry::DetectForPath(
+					b->Filename(), first_line);
+				if (!ft.empty()) {
+					eng->SetHighlighter(kte::HighlighterRegistry::CreateFor(ft));
+					b->SetFiletype(ft);
+					eng->InvalidateFrom(0);
+				} else {
+					eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
+					b->SetFiletype("");
+					eng->InvalidateFrom(0);
+				}
+			}
+		}
+	} else {
+		b->SetSyntaxEnabled(false);
+	}
+}
+
+
+// Update editor logical rows/cols from current ImGui metrics for a given display size.
+static void
+update_editor_dimensions(Editor &ed, float disp_w, float disp_h)
+{
+	float row_h = ImGui::GetTextLineHeightWithSpacing();
+	float ch_w  = ImGui::CalcTextSize("M").x;
+	if (row_h <= 0.0f)
+		row_h = 16.0f;
+	if (ch_w <= 0.0f)
+		ch_w = 8.0f;
+
+	const float pad_x = 6.0f;
+	const float pad_y = 6.0f;
+
+	float wanted_bar_h   = ImGui::GetFrameHeight();
+	float total_avail_h  = std::max(0.0f, disp_h - 2.0f * pad_y);
+	float actual_avail_h = std::floor((total_avail_h - wanted_bar_h) / row_h) * row_h;
+
+	auto content_rows = static_cast<std::size_t>(std::max(0.0f, std::floor(actual_avail_h / row_h)));
+	std::size_t rows  = content_rows + 1;
+
+	float avail_w    = std::max(0.0f, disp_w - 2.0f * pad_x);
+	std::size_t cols = static_cast<std::size_t>(std::max(1.0f, std::floor(avail_w / ch_w)));
+
+	if (rows != ed.Rows() || cols != ed.Cols()) {
+		ed.SetDimensions(rows, cols);
+	}
+}
+
+
 bool
 GUIFrontend::Init(int &argc, char **argv, Editor &ed)
 {
 	(void) argc;
 	(void) argv;
-	// Attach editor to input handler for editor-owned features (e.g., universal argument)
-	input_.Attach(&ed);
-	// editor dimensions will be initialized during the first Step() frame
+
+	// Load GUI configuration (fullscreen, columns/rows, font size, theme, background)
+	config_ = GUIConfig::Load();
+
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
 		return false;
 	}
-
-	// Load GUI configuration (fullscreen, columns/rows, font size, theme, background)
-	GUIConfig cfg = GUIConfig::Load();
 
 	// GL attributes for core profile
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
@@ -56,61 +121,55 @@ GUIFrontend::Init(int &argc, char **argv, Editor &ed)
 	// Compute desired window size from config
 	Uint32 win_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
 
-	if (cfg.fullscreen) {
-		// "Fullscreen": fill the usable bounds of the primary display.
-		// On macOS, do NOT use true fullscreen so the menu/status bar remains visible.
+	int init_w = 1280, init_h = 800;
+	if (config_.fullscreen) {
 		SDL_Rect usable{};
 		if (SDL_GetDisplayUsableBounds(0, &usable) == 0) {
-			width_  = usable.w;
-			height_ = usable.h;
+			init_w = usable.w;
+			init_h = usable.h;
 		}
 #if !defined(__APPLE__)
-		// Non-macOS: desktop fullscreen uses the current display resolution.
 		win_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
 #endif
 	} else {
-		// Windowed: width = columns * font_size, height = (rows * 2) * font_size
-		int w = cfg.columns * static_cast<int>(cfg.font_size);
-		int h = cfg.rows * static_cast<int>(cfg.font_size * 1.2);
-
-		// As a safety, clamp to display usable bounds if retrievable
+		int w = config_.columns * static_cast<int>(config_.font_size);
+		int h = config_.rows * static_cast<int>(config_.font_size * 1.2);
 		SDL_Rect usable{};
 		if (SDL_GetDisplayUsableBounds(0, &usable) == 0) {
 			w = std::min(w, usable.w);
 			h = std::min(h, usable.h);
 		}
-		width_  = std::max(320, w);
-		height_ = std::max(200, h);
+		init_w = std::max(320, w);
+		init_h = std::max(200, h);
 	}
 
 	SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1");
-	window_ = SDL_CreateWindow(
+	SDL_Window *win = SDL_CreateWindow(
 		"kge - kyle's graphical editor " KTE_VERSION_STR,
 		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-		width_, height_,
+		init_w, init_h,
 		win_flags);
-	if (!window_) {
+	if (!win) {
 		return false;
 	}
 
 	SDL_EnableScreenSaver();
 
 #if defined(__APPLE__)
-	// macOS: when "fullscreen" is requested, position the window at the
-	// top-left of the usable display area to mimic fullscreen while keeping
-	// the system menu bar visible.
-	if (cfg.fullscreen) {
+	if (config_.fullscreen) {
 		SDL_Rect usable{};
 		if (SDL_GetDisplayUsableBounds(0, &usable) == 0) {
-			SDL_SetWindowPosition(window_, usable.x, usable.y);
+			SDL_SetWindowPosition(win, usable.x, usable.y);
 		}
 	}
 #endif
 
-	gl_ctx_ = SDL_GL_CreateContext(window_);
-	if (!gl_ctx_)
+	SDL_GLContext gl_ctx = SDL_GL_CreateContext(win);
+	if (!gl_ctx) {
+		SDL_DestroyWindow(win);
 		return false;
-	SDL_GL_MakeCurrent(window_, gl_ctx_);
+	}
+	SDL_GL_MakeCurrent(win, gl_ctx);
 	SDL_GL_SetSwapInterval(1); // vsync
 
 	IMGUI_CHECKVERSION();
@@ -121,94 +180,54 @@ GUIFrontend::Init(int &argc, char **argv, Editor &ed)
 	if (const char *home = std::getenv("HOME")) {
 		namespace fs = std::filesystem;
 		fs::path config_dir = fs::path(home) / ".config" / "kte";
-
 		std::error_code ec;
 		if (!fs::exists(config_dir)) {
 			fs::create_directories(config_dir, ec);
 		}
-
 		if (fs::exists(config_dir)) {
 			static std::string ini_path = (config_dir / "imgui.ini").string();
 			io.IniFilename              = ini_path.c_str();
 		}
 	}
 
-	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
-	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 	ImGui::StyleColorsDark();
 
-	// Apply background mode and selected theme (default: Nord). Can be changed at runtime via commands.
-	if (cfg.background == "light")
+	if (config_.background == "light")
 		kte::SetBackgroundMode(kte::BackgroundMode::Light);
 	else
 		kte::SetBackgroundMode(kte::BackgroundMode::Dark);
-	kte::ApplyThemeByName(cfg.theme);
+	kte::ApplyThemeByName(config_.theme);
 
-	// Apply default syntax highlighting preference from GUI config to the current buffer
-	if (Buffer *b = ed.CurrentBuffer()) {
-		if (cfg.syntax) {
-			b->SetSyntaxEnabled(true);
-			// Ensure a highlighter is available if possible
-			b->EnsureHighlighter();
-			if (auto *eng = b->Highlighter()) {
-				if (!eng->HasHighlighter()) {
-					// Try detect from filename and first line; fall back to cpp or existing filetype
-					std::string first_line;
-					const auto &rows = b->Rows();
-					if (!rows.empty())
-						first_line = static_cast<std::string>(rows[0]);
-					std::string ft = kte::HighlighterRegistry::DetectForPath(
-						b->Filename(), first_line);
-					if (!ft.empty()) {
-						eng->SetHighlighter(kte::HighlighterRegistry::CreateFor(ft));
-						b->SetFiletype(ft);
-						eng->InvalidateFrom(0);
-					} else {
-						// Unknown/unsupported -> install a null highlighter to keep syntax enabled
-						eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-						b->SetFiletype("");
-						eng->InvalidateFrom(0);
-					}
-				}
-			}
-		} else {
-			b->SetSyntaxEnabled(false);
-		}
-	}
+	apply_syntax_to_buffer(ed.CurrentBuffer(), config_);
 
-	if (!ImGui_ImplSDL2_InitForOpenGL(window_, gl_ctx_))
+	if (!ImGui_ImplSDL2_InitForOpenGL(win, gl_ctx))
 		return false;
 	if (!ImGui_ImplOpenGL3_Init(kGlslVersion))
 		return false;
 
-	// Cache initial window size; logical rows/cols will be computed in Step() once a valid ImGui frame exists
+	// Cache initial window size
 	int w, h;
-	SDL_GetWindowSize(window_, &w, &h);
-	width_  = w;
-	height_ = h;
+	SDL_GetWindowSize(win, &w, &h);
+	init_w = w;
+	init_h = h;
 
 #if defined(__APPLE__)
-	// Workaround: On macOS Retina when starting maximized, we sometimes get a
-	// subtle input vs draw alignment mismatch until the first manual resize.
-	// Nudge the window size by 1px and back to trigger a proper internal
-	// recomputation, without visible impact.
 	if (w > 1 && h > 1) {
-		SDL_SetWindowSize(window_, w - 1, h - 1);
-		SDL_SetWindowSize(window_, w, h);
-		// Update cached size in case backend reports immediately
-		SDL_GetWindowSize(window_, &w, &h);
-		width_  = w;
-		height_ = h;
+		SDL_SetWindowSize(win, w - 1, h - 1);
+		SDL_SetWindowSize(win, w, h);
+		SDL_GetWindowSize(win, &w, &h);
+		init_w = w;
+		init_h = h;
 	}
 #endif
 
-	// Install embedded fonts into registry and load configured font
+	// Install embedded fonts
 	kte::Fonts::InstallDefaultFonts();
-	// Initialize font atlas using configured font name and size; fallback to embedded default helper
-	if (!kte::Fonts::FontRegistry::Instance().LoadFont(cfg.font, (float) cfg.font_size)) {
-		LoadGuiFont_(nullptr, (float) cfg.font_size);
-		// Record defaults in registry so subsequent size changes have a base
-		kte::Fonts::FontRegistry::Instance().RequestLoadFont("default", (float) cfg.font_size);
+	if (!kte::Fonts::FontRegistry::Instance().LoadFont(config_.font, (float) config_.font_size)) {
+		LoadGuiFont_(nullptr, (float) config_.font_size);
+		kte::Fonts::FontRegistry::Instance().RequestLoadFont("default", (float) config_.font_size);
 		std::string n;
 		float s = 0.0f;
 		if (kte::Fonts::FontRegistry::Instance().ConsumePendingFontRequest(n, s)) {
@@ -216,6 +235,68 @@ GUIFrontend::Init(int &argc, char **argv, Editor &ed)
 		}
 	}
 
+	// Build primary WindowState
+	auto ws    = std::make_unique<WindowState>();
+	ws->window = win;
+	ws->gl_ctx = gl_ctx;
+	ws->width  = init_w;
+	ws->height = init_h;
+	// The primary window's editor IS the editor passed in from main; we don't
+	// use ws->editor for the primary — instead we keep a pointer to &ed.
+	// We store a sentinel: window index 0 uses the external editor reference.
+	// To keep things simple, attach input to the passed-in editor.
+	ws->input.Attach(&ed);
+	windows_.push_back(std::move(ws));
+
+	return true;
+}
+
+
+bool
+GUIFrontend::OpenNewWindow_(Editor &primary)
+{
+	SDL_GL_MakeCurrent(windows_[0]->window, windows_[0]->gl_ctx);
+
+	Uint32 win_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+	int w            = windows_[0]->width;
+	int h            = windows_[0]->height;
+
+	SDL_Window *win = SDL_CreateWindow(
+		"kge - kyle's graphical editor " KTE_VERSION_STR,
+		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+		w, h,
+		win_flags);
+	if (!win)
+		return false;
+
+	SDL_GLContext gl_ctx = SDL_GL_CreateContext(win);
+	if (!gl_ctx) {
+		SDL_DestroyWindow(win);
+		return false;
+	}
+	SDL_GL_MakeCurrent(win, gl_ctx);
+	SDL_GL_SetSwapInterval(1);
+
+	// Secondary windows share the ImGui context already created in Init.
+	// We need to init the SDL2/OpenGL backends for this new window.
+	// ImGui_ImplSDL2 supports multiple windows via SDL_GetWindowID checks.
+	ImGui_ImplOpenGL3_Init(kGlslVersion);
+
+	auto ws    = std::make_unique<WindowState>();
+	ws->window = win;
+	ws->gl_ctx = gl_ctx;
+	ws->width  = w;
+	ws->height = h;
+
+	// Secondary editor shares the primary's buffer list
+	ws->editor.SetSharedBuffers(&primary.Buffers());
+	ws->editor.SetDimensions(primary.Rows(), primary.Cols());
+	ws->input.Attach(&ws->editor);
+
+	windows_.push_back(std::move(ws));
+
+	// Restore primary GL context as current
+	SDL_GL_MakeCurrent(windows_[0]->window, windows_[0]->gl_ctx);
 	return true;
 }
 
@@ -223,137 +304,216 @@ GUIFrontend::Init(int &argc, char **argv, Editor &ed)
 void
 GUIFrontend::Step(Editor &ed, bool &running)
 {
+	// --- Event processing ---
 	SDL_Event e;
 	while (SDL_PollEvent(&e)) {
 		ImGui_ImplSDL2_ProcessEvent(&e);
+
+		// Determine which window this event belongs to
+		Uint32 event_win_id = 0;
 		switch (e.type) {
-		case SDL_QUIT:
-			running = false;
-			break;
 		case SDL_WINDOWEVENT:
-			if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-				width_  = e.window.data1;
-				height_ = e.window.data2;
-			}
+			event_win_id = e.window.windowID;
+			break;
+		case SDL_KEYDOWN:
+		case SDL_KEYUP:
+			event_win_id = e.key.windowID;
+			break;
+		case SDL_TEXTINPUT:
+			event_win_id = e.text.windowID;
+			break;
+		case SDL_MOUSEBUTTONDOWN:
+		case SDL_MOUSEBUTTONUP:
+			event_win_id = e.button.windowID;
+			break;
+		case SDL_MOUSEWHEEL:
+			event_win_id = e.wheel.windowID;
 			break;
 		default:
 			break;
 		}
-		// Map input to commands
-		input_.ProcessSDLEvent(e);
+
+		if (e.type == SDL_QUIT) {
+			running = false;
+			break;
+		}
+
+		if (e.type == SDL_WINDOWEVENT) {
+			if (e.window.event == SDL_WINDOWEVENT_CLOSE) {
+				// Mark the window as dead; primary window close = quit
+				for (std::size_t i = 0; i < windows_.size(); ++i) {
+					if (SDL_GetWindowID(windows_[i]->window) == e.window.windowID) {
+						if (i == 0) {
+							running = false;
+						} else {
+							windows_[i]->alive = false;
+						}
+						break;
+					}
+				}
+			} else if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+				for (auto &ws: windows_) {
+					if (SDL_GetWindowID(ws->window) == e.window.windowID) {
+						ws->width  = e.window.data1;
+						ws->height = e.window.data2;
+						break;
+					}
+				}
+			}
+		}
+
+		// Route input events to the correct window's input handler
+		if (event_win_id != 0) {
+			// Primary window (index 0) uses the external editor &ed
+			if (windows_.size() > 0 &&
+			    SDL_GetWindowID(windows_[0]->window) == event_win_id) {
+				windows_[0]->input.ProcessSDLEvent(e);
+			} else {
+				for (std::size_t i = 1; i < windows_.size(); ++i) {
+					if (SDL_GetWindowID(windows_[i]->window) == event_win_id) {
+						windows_[i]->input.ProcessSDLEvent(e);
+						break;
+					}
+				}
+			}
+		}
 	}
 
-	// Apply pending font change before starting a new frame
+	if (!running)
+		return;
+
+	// --- Apply pending font change ---
 	{
 		std::string fname;
 		float fsize = 0.0f;
 		if (kte::Fonts::FontRegistry::Instance().ConsumePendingFontRequest(fname, fsize)) {
 			if (!fname.empty() && fsize > 0.0f) {
 				kte::Fonts::FontRegistry::Instance().LoadFont(fname, fsize);
-				// Recreate backend font texture
 				ImGui_ImplOpenGL3_DestroyFontsTexture();
 				ImGui_ImplOpenGL3_CreateFontsTexture();
 			}
 		}
 	}
 
-	// Start a new ImGui frame BEFORE processing commands so dimensions are correct
-	ImGui_ImplOpenGL3_NewFrame();
-	ImGui_ImplSDL2_NewFrame(window_);
-	ImGui::NewFrame();
+	// --- Step each window ---
+	// We iterate by index because OpenNewWindow_ may append to windows_.
+	for (std::size_t wi = 0; wi < windows_.size(); ++wi) {
+		WindowState &ws = *windows_[wi];
+		if (!ws.alive)
+			continue;
 
-	// Update editor logical rows/cols using current ImGui metrics and display size
-	{
-		ImGuiIO &io = ImGui::GetIO();
-		float row_h = ImGui::GetTextLineHeightWithSpacing();
-		float ch_w  = ImGui::CalcTextSize("M").x;
-		if (row_h <= 0.0f)
-			row_h = 16.0f;
-		if (ch_w <= 0.0f)
-			ch_w = 8.0f;
-		// Prefer ImGui IO display size; fall back to cached SDL window size
-		float disp_w = io.DisplaySize.x > 0 ? io.DisplaySize.x : static_cast<float>(width_);
-		float disp_h = io.DisplaySize.y > 0 ? io.DisplaySize.y : static_cast<float>(height_);
+		Editor &wed = (wi == 0) ? ed : ws.editor;
 
-		// Account for the GUI window padding and the status bar height used in ImGuiRenderer.
-		const float pad_x = 6.0f;
-		const float pad_y = 6.0f;
+		SDL_GL_MakeCurrent(ws.window, ws.gl_ctx);
 
-		// Use the same logic as ImGuiRenderer for available height and status bar reservation.
-		float wanted_bar_h   = ImGui::GetFrameHeight();
-		float total_avail_h  = std::max(0.0f, disp_h - 2.0f * pad_y);
-		float actual_avail_h = std::floor((total_avail_h - wanted_bar_h) / row_h) * row_h;
+		// Start a new ImGui frame
+		ImGui_ImplOpenGL3_NewFrame();
+		ImGui_ImplSDL2_NewFrame(ws.window);
+		ImGui::NewFrame();
 
-		// Visible content rows inside the scroll child
-		auto content_rows = static_cast<std::size_t>(std::max(0.0f, std::floor(actual_avail_h / row_h)));
-		// Editor::Rows includes the status line; add 1 back for it.
-		std::size_t rows = content_rows + 1;
-
-		float avail_w    = std::max(0.0f, disp_w - 2.0f * pad_x);
-		std::size_t cols = static_cast<std::size_t>(std::max(1.0f, std::floor(avail_w / ch_w)));
-
-		// Only update if changed to avoid churn
-		if (rows != ed.Rows() || cols != ed.Cols()) {
-			ed.SetDimensions(rows, cols);
+		// Update editor dimensions
+		{
+			ImGuiIO &io  = ImGui::GetIO();
+			float disp_w = io.DisplaySize.x > 0 ? io.DisplaySize.x : static_cast<float>(ws.width);
+			float disp_h = io.DisplaySize.y > 0 ? io.DisplaySize.y : static_cast<float>(ws.height);
+			update_editor_dimensions(wed, disp_w, disp_h);
 		}
-	}
 
-	// Allow deferred opens (including swap recovery prompts) to run.
-	ed.ProcessPendingOpens();
+		// Allow deferred opens
+		wed.ProcessPendingOpens();
 
-	// Execute pending mapped inputs (drain queue) AFTER dimensions are updated
-	for (;;) {
-		MappedInput mi;
-		if (!input_.Poll(mi))
-			break;
-		if (mi.hasCommand) {
-			// Track kill ring before and after to sync GUI clipboard when it changes
-			const std::string before = ed.KillRingHead();
-			Execute(ed, mi.id, mi.arg, mi.count);
-			const std::string after = ed.KillRingHead();
-			if (after != before && !after.empty()) {
-				// Update the system clipboard to mirror the kill ring head in GUI
-				SDL_SetClipboardText(after.c_str());
+		// Drain input queue
+		for (;;) {
+			MappedInput mi;
+			if (!ws.input.Poll(mi))
+				break;
+			if (mi.hasCommand) {
+				if (mi.id == CommandId::NewWindow) {
+					// Open a new window; handled after this loop
+					wed.SetNewWindowRequested(true);
+				} else {
+					const std::string before = wed.KillRingHead();
+					Execute(wed, mi.id, mi.arg, mi.count);
+					const std::string after = wed.KillRingHead();
+					if (after != before && !after.empty()) {
+						SDL_SetClipboardText(after.c_str());
+					}
+				}
 			}
 		}
+
+		// Handle new-window request
+		if (wed.NewWindowRequested()) {
+			wed.SetNewWindowRequested(false);
+			OpenNewWindow_(ed); // always share primary editor's buffers
+		}
+
+		if (wi == 0 && wed.QuitRequested()) {
+			running = false;
+		}
+
+		// Draw
+		ws.renderer.Draw(wed);
+
+		// Render
+		ImGui::Render();
+		int display_w, display_h;
+		SDL_GL_GetDrawableSize(ws.window, &display_w, &display_h);
+		glViewport(0, 0, display_w, display_h);
+		glClearColor(0.1f, 0.1f, 0.11f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
+		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+		SDL_GL_SwapWindow(ws.window);
 	}
 
-	if (ed.QuitRequested()) {
-		running = false;
+	// Remove dead secondary windows
+	for (auto it = windows_.begin() + 1; it != windows_.end();) {
+		if (!(*it)->alive) {
+			SDL_GL_MakeCurrent((*it)->window, (*it)->gl_ctx);
+			ImGui_ImplOpenGL3_Shutdown();
+			SDL_GL_DeleteContext((*it)->gl_ctx);
+			SDL_DestroyWindow((*it)->window);
+			it = windows_.erase(it);
+			// Restore primary context
+			SDL_GL_MakeCurrent(windows_[0]->window, windows_[0]->gl_ctx);
+		} else {
+			++it;
+		}
 	}
-
-	// No runtime font UI; always use embedded font.
-
-	// Draw editor UI
-	renderer_.Draw(ed);
-
-	// Render
-	ImGui::Render();
-	int display_w, display_h;
-	SDL_GL_GetDrawableSize(window_, &display_w, &display_h);
-	glViewport(0, 0, display_w, display_h);
-	glClearColor(0.1f, 0.1f, 0.11f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
-	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-	SDL_GL_SwapWindow(window_);
 }
 
 
 void
 GUIFrontend::Shutdown()
 {
+	// Destroy secondary windows first
+	for (std::size_t i = 1; i < windows_.size(); ++i) {
+		SDL_GL_MakeCurrent(windows_[i]->window, windows_[i]->gl_ctx);
+		ImGui_ImplOpenGL3_Shutdown();
+		SDL_GL_DeleteContext(windows_[i]->gl_ctx);
+		SDL_DestroyWindow(windows_[i]->window);
+	}
+	windows_.resize(std::min(windows_.size(), std::size_t(1)));
+
+	// Destroy primary window
+	if (!windows_.empty()) {
+		SDL_GL_MakeCurrent(windows_[0]->window, windows_[0]->gl_ctx);
+	}
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplSDL2_Shutdown();
 	ImGui::DestroyContext();
 
-	if (gl_ctx_) {
-		SDL_GL_DeleteContext(gl_ctx_);
-		gl_ctx_ = nullptr;
+	if (!windows_.empty()) {
+		if (windows_[0]->gl_ctx) {
+			SDL_GL_DeleteContext(windows_[0]->gl_ctx);
+			windows_[0]->gl_ctx = nullptr;
+		}
+		if (windows_[0]->window) {
+			SDL_DestroyWindow(windows_[0]->window);
+			windows_[0]->window = nullptr;
+		}
 	}
-	if (window_) {
-		SDL_DestroyWindow(window_);
-		window_ = nullptr;
-	}
+	windows_.clear();
 	SDL_Quit();
 }
 
@@ -367,7 +527,6 @@ GUIFrontend::LoadGuiFont_(const char * /*path*/, const float size_px)
 	ImFontConfig config;
 	config.MergeMode = false;
 
-	// Load Basic Latin + Latin Supplement
 	io.Fonts->AddFontFromMemoryCompressedTTF(
 		kte::Fonts::DefaultFontData,
 		kte::Fonts::DefaultFontSize,
@@ -375,7 +534,6 @@ GUIFrontend::LoadGuiFont_(const char * /*path*/, const float size_px)
 		&config,
 		io.Fonts->GetGlyphRangesDefault());
 
-	// Merge Greek and Mathematical symbols from IosevkaExtended
 	config.MergeMode                       = true;
 	static const ImWchar extended_ranges[] = {
 		0x0370, 0x03FF, // Greek and Coptic

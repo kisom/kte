@@ -246,6 +246,18 @@ public:
 	}
 
 
+	void SetNewWindowRequested(bool on)
+	{
+		new_window_requested_ = on;
+	}
+
+
+	[[nodiscard]] bool NewWindowRequested() const
+	{
+		return new_window_requested_;
+	}
+
+
 	void SetQuitConfirmPending(bool on)
 	{
 		quit_confirm_pending_ = on;
@@ -570,13 +582,22 @@ public:
 	// Direct access when needed (try to prefer methods above)
 	[[nodiscard]] const std::vector<Buffer> &Buffers() const
 	{
-		return buffers_;
+		return shared_buffers_ ? *shared_buffers_ : buffers_;
 	}
 
 
 	std::vector<Buffer> &Buffers()
 	{
-		return buffers_;
+		return shared_buffers_ ? *shared_buffers_ : buffers_;
+	}
+
+
+	// Share another editor's buffer list. When set, this editor operates on
+	// the provided vector instead of its own. Pass nullptr to detach.
+	void SetSharedBuffers(std::vector<Buffer> *shared)
+	{
+		shared_buffers_ = shared;
+		curbuf_         = 0;
 	}
 
 
@@ -628,7 +649,8 @@ private:
 	bool repeatable_   = false; // whether the next command is repeatable
 
 	std::vector<Buffer> buffers_;
-	std::size_t curbuf_ = 0; // index into buffers_
+	std::vector<Buffer> *shared_buffers_ = nullptr; // if set, use this instead of buffers_
+	std::size_t curbuf_                  = 0; // index into buffers_
 
 	// Swap journaling manager (lifetime = editor)
 	std::unique_ptr<kte::SwapManager> swap_;
@@ -639,6 +661,7 @@ private:
 
 	// Quit state
 	bool quit_requested_        = false;
+	bool new_window_requested_  = false;
 	bool quit_confirm_pending_  = false;
 	bool close_confirm_pending_ = false; // awaiting y/N to save-before-close
 	bool close_after_save_      = false; // if true, close buffer after successful Save/SaveAs

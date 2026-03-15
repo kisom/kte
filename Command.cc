@@ -116,6 +116,14 @@ ensure_cursor_visible(const Editor &ed, Buffer &buf)
 
 
 static bool
+cmd_new_window(CommandContext &ctx)
+{
+	ctx.editor.SetNewWindowRequested(true);
+	return true;
+}
+
+
+static bool
 cmd_center_on_cursor(CommandContext &ctx)
 {
 	Buffer *buf = ctx.editor.CurrentBuffer();
@@ -2254,10 +2262,8 @@ cmd_show_help(CommandContext &ctx)
 	};
 
 	auto populate_from_text = [](Buffer &b, const std::string &text) {
-		// Clear existing rows
-		while (b.Nrows() > 0) {
-			b.delete_row(0);
-		}
+		// Clear existing content
+		b.replace_all_bytes("");
 		// Parse text and insert rows
 		std::string line;
 		line.reserve(128);
@@ -5000,6 +5006,11 @@ InstallDefaultCommands()
 	// Viewport control
 	CommandRegistry::Register({
 		CommandId::CenterOnCursor, "center-on-cursor", "Center viewport on current line", cmd_center_on_cursor,
+		false, false
+	});
+	// GUI: new window
+	CommandRegistry::Register({
+		CommandId::NewWindow, "new-window", "Open a new editor window (GUI only)", cmd_new_window,
 		false, false
 	});
 }

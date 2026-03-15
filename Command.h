@@ -111,6 +111,8 @@ enum class CommandId {
 	SetOption, // generic ":set key=value" (v1: filetype=<lang>)
 	// Viewport control
 	CenterOnCursor, // center the viewport on the current cursor line (C-k k)
+	// GUI: open a new editor window sharing the same buffer list
+	NewWindow,
 };
 
 
