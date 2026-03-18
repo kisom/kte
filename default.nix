@@ -48,6 +48,7 @@ stdenv.mkDerivation {
     "-DBUILD_GUI=${if graphical then "ON" else "OFF"}"
     "-DKTE_USE_QT=${if graphical-qt then "ON" else "OFF"}"
     "-DCMAKE_BUILD_TYPE=Debug"
+    "-DKTE_STATIC_LINK=OFF"
   ];
 
   installPhase = ''
