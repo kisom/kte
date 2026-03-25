@@ -99,16 +99,22 @@ GUIConfig::LoadFromTOML(const std::string &path)
 	}
 
 	// [font]
+	bool explicit_code_font    = false;
+	bool explicit_writing_font = false;
 	if (auto sec = tbl["font"].as_table()) {
 		if (auto v = (*sec)["name"].value<std::string>())
 			font = *v;
 		if (auto v = (*sec)["size"].value<double>()) {
 			if (*v > 0.0) font_size = static_cast<float>(*v);
 		}
-		if (auto v = (*sec)["code"].value<std::string>())
+		if (auto v = (*sec)["code"].value<std::string>()) {
 			code_font = *v;
-		if (auto v = (*sec)["writing"].value<std::string>())
+			explicit_code_font = true;
+		}
+		if (auto v = (*sec)["writing"].value<std::string>()) {
 			writing_font = *v;
+			explicit_writing_font = true;
+		}
 	}
 
 	// [appearance]
@@ -131,6 +137,12 @@ GUIConfig::LoadFromTOML(const std::string &path)
 			syntax = *v;
 	}
 
+	// Default code_font to the main font if not explicitly set
+	if (!explicit_code_font)
+		code_font = font;
+	if (!explicit_writing_font && writing_font == "crimsonpro" && font != "default")
+		writing_font = font;
+
 	return true;
 }
 
@@ -141,6 +153,9 @@ GUIConfig::LoadFromINI(const std::string &path)
 	std::ifstream in(path);
 	if (!in.good())
 		return false;
+
+	bool explicit_code_font    = false;
+	bool explicit_writing_font = false;
 
 	std::string line;
 	while (std::getline(in, line)) {
@@ -198,8 +213,10 @@ GUIConfig::LoadFromINI(const std::string &path)
 			font = val;
 		} else if (key == "code_font") {
 			code_font = val;
+			explicit_code_font = true;
 		} else if (key == "writing_font") {
 			writing_font = val;
+			explicit_writing_font = true;
 		} else if (key == "theme") {
 			theme = val;
 		} else if (key == "background" || key == "bg") {
@@ -221,6 +238,14 @@ GUIConfig::LoadFromINI(const std::string &path)
 			}
 		}
 	}
+
+	// If code_font was not explicitly set, default it to the main font
+	// so that the edit-mode font switcher doesn't immediately switch away
+	// from the font loaded during Init.
+	if (!explicit_code_font)
+		code_font = font;
+	if (!explicit_writing_font && writing_font == "crimsonpro" && font != "default")
+		writing_font = font;
 
 	return true;
 }

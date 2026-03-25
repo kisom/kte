@@ -577,9 +577,7 @@ GUIFrontend::Step(Editor &ed, bool &running)
 				if (fr.CurrentFontName() != expected && fr.HasFont(expected)) {
 					float sz = fr.CurrentFontSize();
 					if (sz <= 0.0f) sz = config_.font_size;
-					fr.LoadFont(expected, sz);
-					ImGui_ImplOpenGL3_DestroyFontsTexture();
-					ImGui_ImplOpenGL3_CreateFontsTexture();
+					fr.RequestLoadFont(expected, sz);
 				}
 			}
 		}
