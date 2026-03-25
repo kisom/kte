@@ -565,7 +565,7 @@ GUIFrontend::Step(Editor &ed, bool &running)
 			running = false;
 		}
 
-		// Switch font based on current buffer's edit mode
+		// Switch font based on current buffer's edit mode (deferred to next frame)
 		{
 			Buffer *cur = wed.CurrentBuffer();
 			if (cur) {

@@ -1,6 +1,5 @@
 {
-  pkgs ? import <nixpkgs> {},
-  lib ? pkgs.lib,
+  lib,
   stdenv,
   cmake,
   ncurses,
@@ -10,9 +9,10 @@
   kdePackages,
   qt6Packages ? kdePackages.qt6Packages,
   installShellFiles,
+  copyDesktopItems,
+  makeDesktopItem,
   graphical ? false,
   graphical-qt ? false,
-  ...
 }:
 let
   cmakeContent = builtins.readFile ./CMakeLists.txt;
@@ -23,25 +23,29 @@ let
   version = builtins.head (builtins.match ".*set\\(KTE_VERSION \"(.+)\"\\).*" versionLine);
 in
 stdenv.mkDerivation {
-  pname = "kte";
+  pname = if graphical then (if graphical-qt then "kge-qt" else "kge") else "kte";
   inherit version;
 
   src = lib.cleanSource ./.;
 
   nativeBuildInputs = [
     cmake
-    ncurses
     installShellFiles
-  ]
-  ++ lib.optionals graphical [
+  ] ++ lib.optionals graphical [
+    copyDesktopItems
+  ] ++ lib.optionals graphical-qt [
+    qt6Packages.wrapQtAppsHook
+  ];
+
+  buildInputs = [
+    ncurses
+  ] ++ lib.optionals graphical [
     SDL2
     libGL
     xorg.libX11
-  ]
-  ++ lib.optionals graphical-qt [
+  ] ++ lib.optionals graphical-qt [
     kdePackages.qt6ct
     qt6Packages.qtbase
-    qt6Packages.wrapQtAppsHook
   ];
 
   cmakeFlags = [
@@ -49,6 +53,30 @@ stdenv.mkDerivation {
     "-DKTE_USE_QT=${if graphical-qt then "ON" else "OFF"}"
     "-DCMAKE_BUILD_TYPE=Debug"
     "-DKTE_STATIC_LINK=OFF"
+  ];
+
+  desktopItems = lib.optionals graphical [
+    (makeDesktopItem {
+      name = "kge";
+      desktopName = "kge";
+      genericName = "Text Editor";
+      comment = "kyle's graphical text editor";
+      exec = if graphical-qt then "kge-qt %F" else "kge %F";
+      icon = "kge";
+      terminal = false;
+      categories = [ "Utility" "TextEditor" "Development" ];
+      mimeTypes = [
+        "text/plain"
+        "text/x-c"
+        "text/x-c++"
+        "text/x-python"
+        "text/x-go"
+        "text/x-rust"
+        "application/json"
+        "text/markdown"
+        "text/x-shellscript"
+      ];
+    })
   ];
 
   installPhase = ''
@@ -59,14 +87,11 @@ stdenv.mkDerivation {
     installManPage ../docs/kte.1
 
     ${lib.optionalString graphical ''
-      mkdir -p $out/bin
-  
-    ${if graphical-qt then ''
+      ${if graphical-qt then ''
         cp kge $out/bin/kge-qt
       '' else ''
         cp kge $out/bin/kge
       ''}
-
       installManPage ../docs/kge.1
 
       mkdir -p $out/share/icons/hicolor/256x256/apps
@@ -75,4 +100,10 @@ stdenv.mkDerivation {
 
     runHook postInstall
   '';
+
+  meta = {
+    description = "kyle's text editor" + lib.optionalString graphical " (graphical)";
+    platforms = lib.platforms.unix;
+    mainProgram = if graphical then (if graphical-qt then "kge-qt" else "kge") else "kte";
+  };
 }
