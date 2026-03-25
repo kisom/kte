@@ -330,6 +330,7 @@ enum class ThemeId {
 	Amber = 10,
 	WeylandYutani = 11,
 	Orbital = 12,
+	Tufte = 13,
 };
 
 // Current theme tracking
@@ -377,6 +378,7 @@ BackgroundModeName()
 #include "themes/WeylandYutani.h"
 #include "themes/Zenburn.h"
 #include "themes/Orbital.h"
+#include "themes/Tufte.h"
 
 
 // Theme abstraction and registry (generalized theme system)
@@ -485,6 +487,28 @@ struct OrbitalTheme final : Theme {
 	ThemeId Id() override
 	{
 		return ThemeId::Orbital;
+	}
+};
+
+struct TufteTheme final : Theme {
+	[[nodiscard]] const char *Name() const override
+	{
+		return "tufte";
+	}
+
+
+	void Apply() const override
+	{
+		if (gBackgroundMode == BackgroundMode::Dark)
+			ApplyTufteDarkTheme();
+		else
+			ApplyTufteLightTheme();
+	}
+
+
+	ThemeId Id() override
+	{
+		return ThemeId::Tufte;
 	}
 };
 
@@ -657,7 +681,7 @@ ThemeRegistry()
 	static std::vector<std::unique_ptr<Theme> > reg;
 	if (reg.empty()) {
 		// Alphabetical by canonical name:
-		// amber, eink, everforest, gruvbox, kanagawa-paper, lcars, nord, old-book, orbital, plan9, solarized, weyland-yutani, zenburn
+		// amber, eink, everforest, gruvbox, kanagawa-paper, lcars, nord, old-book, orbital, plan9, solarized, tufte, weyland-yutani, zenburn
 		reg.emplace_back(std::make_unique<detail::AmberTheme>());
 		reg.emplace_back(std::make_unique<detail::EInkTheme>());
 		reg.emplace_back(std::make_unique<detail::EverforestTheme>());
@@ -669,6 +693,7 @@ ThemeRegistry()
 		reg.emplace_back(std::make_unique<detail::OrbitalTheme>());
 		reg.emplace_back(std::make_unique<detail::Plan9Theme>());
 		reg.emplace_back(std::make_unique<detail::SolarizedTheme>());
+		reg.emplace_back(std::make_unique<detail::TufteTheme>());
 		reg.emplace_back(std::make_unique<detail::WeylandYutaniTheme>());
 		reg.emplace_back(std::make_unique<detail::ZenburnTheme>());
 	}
@@ -855,10 +880,12 @@ ThemeIndexFromId(const ThemeId id)
 		return 9;
 	case ThemeId::Solarized:
 		return 10;
-	case ThemeId::WeylandYutani:
+	case ThemeId::Tufte:
 		return 11;
-	case ThemeId::Zenburn:
+	case ThemeId::WeylandYutani:
 		return 12;
+	case ThemeId::Zenburn:
+		return 13;
 	}
 	return 0;
 }
@@ -892,8 +919,10 @@ ThemeIdFromIndex(const size_t idx)
 	case 10:
 		return ThemeId::Solarized;
 	case 11:
-		return ThemeId::WeylandYutani;
+		return ThemeId::Tufte;
 	case 12:
+		return ThemeId::WeylandYutani;
+	case 13:
 		return ThemeId::Zenburn;
 	}
 }
