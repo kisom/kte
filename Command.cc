@@ -1357,6 +1357,10 @@ cmd_background_set(const CommandContext &ctx)
 	std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char c) {
 		return (char) std::tolower(c);
 	});
+	if (mode.empty()) {
+		ctx.editor.SetStatus(std::string("Background: ") + kte::BackgroundModeName());
+		return true;
+	}
 	if (mode != "light" && mode != "dark") {
 		ctx.editor.SetStatus("background: expected 'light' or 'dark'");
 		return true;

@@ -312,7 +312,7 @@ namespace kte {
 enum class BackgroundMode { Light, Dark };
 
 // Global background mode; default to Dark to match prior defaults
-static inline auto gBackgroundMode = BackgroundMode::Dark;
+inline auto gBackgroundMode = BackgroundMode::Dark;
 
 // Basic theme identifier (kept minimal; some ids are aliases)
 enum class ThemeId {
@@ -331,11 +331,12 @@ enum class ThemeId {
 	WeylandYutani = 11,
 	Orbital = 12,
 	Tufte = 13,
+	Leuchtturm = 14,
 };
 
 // Current theme tracking
-static inline auto gCurrentTheme             = ThemeId::Nord;
-static inline std::size_t gCurrentThemeIndex = 6; // Nord index
+inline auto gCurrentTheme             = ThemeId::Nord;
+inline std::size_t gCurrentThemeIndex = 7; // Nord index
 
 // Forward declarations for helpers used below
 static size_t ThemeIndexFromId(ThemeId id);
@@ -373,6 +374,7 @@ BackgroundModeName()
 #include "themes/Everforest.h"
 #include "themes/KanagawaPaper.h"
 #include "themes/LCARS.h"
+#include "themes/Leuchtturm.h"
 #include "themes/OldBook.h"
 #include "themes/Amber.h"
 #include "themes/WeylandYutani.h"
@@ -408,6 +410,28 @@ struct LCARSTheme final : Theme {
 	ThemeId Id() override
 	{
 		return ThemeId::LCARS;
+	}
+};
+
+struct LeuchtturmTheme final : Theme {
+	[[nodiscard]] const char *Name() const override
+	{
+		return "leuchtturm";
+	}
+
+
+	void Apply() const override
+	{
+		if (gBackgroundMode == BackgroundMode::Dark)
+			ApplyLeuchtturmDarkTheme();
+		else
+			ApplyLeuchtturmLightTheme();
+	}
+
+
+	ThemeId Id() override
+	{
+		return ThemeId::Leuchtturm;
 	}
 };
 
@@ -681,13 +705,14 @@ ThemeRegistry()
 	static std::vector<std::unique_ptr<Theme> > reg;
 	if (reg.empty()) {
 		// Alphabetical by canonical name:
-		// amber, eink, everforest, gruvbox, kanagawa-paper, lcars, nord, old-book, orbital, plan9, solarized, tufte, weyland-yutani, zenburn
+		// amber, eink, everforest, gruvbox, kanagawa-paper, lcars, leuchtturm, nord, old-book, orbital, plan9, solarized, tufte, weyland-yutani, zenburn
 		reg.emplace_back(std::make_unique<detail::AmberTheme>());
 		reg.emplace_back(std::make_unique<detail::EInkTheme>());
 		reg.emplace_back(std::make_unique<detail::EverforestTheme>());
 		reg.emplace_back(std::make_unique<detail::GruvboxTheme>());
 		reg.emplace_back(std::make_unique<detail::KanagawaPaperTheme>());
 		reg.emplace_back(std::make_unique<detail::LCARSTheme>());
+		reg.emplace_back(std::make_unique<detail::LeuchtturmTheme>());
 		reg.emplace_back(std::make_unique<detail::NordTheme>());
 		reg.emplace_back(std::make_unique<detail::OldBookTheme>());
 		reg.emplace_back(std::make_unique<detail::OrbitalTheme>());
@@ -870,22 +895,24 @@ ThemeIndexFromId(const ThemeId id)
 		return 4;
 	case ThemeId::LCARS:
 		return 5;
-	case ThemeId::Nord:
+	case ThemeId::Leuchtturm:
 		return 6;
-	case ThemeId::OldBook:
+	case ThemeId::Nord:
 		return 7;
-	case ThemeId::Orbital:
+	case ThemeId::OldBook:
 		return 8;
-	case ThemeId::Plan9:
+	case ThemeId::Orbital:
 		return 9;
-	case ThemeId::Solarized:
+	case ThemeId::Plan9:
 		return 10;
-	case ThemeId::Tufte:
+	case ThemeId::Solarized:
 		return 11;
-	case ThemeId::WeylandYutani:
+	case ThemeId::Tufte:
 		return 12;
-	case ThemeId::Zenburn:
+	case ThemeId::WeylandYutani:
 		return 13;
+	case ThemeId::Zenburn:
+		return 14;
 	}
 	return 0;
 }
@@ -909,32 +936,144 @@ ThemeIdFromIndex(const size_t idx)
 	case 5:
 		return ThemeId::LCARS;
 	case 6:
-		return ThemeId::Nord;
+		return ThemeId::Leuchtturm;
 	case 7:
-		return ThemeId::OldBook;
+		return ThemeId::Nord;
 	case 8:
-		return ThemeId::Orbital;
+		return ThemeId::OldBook;
 	case 9:
-		return ThemeId::Plan9;
+		return ThemeId::Orbital;
 	case 10:
-		return ThemeId::Solarized;
+		return ThemeId::Plan9;
 	case 11:
-		return ThemeId::Tufte;
+		return ThemeId::Solarized;
 	case 12:
-		return ThemeId::WeylandYutani;
+		return ThemeId::Tufte;
 	case 13:
+		return ThemeId::WeylandYutani;
+	case 14:
 		return ThemeId::Zenburn;
 	}
 }
 
 
 // --- Syntax palette (v1): map TokenKind to ink color per current theme/background ---
+
+// Tufte palette: high-contrast, restrained color. Body text is true black on
+// cream; only keywords and links get subtle color to avoid a "christmas tree."
+static ImVec4
+SyntaxInkTufte(const TokenKind k, const bool dark)
+{
+	const ImVec4 ink  = dark ? RGBA(0xEAE6DE) : RGBA(0x111111); // body text
+	const ImVec4 dim  = dark ? RGBA(0x8A8680) : RGBA(0x555555); // comments
+	const ImVec4 red  = dark ? RGBA(0xD06060) : RGBA(0x8B0000); // keywords/preproc
+	const ImVec4 navy = dark ? RGBA(0x7098C0) : RGBA(0x1A3A5C); // functions/links
+	const ImVec4 grn  = dark ? RGBA(0x8AAA6E) : RGBA(0x2E5E2E); // strings
+	switch (k) {
+	case TokenKind::Keyword:
+	case TokenKind::Preproc:
+		return red;
+	case TokenKind::String:
+	case TokenKind::Char:
+		return grn;
+	case TokenKind::Comment:
+		return dim;
+	case TokenKind::Function:
+		return navy;
+	case TokenKind::Number:
+	case TokenKind::Constant:
+		return dark ? RGBA(0xC8A85A) : RGBA(0x6B4C00);
+	case TokenKind::Type:
+		return dark ? RGBA(0xBBAA90) : RGBA(0x333333);
+	case TokenKind::Error:
+		return dark ? RGBA(0xD06060) : RGBA(0xCC0000);
+	default:
+		return ink;
+	}
+}
+
+
+// Leuchtturm palette: blue-black fountain pen ink with brass and bronze accents.
+// Body text is ink-colored; accents drawn from the pen metals.
+static ImVec4
+SyntaxInkLeuchtturm(const TokenKind k, const bool dark)
+{
+	const ImVec4 ink   = dark ? RGBA(0xE5DDD0) : RGBA(0x040720); // fountain pen ink
+	const ImVec4 dim   = dark ? RGBA(0x7A7060) : RGBA(0x6A6558); // comments
+	const ImVec4 brass = dark ? RGBA(0xB8A060) : RGBA(0x504518); // patinated brass
+	const ImVec4 bronze= dark ? RGBA(0xC08050) : RGBA(0x5C3010); // dark bronze
+	const ImVec4 navy  = dark ? RGBA(0x8898B0) : RGBA(0x1C2E4A); // deep navy
+	switch (k) {
+	case TokenKind::Keyword:
+	case TokenKind::Preproc:
+		return brass;
+	case TokenKind::String:
+	case TokenKind::Char:
+		return bronze;
+	case TokenKind::Comment:
+		return dim;
+	case TokenKind::Function:
+		return navy;
+	case TokenKind::Number:
+	case TokenKind::Constant:
+		return dark ? RGBA(0xA89060) : RGBA(0x483C10);
+	case TokenKind::Type:
+		return dark ? RGBA(0xC0B898) : RGBA(0x222238);
+	case TokenKind::Error:
+		return dark ? RGBA(0xD06060) : RGBA(0xA02020);
+	default:
+		return ink;
+	}
+}
+
+
+// Everforest: warm forest palette on dark green-gray (bg 0x2B3339).
+// Default comment color (0x616E88) is too dim; boost it and tune others.
+static ImVec4
+SyntaxInkEverforest(const TokenKind k)
+{
+	switch (k) {
+	case TokenKind::Keyword:
+		return RGBA(0xE67E80); // everforest red
+	case TokenKind::Type:
+		return RGBA(0xD699B6); // everforest purple
+	case TokenKind::String:
+	case TokenKind::Char:
+		return RGBA(0xA7C080); // everforest green
+	case TokenKind::Comment:
+		return RGBA(0x859289); // boosted from 0x616E88 for contrast
+	case TokenKind::Number:
+	case TokenKind::Constant:
+		return RGBA(0xD8A657); // everforest yellow/orange
+	case TokenKind::Preproc:
+		return RGBA(0xE69875); // everforest orange
+	case TokenKind::Function:
+		return RGBA(0x83C092); // everforest aqua
+	case TokenKind::Operator:
+	case TokenKind::Punctuation:
+		return RGBA(0xD3C6AA); // everforest fg
+	case TokenKind::Error:
+		return RGBA(0xE67E80);
+	default:
+		return RGBA(0xD3C6AA); // everforest fg
+	}
+}
+
+
 [[maybe_unused]] static ImVec4
 SyntaxInk(const TokenKind k)
 {
-	// Basic palettes for dark/light backgrounds; tuned for Nord-ish defaults
 	const bool dark = (GetBackgroundMode() == BackgroundMode::Dark);
-	// Base text
+
+	// Per-theme syntax palettes
+	if (gCurrentTheme == ThemeId::Tufte)
+		return SyntaxInkTufte(k, dark);
+	if (gCurrentTheme == ThemeId::Leuchtturm)
+		return SyntaxInkLeuchtturm(k, dark);
+	if (gCurrentTheme == ThemeId::Everforest)
+		return SyntaxInkEverforest(k);
+
+	// Default palettes tuned for Nord-ish themes
 	const ImVec4 def = dark ? RGBA(0xD8DEE9) : RGBA(0x2E3440);
 	switch (k) {
 	case TokenKind::Keyword:

@@ -527,6 +527,21 @@ GUIFrontend::Step(Editor &ed, bool &running)
 				if (mi.id == CommandId::NewWindow) {
 					// Open a new window; handled after this loop
 					wed.SetNewWindowRequested(true);
+				} else if (mi.id == CommandId::FontZoomIn ||
+				           mi.id == CommandId::FontZoomOut ||
+				           mi.id == CommandId::FontZoomReset) {
+					auto &fr = kte::Fonts::FontRegistry::Instance();
+					float cur = fr.CurrentFontSize();
+					if (cur <= 0.0f) cur = config_.font_size;
+					float next = cur;
+					if (mi.id == CommandId::FontZoomIn)
+						next = std::min(cur + 2.0f, 72.0f);
+					else if (mi.id == CommandId::FontZoomOut)
+						next = std::max(cur - 2.0f, 8.0f);
+					else
+						next = config_.font_size; // reset to config default
+					if (next != cur)
+						fr.RequestLoadFont(fr.CurrentFontName(), next);
 				} else {
 					const std::string before = wed.KillRingHead();
 					Execute(wed, mi.id, mi.arg, mi.count);

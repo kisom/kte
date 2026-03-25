@@ -349,6 +349,26 @@ ImGuiInputHandler::ProcessSDLEvent(const SDL_Event &e)
 			}
 		}
 
+		// Font zoom: Cmd+=/Cmd+-/Cmd+0 (macOS) or Ctrl+=/Ctrl+-/Ctrl+0
+		if ((mods & (KMOD_CTRL | KMOD_GUI)) && !(mods & KMOD_SHIFT)) {
+			bool is_zoom = true;
+			CommandId zoom_cmd = CommandId::FontZoomIn;
+			if (key == SDLK_EQUALS || key == SDLK_PLUS)
+				zoom_cmd = CommandId::FontZoomIn;
+			else if (key == SDLK_MINUS)
+				zoom_cmd = CommandId::FontZoomOut;
+			else if (key == SDLK_0)
+				zoom_cmd = CommandId::FontZoomReset;
+			else
+				is_zoom = false;
+			if (is_zoom) {
+				std::lock_guard<std::mutex> lk(mu_);
+				q_.push(MappedInput{true, zoom_cmd, std::string(), 0});
+				suppress_text_input_once_ = true;
+				return true;
+			}
+		}
+
 		// Handle Paste: Ctrl+V (Windows/Linux) or Cmd+V (macOS)
 		// Note: SDL defines letter keycodes in lowercase only (e.g., SDLK_v). Shift does not change keycode.
 		if ((mods & (KMOD_CTRL | KMOD_GUI)) && (key == SDLK_v)) {

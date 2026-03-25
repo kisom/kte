@@ -113,6 +113,10 @@ enum class CommandId {
 	CenterOnCursor, // center the viewport on the current cursor line (C-k k)
 	// GUI: open a new editor window sharing the same buffer list
 	NewWindow,
+	// GUI: font size controls
+	FontZoomIn,
+	FontZoomOut,
+	FontZoomReset,
 };
 
 
