@@ -69,20 +69,22 @@ Editor::SetStatus(const std::string &message)
 Buffer *
 Editor::CurrentBuffer()
 {
-	if (buffers_.empty() || curbuf_ >= buffers_.size()) {
+	auto &bufs = Buffers();
+	if (bufs.empty() || curbuf_ >= bufs.size()) {
 		return nullptr;
 	}
-	return &buffers_[curbuf_];
+	return &bufs[curbuf_];
 }
 
 
 const Buffer *
 Editor::CurrentBuffer() const
 {
-	if (buffers_.empty() || curbuf_ >= buffers_.size()) {
+	const auto &bufs = Buffers();
+	if (bufs.empty() || curbuf_ >= bufs.size()) {
 		return nullptr;
 	}
-	return &buffers_[curbuf_];
+	return &bufs[curbuf_];
 }
 
 
@@ -117,8 +119,9 @@ Editor::DisplayNameFor(const Buffer &buf) const
 
 	// Prepare list of other buffer paths
 	std::vector<std::vector<std::filesystem::path> > others;
-	others.reserve(buffers_.size());
-	for (const auto &b: buffers_) {
+	const auto &bufs = Buffers();
+	others.reserve(bufs.size());
+	for (const auto &b: bufs) {
 		if (&b == &buf)
 			continue;
 		if (b.Filename().empty())
@@ -161,41 +164,44 @@ Editor::DisplayNameFor(const Buffer &buf) const
 std::size_t
 Editor::AddBuffer(const Buffer &buf)
 {
-	buffers_.push_back(buf);
+	auto &bufs = Buffers();
+	bufs.push_back(buf);
 	// Attach swap recorder
 	if (swap_) {
-		swap_->Attach(&buffers_.back());
-		buffers_.back().SetSwapRecorder(swap_->RecorderFor(&buffers_.back()));
+		swap_->Attach(&bufs.back());
+		bufs.back().SetSwapRecorder(swap_->RecorderFor(&bufs.back()));
 	}
-	if (buffers_.size() == 1) {
+	if (bufs.size() == 1) {
 		curbuf_ = 0;
 	}
-	return buffers_.size() - 1;
+	return bufs.size() - 1;
 }
 
 
 std::size_t
 Editor::AddBuffer(Buffer &&buf)
 {
-	buffers_.push_back(std::move(buf));
+	auto &bufs = Buffers();
+	bufs.push_back(std::move(buf));
 	if (swap_) {
-		swap_->Attach(&buffers_.back());
-		buffers_.back().SetSwapRecorder(swap_->RecorderFor(&buffers_.back()));
+		swap_->Attach(&bufs.back());
+		bufs.back().SetSwapRecorder(swap_->RecorderFor(&bufs.back()));
 	}
-	if (buffers_.size() == 1) {
+	if (bufs.size() == 1) {
 		curbuf_ = 0;
 	}
-	return buffers_.size() - 1;
+	return bufs.size() - 1;
 }
 
 
 bool
 Editor::OpenFile(const std::string &path, std::string &err)
 {
-	// If there is exactly one unnamed, empty, clean buffer, reuse it instead
-	// of creating a new one.
-	if (buffers_.size() == 1) {
-		Buffer &cur                  = buffers_[curbuf_];
+	// If the current buffer is an unnamed, empty, clean scratch buffer, reuse
+	// it instead of creating a new one.
+	auto &bufs_ref = Buffers();
+	if (!bufs_ref.empty() && curbuf_ < bufs_ref.size()) {
+		Buffer &cur                  = bufs_ref[curbuf_];
 		const bool unnamed           = cur.Filename().empty() && !cur.IsFileBacked();
 		const bool clean             = !cur.Dirty();
 		const std::size_t nrows      = cur.Nrows();
@@ -268,7 +274,7 @@ Editor::OpenFile(const std::string &path, std::string &err)
 	// Add as a new buffer and switch to it
 	std::size_t idx = AddBuffer(std::move(b));
 	if (swap_) {
-		swap_->NotifyFilenameChanged(buffers_[idx]);
+		swap_->NotifyFilenameChanged(Buffers()[idx]);
 	}
 	SwitchTo(idx);
 	// Defensive: ensure any active prompt is closed after a successful open
@@ -446,12 +452,13 @@ Editor::ProcessPendingOpens()
 bool
 Editor::SwitchTo(std::size_t index)
 {
-	if (index >= buffers_.size()) {
+	auto &bufs = Buffers();
+	if (index >= bufs.size()) {
 		return false;
 	}
 	curbuf_ = index;
 	// Robustness: ensure a valid highlighter is installed when switching buffers
-	Buffer &b = buffers_[curbuf_];
+	Buffer &b = bufs[curbuf_];
 	if (b.SyntaxEnabled()) {
 		b.EnsureHighlighter();
 		if (auto *eng = b.Highlighter()) {
@@ -478,21 +485,22 @@ Editor::SwitchTo(std::size_t index)
 bool
 Editor::CloseBuffer(std::size_t index)
 {
-	if (index >= buffers_.size()) {
+	auto &bufs = Buffers();
+	if (index >= bufs.size()) {
 		return false;
 	}
 	if (swap_) {
 		// Always remove swap file when closing a buffer on normal exit.
 		// Swap files are for crash recovery; on clean close, we don't need them.
 		// This prevents stale swap files from accumulating (e.g., when used as git editor).
-		swap_->Detach(&buffers_[index], true);
-		buffers_[index].SetSwapRecorder(nullptr);
+		swap_->Detach(&bufs[index], true);
+		bufs[index].SetSwapRecorder(nullptr);
 	}
-	buffers_.erase(buffers_.begin() + static_cast<std::ptrdiff_t>(index));
-	if (buffers_.empty()) {
+	bufs.erase(bufs.begin() + static_cast<std::ptrdiff_t>(index));
+	if (bufs.empty()) {
 		curbuf_ = 0;
-	} else if (curbuf_ >= buffers_.size()) {
-		curbuf_ = buffers_.size() - 1;
+	} else if (curbuf_ >= bufs.size()) {
+		curbuf_ = bufs.size() - 1;
 	}
 	return true;
 }
@@ -516,7 +524,12 @@ Editor::Reset()
 	// Reset close-confirm/save state
 	close_confirm_pending_ = false;
 	close_after_save_      = false;
-	buffers_.clear();
+	auto &bufs = Buffers();
+	if (swap_) {
+		for (auto &buf : bufs)
+			swap_->Detach(&buf, true);
+	}
+	bufs.clear();
 	curbuf_ = 0;
 }
 

@@ -13,6 +13,7 @@
 
 
 struct SDL_Window;
+struct ImGuiContext;
 typedef void *SDL_GLContext;
 
 class GUIFrontend final : public Frontend {
@@ -28,10 +29,13 @@ public:
 	void Shutdown() override;
 
 private:
-	// Per-window state
+	// Per-window state — each window owns its own ImGui context so that
+	// NewFrame/Render cycles are fully independent (ImGui requires exactly
+	// one NewFrame per Render per context).
 	struct WindowState {
-		SDL_Window *window   = nullptr;
-		SDL_GLContext gl_ctx = nullptr;
+		SDL_Window *window       = nullptr;
+		SDL_GLContext gl_ctx     = nullptr;
+		ImGuiContext *imgui_ctx  = nullptr;
 		ImGuiInputHandler input{};
 		ImGuiRenderer renderer{};
 		Editor editor{};
@@ -44,6 +48,9 @@ private:
 	// Returns false if window creation fails.
 	bool OpenNewWindow_(Editor &primary);
 
+	// Initialize fonts and theme for a given ImGui context (must be current).
+	void SetupImGuiStyle_();
+	static void DestroyWindowResources_(WindowState &ws);
 	static bool LoadGuiFont_(const char *path, float size_px);
 
 	GUIConfig config_{};

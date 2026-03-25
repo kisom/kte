@@ -30,7 +30,7 @@
 static auto kGlslVersion = "#version 150"; // GL 3.2 core (macOS compatible)
 
 // ---------------------------------------------------------------------------
-// Helpers shared between Init and OpenNewWindow_
+// Helpers
 // ---------------------------------------------------------------------------
 
 static void
@@ -92,6 +92,63 @@ update_editor_dimensions(Editor &ed, float disp_w, float disp_h)
 
 	if (rows != ed.Rows() || cols != ed.Cols()) {
 		ed.SetDimensions(rows, cols);
+	}
+}
+
+
+// ---------------------------------------------------------------------------
+// SetupImGuiStyle_ — apply theme, fonts, and flags to the current ImGui context
+// ---------------------------------------------------------------------------
+void
+GUIFrontend::SetupImGuiStyle_()
+{
+	ImGuiIO &io = ImGui::GetIO();
+
+	// Disable imgui.ini for secondary windows (primary sets its own path in Init)
+	io.IniFilename = nullptr;
+
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+	ImGui::StyleColorsDark();
+
+	if (config_.background == "light")
+		kte::SetBackgroundMode(kte::BackgroundMode::Light);
+	else
+		kte::SetBackgroundMode(kte::BackgroundMode::Dark);
+	kte::ApplyThemeByName(config_.theme);
+
+	// Load fonts into this context's font atlas.
+	// Font registry is global and already populated by Init; just load into this atlas.
+	if (!kte::Fonts::FontRegistry::Instance().LoadFont(config_.font, (float) config_.font_size)) {
+		LoadGuiFont_(nullptr, (float) config_.font_size);
+	}
+}
+
+
+// ---------------------------------------------------------------------------
+// Destroy a single window's ImGui context + SDL/GL resources
+// ---------------------------------------------------------------------------
+void
+GUIFrontend::DestroyWindowResources_(WindowState &ws)
+{
+	if (ws.imgui_ctx) {
+		// Must activate this window's GL context before shutting down the
+		// OpenGL3 backend, otherwise it deletes another context's resources.
+		if (ws.window && ws.gl_ctx)
+			SDL_GL_MakeCurrent(ws.window, ws.gl_ctx);
+		ImGui::SetCurrentContext(ws.imgui_ctx);
+		ImGui_ImplOpenGL3_Shutdown();
+		ImGui_ImplSDL2_Shutdown();
+		ImGui::DestroyContext(ws.imgui_ctx);
+		ws.imgui_ctx = nullptr;
+	}
+	if (ws.gl_ctx) {
+		SDL_GL_DeleteContext(ws.gl_ctx);
+		ws.gl_ctx = nullptr;
+	}
+	if (ws.window) {
+		SDL_DestroyWindow(ws.window);
+		ws.window = nullptr;
 	}
 }
 
@@ -172,9 +229,10 @@ GUIFrontend::Init(int &argc, char **argv, Editor &ed)
 	SDL_GL_MakeCurrent(win, gl_ctx);
 	SDL_GL_SetSwapInterval(1); // vsync
 
+	// Create primary ImGui context
 	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImGuiIO &io = ImGui::GetIO();
+	ImGuiContext *imgui_ctx = ImGui::CreateContext();
+	ImGuiIO &io             = ImGui::GetIO();
 
 	// Set custom ini filename path to ~/.config/kte/imgui.ini
 	if (const char *home = std::getenv("HOME")) {
@@ -236,11 +294,12 @@ GUIFrontend::Init(int &argc, char **argv, Editor &ed)
 	}
 
 	// Build primary WindowState
-	auto ws    = std::make_unique<WindowState>();
-	ws->window = win;
-	ws->gl_ctx = gl_ctx;
-	ws->width  = init_w;
-	ws->height = init_h;
+	auto ws       = std::make_unique<WindowState>();
+	ws->window    = win;
+	ws->gl_ctx    = gl_ctx;
+	ws->imgui_ctx = imgui_ctx;
+	ws->width     = init_w;
+	ws->height    = init_h;
 	// The primary window's editor IS the editor passed in from main; we don't
 	// use ws->editor for the primary — instead we keep a pointer to &ed.
 	// We store a sentinel: window index 0 uses the external editor reference.
@@ -255,8 +314,6 @@ GUIFrontend::Init(int &argc, char **argv, Editor &ed)
 bool
 GUIFrontend::OpenNewWindow_(Editor &primary)
 {
-	SDL_GL_MakeCurrent(windows_[0]->window, windows_[0]->gl_ctx);
-
 	Uint32 win_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
 	int w            = windows_[0]->width;
 	int h            = windows_[0]->height;
@@ -277,25 +334,48 @@ GUIFrontend::OpenNewWindow_(Editor &primary)
 	SDL_GL_MakeCurrent(win, gl_ctx);
 	SDL_GL_SetSwapInterval(1);
 
-	// Secondary windows share the ImGui context already created in Init.
-	// We need to init the SDL2/OpenGL backends for this new window.
-	// ImGui_ImplSDL2 supports multiple windows via SDL_GetWindowID checks.
-	ImGui_ImplOpenGL3_Init(kGlslVersion);
+	// Each window gets its own ImGui context — ImGui requires exactly one
+	// NewFrame/Render cycle per context per frame.
+	ImGuiContext *imgui_ctx = ImGui::CreateContext();
+	ImGui::SetCurrentContext(imgui_ctx);
 
-	auto ws    = std::make_unique<WindowState>();
-	ws->window = win;
-	ws->gl_ctx = gl_ctx;
-	ws->width  = w;
-	ws->height = h;
+	SetupImGuiStyle_();
+
+	if (!ImGui_ImplSDL2_InitForOpenGL(win, gl_ctx)) {
+		ImGui::DestroyContext(imgui_ctx);
+		SDL_GL_DeleteContext(gl_ctx);
+		SDL_DestroyWindow(win);
+		return false;
+	}
+	if (!ImGui_ImplOpenGL3_Init(kGlslVersion)) {
+		ImGui_ImplSDL2_Shutdown();
+		ImGui::DestroyContext(imgui_ctx);
+		SDL_GL_DeleteContext(gl_ctx);
+		SDL_DestroyWindow(win);
+		return false;
+	}
+
+	auto ws       = std::make_unique<WindowState>();
+	ws->window    = win;
+	ws->gl_ctx    = gl_ctx;
+	ws->imgui_ctx = imgui_ctx;
+	ws->width     = w;
+	ws->height    = h;
 
 	// Secondary editor shares the primary's buffer list
 	ws->editor.SetSharedBuffers(&primary.Buffers());
 	ws->editor.SetDimensions(primary.Rows(), primary.Cols());
+
+	// Open a new untitled buffer and switch to it in the new window.
+	ws->editor.AddBuffer(Buffer());
+	ws->editor.SwitchTo(ws->editor.BufferCount() - 1);
+
 	ws->input.Attach(&ws->editor);
 
 	windows_.push_back(std::move(ws));
 
-	// Restore primary GL context as current
+	// Restore primary context
+	ImGui::SetCurrentContext(windows_[0]->imgui_ctx);
 	SDL_GL_MakeCurrent(windows_[0]->window, windows_[0]->gl_ctx);
 	return true;
 }
@@ -305,10 +385,10 @@ void
 GUIFrontend::Step(Editor &ed, bool &running)
 {
 	// --- Event processing ---
+	// SDL events carry a window ID. Route each event to the correct window's
+	// ImGui context (for ImGui_ImplSDL2_ProcessEvent) and input handler.
 	SDL_Event e;
 	while (SDL_PollEvent(&e)) {
-		ImGui_ImplSDL2_ProcessEvent(&e);
-
 		// Determine which window this event belongs to
 		Uint32 event_win_id = 0;
 		switch (e.type) {
@@ -329,6 +409,9 @@ GUIFrontend::Step(Editor &ed, bool &running)
 		case SDL_MOUSEWHEEL:
 			event_win_id = e.wheel.windowID;
 			break;
+		case SDL_MOUSEMOTION:
+			event_win_id = e.motion.windowID;
+			break;
 		default:
 			break;
 		}
@@ -338,59 +421,67 @@ GUIFrontend::Step(Editor &ed, bool &running)
 			break;
 		}
 
+		// Find the target window and route the event to its ImGui context
+		WindowState *target = nullptr;
+		std::size_t target_idx = 0;
+		if (event_win_id != 0) {
+			for (std::size_t i = 0; i < windows_.size(); ++i) {
+				if (SDL_GetWindowID(windows_[i]->window) == event_win_id) {
+					target     = windows_[i].get();
+					target_idx = i;
+					break;
+				}
+			}
+		}
+
+		if (target && target->imgui_ctx) {
+			// Set this window's ImGui context so ImGui_ImplSDL2_ProcessEvent
+			// updates the correct IO state.
+			ImGui::SetCurrentContext(target->imgui_ctx);
+			ImGui_ImplSDL2_ProcessEvent(&e);
+		}
+
 		if (e.type == SDL_WINDOWEVENT) {
 			if (e.window.event == SDL_WINDOWEVENT_CLOSE) {
-				// Mark the window as dead; primary window close = quit
-				for (std::size_t i = 0; i < windows_.size(); ++i) {
-					if (SDL_GetWindowID(windows_[i]->window) == e.window.windowID) {
-						if (i == 0) {
-							running = false;
-						} else {
-							windows_[i]->alive = false;
-						}
-						break;
+				if (target) {
+					if (target_idx == 0) {
+						running = false;
+					} else {
+						target->alive = false;
 					}
 				}
 			} else if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-				for (auto &ws: windows_) {
-					if (SDL_GetWindowID(ws->window) == e.window.windowID) {
-						ws->width  = e.window.data1;
-						ws->height = e.window.data2;
-						break;
-					}
+				if (target) {
+					target->width  = e.window.data1;
+					target->height = e.window.data2;
 				}
 			}
 		}
 
 		// Route input events to the correct window's input handler
-		if (event_win_id != 0) {
-			// Primary window (index 0) uses the external editor &ed
-			if (windows_.size() > 0 &&
-			    SDL_GetWindowID(windows_[0]->window) == event_win_id) {
-				windows_[0]->input.ProcessSDLEvent(e);
-			} else {
-				for (std::size_t i = 1; i < windows_.size(); ++i) {
-					if (SDL_GetWindowID(windows_[i]->window) == event_win_id) {
-						windows_[i]->input.ProcessSDLEvent(e);
-						break;
-					}
-				}
-			}
+		if (target) {
+			target->input.ProcessSDLEvent(e);
 		}
 	}
 
 	if (!running)
 		return;
 
-	// --- Apply pending font change ---
+	// --- Apply pending font change (to all contexts) ---
 	{
 		std::string fname;
 		float fsize = 0.0f;
 		if (kte::Fonts::FontRegistry::Instance().ConsumePendingFontRequest(fname, fsize)) {
 			if (!fname.empty() && fsize > 0.0f) {
-				kte::Fonts::FontRegistry::Instance().LoadFont(fname, fsize);
-				ImGui_ImplOpenGL3_DestroyFontsTexture();
-				ImGui_ImplOpenGL3_CreateFontsTexture();
+				for (auto &ws : windows_) {
+					if (!ws->alive || !ws->imgui_ctx)
+						continue;
+					ImGui::SetCurrentContext(ws->imgui_ctx);
+					SDL_GL_MakeCurrent(ws->window, ws->gl_ctx);
+					kte::Fonts::FontRegistry::Instance().LoadFont(fname, fsize);
+					ImGui_ImplOpenGL3_DestroyFontsTexture();
+					ImGui_ImplOpenGL3_CreateFontsTexture();
+				}
 			}
 		}
 	}
@@ -404,7 +495,12 @@ GUIFrontend::Step(Editor &ed, bool &running)
 
 		Editor &wed = (wi == 0) ? ed : ws.editor;
 
+		// Shared buffer list may have been modified by another window.
+		wed.ValidateBufferIndex();
+
+		// Activate this window's GL and ImGui contexts
 		SDL_GL_MakeCurrent(ws.window, ws.gl_ctx);
+		ImGui::SetCurrentContext(ws.imgui_ctx);
 
 		// Start a new ImGui frame
 		ImGui_ImplOpenGL3_NewFrame();
@@ -442,12 +538,6 @@ GUIFrontend::Step(Editor &ed, bool &running)
 			}
 		}
 
-		// Handle new-window request
-		if (wed.NewWindowRequested()) {
-			wed.SetNewWindowRequested(false);
-			OpenNewWindow_(ed); // always share primary editor's buffers
-		}
-
 		if (wi == 0 && wed.QuitRequested()) {
 			running = false;
 		}
@@ -466,19 +556,30 @@ GUIFrontend::Step(Editor &ed, bool &running)
 		SDL_GL_SwapWindow(ws.window);
 	}
 
+	// Handle deferred new-window requests (must happen outside the render loop
+	// to avoid corrupting an in-progress ImGui frame).
+	for (std::size_t wi = 0; wi < windows_.size(); ++wi) {
+		Editor &wed = (wi == 0) ? ed : windows_[wi]->editor;
+		if (wed.NewWindowRequested()) {
+			wed.SetNewWindowRequested(false);
+			OpenNewWindow_(ed);
+		}
+	}
+
 	// Remove dead secondary windows
 	for (auto it = windows_.begin() + 1; it != windows_.end();) {
 		if (!(*it)->alive) {
-			SDL_GL_MakeCurrent((*it)->window, (*it)->gl_ctx);
-			ImGui_ImplOpenGL3_Shutdown();
-			SDL_GL_DeleteContext((*it)->gl_ctx);
-			SDL_DestroyWindow((*it)->window);
+			DestroyWindowResources_(**it);
 			it = windows_.erase(it);
-			// Restore primary context
-			SDL_GL_MakeCurrent(windows_[0]->window, windows_[0]->gl_ctx);
 		} else {
 			++it;
 		}
+	}
+
+	// Restore primary context
+	if (!windows_.empty()) {
+		ImGui::SetCurrentContext(windows_[0]->imgui_ctx);
+		SDL_GL_MakeCurrent(windows_[0]->window, windows_[0]->gl_ctx);
 	}
 }
 
@@ -486,32 +587,9 @@ GUIFrontend::Step(Editor &ed, bool &running)
 void
 GUIFrontend::Shutdown()
 {
-	// Destroy secondary windows first
-	for (std::size_t i = 1; i < windows_.size(); ++i) {
-		SDL_GL_MakeCurrent(windows_[i]->window, windows_[i]->gl_ctx);
-		ImGui_ImplOpenGL3_Shutdown();
-		SDL_GL_DeleteContext(windows_[i]->gl_ctx);
-		SDL_DestroyWindow(windows_[i]->window);
-	}
-	windows_.resize(std::min(windows_.size(), std::size_t(1)));
-
-	// Destroy primary window
-	if (!windows_.empty()) {
-		SDL_GL_MakeCurrent(windows_[0]->window, windows_[0]->gl_ctx);
-	}
-	ImGui_ImplOpenGL3_Shutdown();
-	ImGui_ImplSDL2_Shutdown();
-	ImGui::DestroyContext();
-
-	if (!windows_.empty()) {
-		if (windows_[0]->gl_ctx) {
-			SDL_GL_DeleteContext(windows_[0]->gl_ctx);
-			windows_[0]->gl_ctx = nullptr;
-		}
-		if (windows_[0]->window) {
-			SDL_DestroyWindow(windows_[0]->window);
-			windows_[0]->window = nullptr;
-		}
+	// Destroy all windows (secondary first, then primary)
+	for (auto it = windows_.rbegin(); it != windows_.rend(); ++it) {
+		DestroyWindowResources_(**it);
 	}
 	windows_.clear();
 	SDL_Quit();

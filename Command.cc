@@ -752,6 +752,8 @@ cmd_save_and_quit(CommandContext &ctx)
 		if (buf->IsFileBacked()) {
 			if (buf->Save(err)) {
 				buf->SetDirty(false);
+				if (auto *sm = ctx.editor.Swap())
+					sm->ResetJournal(*buf);
 			} else {
 				ctx.editor.SetStatus(err);
 				return false;
@@ -759,6 +761,8 @@ cmd_save_and_quit(CommandContext &ctx)
 		} else if (!buf->Filename().empty()) {
 			if (buf->SaveAs(buf->Filename(), err)) {
 				buf->SetDirty(false);
+				if (auto *sm = ctx.editor.Swap())
+					sm->ResetJournal(*buf);
 			} else {
 				ctx.editor.SetStatus(err);
 				return false;
@@ -2568,6 +2572,10 @@ cmd_newline(CommandContext &ctx)
 							ctx.editor.SetStatus(err);
 						} else {
 							buf->SetDirty(false);
+							if (auto *sm = ctx.editor.Swap()) {
+								sm->NotifyFilenameChanged(*buf);
+								sm->ResetJournal(*buf);
+							}
 							ctx.editor.SetStatus("Saved as " + value);
 							if (auto *u = buf->Undo())
 								u->mark_saved();

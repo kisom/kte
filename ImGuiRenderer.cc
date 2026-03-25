@@ -76,19 +76,16 @@ ImGuiRenderer::Draw(Editor &ed)
 		// Two-way sync between Buffer::Rowoffs and ImGui scroll position:
 		// - If command layer changed Buffer::Rowoffs since last frame, drive ImGui scroll from it.
 		// - Otherwise, propagate ImGui scroll to Buffer::Rowoffs so command layer has an up-to-date view.
-		static long prev_buf_rowoffs = -1; // previous frame's Buffer::Rowoffs
-		static long prev_buf_coloffs = -1; // previous frame's Buffer::Coloffs
-
 		const long buf_rowoffs = static_cast<long>(buf->Rowoffs());
 		const long buf_coloffs = static_cast<long>(buf->Coloffs());
 
 		// Detect programmatic change (e.g., page_down command changed rowoffs)
 		// Use SetNextWindowScroll BEFORE BeginChild to set initial scroll position
-		if (prev_buf_rowoffs >= 0 && buf_rowoffs != prev_buf_rowoffs) {
+		if (prev_buf_rowoffs_ >= 0 && buf_rowoffs != prev_buf_rowoffs_) {
 			float target_y = static_cast<float>(buf_rowoffs) * row_h;
 			ImGui::SetNextWindowScroll(ImVec2(-1.0f, target_y));
 		}
-		if (prev_buf_coloffs >= 0 && buf_coloffs != prev_buf_coloffs) {
+		if (prev_buf_coloffs_ >= 0 && buf_coloffs != prev_buf_coloffs_) {
 			float target_x = static_cast<float>(buf_coloffs) * space_w;
 			float target_y = static_cast<float>(buf_rowoffs) * row_h;
 			ImGui::SetNextWindowScroll(ImVec2(target_x, target_y));
@@ -116,25 +113,22 @@ ImGuiRenderer::Draw(Editor &ed)
 		// Synchronize buffer offsets from ImGui scroll if user scrolled manually
 		bool forced_scroll = false;
 		{
-			static float prev_scroll_y = -1.0f; // previous frame's ImGui scroll Y in pixels
-			static float prev_scroll_x = -1.0f; // previous frame's ImGui scroll X in pixels
-
 			const long scroll_top  = static_cast<long>(scroll_y / row_h);
 			const long scroll_left = static_cast<long>(scroll_x / space_w);
 
 			// Check if rowoffs was programmatically changed this frame
-			if (prev_buf_rowoffs >= 0 && buf_rowoffs != prev_buf_rowoffs) {
+			if (prev_buf_rowoffs_ >= 0 && buf_rowoffs != prev_buf_rowoffs_) {
 				forced_scroll = true;
 			}
 
 			// If user scrolled (not programmatic), update buffer offsets accordingly
-			if (prev_scroll_y >= 0.0f && scroll_y != prev_scroll_y && !forced_scroll) {
+			if (prev_scroll_y_ >= 0.0f && scroll_y != prev_scroll_y_ && !forced_scroll) {
 				if (Buffer *mbuf = const_cast<Buffer *>(buf)) {
 					mbuf->SetOffsets(static_cast<std::size_t>(std::max(0L, scroll_top)),
 					                 mbuf->Coloffs());
 				}
 			}
-			if (prev_scroll_x >= 0.0f && scroll_x != prev_scroll_x && !forced_scroll) {
+			if (prev_scroll_x_ >= 0.0f && scroll_x != prev_scroll_x_ && !forced_scroll) {
 				if (Buffer *mbuf = const_cast<Buffer *>(buf)) {
 					mbuf->SetOffsets(mbuf->Rowoffs(),
 					                 static_cast<std::size_t>(std::max(0L, scroll_left)));
@@ -142,11 +136,11 @@ ImGuiRenderer::Draw(Editor &ed)
 			}
 
 			// Update trackers for next frame
-			prev_scroll_y = scroll_y;
-			prev_scroll_x = scroll_x;
+			prev_scroll_y_ = scroll_y;
+			prev_scroll_x_ = scroll_x;
 		}
-		prev_buf_rowoffs = buf_rowoffs;
-		prev_buf_coloffs = buf_coloffs;
+		prev_buf_rowoffs_ = buf_rowoffs;
+		prev_buf_coloffs_ = buf_coloffs;
 		// Cache current horizontal offset in rendered columns for click handling
 		const std::size_t coloffs_now = buf->Coloffs();
 
@@ -169,7 +163,7 @@ ImGuiRenderer::Draw(Editor &ed)
 		const std::size_t vsel_sy = vsel_active ? buf->VisualLineStartY() : 0;
 		const std::size_t vsel_ey = vsel_active ? buf->VisualLineEndY() : 0;
 
-		static bool mouse_selecting = false;
+		// (mouse_selecting__ is a member variable)
 		auto mouse_pos_to_buf       = [&]() -> std::pair<std::size_t, std::size_t> {
 			ImVec2 mp = ImGui::GetIO().MousePos;
 			// Convert mouse pos to buffer row
@@ -211,7 +205,7 @@ ImGuiRenderer::Draw(Editor &ed)
 
 		// Mouse-driven selection: set mark on double-click or drag, update cursor on any press/drag
 		if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-			mouse_selecting = true;
+			mouse_selecting_ = true;
 			auto [by, bx]   = mouse_pos_to_buf();
 			char tmp[64];
 			std::snprintf(tmp, sizeof(tmp), "%zu:%zu", by, bx);
@@ -225,7 +219,7 @@ ImGuiRenderer::Draw(Editor &ed)
 				}
 			}
 		}
-		if (mouse_selecting && ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+		if (mouse_selecting_ && ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
 			auto [by, bx] = mouse_pos_to_buf();
 			// If we are dragging (mouse moved while down), ensure mark is set to start selection
 			if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 1.0f)) {
@@ -242,8 +236,8 @@ ImGuiRenderer::Draw(Editor &ed)
 			std::snprintf(tmp, sizeof(tmp), "%zu:%zu", by, bx);
 			Execute(ed, CommandId::MoveCursorTo, std::string(tmp));
 		}
-		if (mouse_selecting && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-			mouse_selecting = false;
+		if (mouse_selecting_ && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+			mouse_selecting_ = false;
 		}
 		for (std::size_t i = rowoffs; i < lines.size(); ++i) {
 			// Capture the screen position before drawing the line

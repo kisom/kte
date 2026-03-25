@@ -521,13 +521,26 @@ public:
 	// Buffers
 	[[nodiscard]] std::size_t BufferCount() const
 	{
-		return buffers_.size();
+		return Buffers().size();
 	}
 
 
 	[[nodiscard]] std::size_t CurrentBufferIndex() const
 	{
 		return curbuf_;
+	}
+
+
+	// Clamp curbuf_ to valid range. Call when the shared buffer list may
+	// have been modified by another editor (e.g., buffer closed in another window).
+	void ValidateBufferIndex()
+	{
+		const auto &bufs = Buffers();
+		if (bufs.empty()) {
+			curbuf_ = 0;
+		} else if (curbuf_ >= bufs.size()) {
+			curbuf_ = bufs.size() - 1;
+		}
 	}
 
 
