@@ -1,0 +1,24 @@
+# kge configuration
+# Place at ~/.config/kte/kge.toml
+
+[window]
+fullscreen = false
+columns = 80
+rows = 42
+
+[font]
+# Default font and size
+name = "default"
+size = 18.0
+# Font used in code mode (monospace)
+code = "default"
+# Font used in writing mode (proportional) — for .txt, .md, .rst, .org, .tex, etc.
+writing = "crimsonpro"
+
+[appearance]
+theme = "nord"
+# "dark" or "light" for themes with variants
+background = "dark"
+
+[editor]
+syntax = true

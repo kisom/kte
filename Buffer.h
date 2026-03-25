@@ -35,9 +35,12 @@
  */
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
+#include <filesystem>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 #include <string_view>
 
@@ -47,6 +50,26 @@
 #include "syntax/HighlighterEngine.h"
 #include "Highlight.h"
 #include <mutex>
+
+// Edit mode determines which font class is used for a buffer.
+enum class EditMode { Code, Writing };
+
+// Detect edit mode from a filename's extension.
+inline EditMode
+DetectEditMode(const std::string &filename)
+{
+	std::string ext = std::filesystem::path(filename).extension().string();
+	std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+		return static_cast<char>(std::tolower(c));
+	});
+	static const std::unordered_set<std::string> writing_exts = {
+		".txt", ".md", ".markdown", ".rst", ".org",
+		".tex", ".adoc", ".asciidoc",
+	};
+	if (writing_exts.count(ext))
+		return EditMode::Writing;
+	return EditMode::Code;
+}
 
 // Forward declaration for swap journal integration
 namespace kte {
@@ -484,6 +507,27 @@ public:
 	}
 
 
+	// Edit mode (code vs writing)
+	[[nodiscard]] EditMode GetEditMode() const
+	{
+		return edit_mode_;
+	}
+
+
+	void SetEditMode(EditMode m)
+	{
+		edit_mode_ = m;
+	}
+
+
+	void ToggleEditMode()
+	{
+		edit_mode_ = (edit_mode_ == EditMode::Code)
+			             ? EditMode::Writing
+			             : EditMode::Code;
+	}
+
+
 	void SetSyntaxEnabled(bool on)
 	{
 		syntax_enabled_ = on;
@@ -613,6 +657,9 @@ private:
 	// Per-buffer undo state
 	std::unique_ptr<struct UndoTree> undo_tree_;
 	std::unique_ptr<UndoSystem> undo_sys_;
+
+	// Edit mode (code vs writing)
+	EditMode edit_mode_ = EditMode::Code;
 
 	// Syntax/highlighting state
 	std::uint64_t version_ = 0; // increment on edits

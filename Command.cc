@@ -1335,6 +1335,40 @@ cmd_font_set_size(CommandContext &ctx)
 #endif
 
 
+// Toggle edit mode (code/writing) for current buffer
+static bool
+cmd_toggle_edit_mode(const CommandContext &ctx)
+{
+	Buffer *b = ctx.editor.CurrentBuffer();
+	if (!b)
+		return false;
+
+	std::string arg = ctx.arg;
+	std::transform(arg.begin(), arg.end(), arg.begin(), [](unsigned char c) {
+		return static_cast<char>(std::tolower(c));
+	});
+	// Trim whitespace
+	auto start = arg.find_first_not_of(" \t");
+	if (start != std::string::npos)
+		arg = arg.substr(start);
+	auto end = arg.find_last_not_of(" \t");
+	if (end != std::string::npos)
+		arg = arg.substr(0, end + 1);
+
+	if (arg == "code") {
+		b->SetEditMode(EditMode::Code);
+	} else if (arg == "writing") {
+		b->SetEditMode(EditMode::Writing);
+	} else {
+		b->ToggleEditMode();
+	}
+
+	const char *mode_str = (b->GetEditMode() == EditMode::Writing) ? "writing" : "code";
+	ctx.editor.SetStatus(std::string("Mode: ") + mode_str);
+	return true;
+}
+
+
 // Background set command (GUI, ImGui-only for now)
 #if defined(KTE_BUILD_GUI) && !defined(KTE_USE_QT)
 static bool
@@ -1888,15 +1922,15 @@ cmd_insert_text(CommandContext &ctx)
 #endif
 					}
 					if (cmd == "font") {
-#if defined(KTE_BUILD_GUI) && defined(KTE_USE_QT)
-						// Complete against installed font families (case-insensitive prefix)
 						std::vector<std::string> cands;
-						QStringList fams       = QFontDatabase::families();
 						std::string apfx_lower = argprefix;
 						std::transform(apfx_lower.begin(), apfx_lower.end(), apfx_lower.begin(),
 						               [](unsigned char c) {
 							               return (char) std::tolower(c);
 						               });
+#if defined(KTE_BUILD_GUI) && defined(KTE_USE_QT)
+						// Qt: complete against system font families
+						QStringList fams = QFontDatabase::families();
 						for (const auto &fam: fams) {
 							std::string n      = fam.toStdString();
 							std::string nlower = n;
@@ -1907,6 +1941,13 @@ cmd_insert_text(CommandContext &ctx)
 							if (apfx_lower.empty() || nlower.rfind(apfx_lower, 0) == 0)
 								cands.push_back(n);
 						}
+#elif defined(KTE_BUILD_GUI)
+						// ImGui: complete against embedded font registry
+						for (const auto &n : kte::Fonts::FontRegistry::Instance().FontNames()) {
+							if (apfx_lower.empty() || n.rfind(apfx_lower, 0) == 0)
+								cands.push_back(n);
+						}
+#endif
 						if (cands.empty()) {
 							// no change
 						} else if (cands.size() == 1) {
@@ -1927,9 +1968,19 @@ cmd_insert_text(CommandContext &ctx)
 						}
 						ctx.editor.SetStatus(std::string(": ") + ctx.editor.PromptText());
 						return true;
-#else
-						(void) argprefix;
-#endif
+					}
+					if (cmd == "mode") {
+						std::vector<std::string> modes = {"code", "writing"};
+						std::vector<std::string> cands;
+						for (const auto &m : modes) {
+							if (argprefix.empty() || m.rfind(argprefix, 0) == 0)
+								cands.push_back(m);
+						}
+						if (cands.size() == 1) {
+							ctx.editor.SetPromptText(cmd + std::string(" ") + cands[0]);
+						}
+						ctx.editor.SetStatus(std::string(": ") + ctx.editor.PromptText());
+						return true;
 					}
 					// default: no special arg completion
 					ctx.editor.SetStatus(std::string(": ") + ctx.editor.PromptText());
@@ -5024,6 +5075,11 @@ InstallDefaultCommands()
 	CommandRegistry::Register({
 		CommandId::NewWindow, "new-window", "Open a new editor window (GUI only)", cmd_new_window,
 		false, false
+	});
+	// Edit mode toggle (public)
+	CommandRegistry::Register({
+		CommandId::ToggleEditMode, "mode", "Toggle or set edit mode: code|writing",
+		cmd_toggle_edit_mode, true, false
 	});
 }
 

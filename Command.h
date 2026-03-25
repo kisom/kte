@@ -117,6 +117,8 @@ enum class CommandId {
 	FontZoomIn,
 	FontZoomOut,
 	FontZoomReset,
+	// Edit mode (code/writing)
+	ToggleEditMode,
 };
 
 

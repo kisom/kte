@@ -4,7 +4,7 @@ project(kte)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 20)
-set(KTE_VERSION "1.9.1")
+set(KTE_VERSION "1.10.0")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
@@ -205,6 +205,8 @@ set(FONT_HEADERS
         fonts/FontList.h
         fonts/B612Mono.h
         fonts/BrassMono.h
+        fonts/CrimsonPro.h
+        fonts/ETBook.h
         fonts/BrassMonoCode.h
         fonts/FiraCode.h
         fonts/Go.h
@@ -216,6 +218,7 @@ set(FONT_HEADERS
         fonts/IosevkaExtended.h
         fonts/ShareTech.h
         fonts/SpaceMono.h
+        fonts/Spectral.h
         fonts/Syne.h
         fonts/Triplicate.h
         fonts/Unispace.h

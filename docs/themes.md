@@ -23,28 +23,33 @@ Current themes (alphabetically):
 - **gruvbox** — Retro groove color scheme (light/dark variants)
 - **kanagawa-paper** — Inspired by traditional Japanese art
 - **lcars** — Star Trek LCARS interface style
+- **leuchtturm** — Modern, clean theme (light/dark variants)
 - **nord** — Arctic, north-bluish color palette
 - **old-book** — Sepia-toned vintage book aesthetic (light/dark
   variants)
 - **orbital** — Space-themed dark palette
 - **plan9** — Minimalist Plan 9 from Bell Labs inspired
 - **solarized** — Ethan Schoonover's Solarized (light/dark variants)
+- **tufte** — Edward Tufte-inspired minimalist theme (light/dark variants)
 - **weyland-yutani** — Alien franchise corporate aesthetic
 - **zenburn** — Low-contrast, easy-on-the-eyes theme
 
 Configuration
 -------------
 
-Themes are configured via `$HOME/.config/kte/kge.ini`:
+Themes are configured via `$HOME/.config/kte/kge.toml`:
 
-```ini
-theme = nord
-background = dark
+```toml
+[appearance]
+theme = "nord"
+background = "dark"
 ```
 
 - `theme` — The theme name (e.g., "nord", "gruvbox", "solarized")
 - `background` — Either "dark" or "light" (for themes supporting both
   variants)
+
+Legacy `kge.ini` format is also supported (see CONFIG.md).
 
 Themes can also be switched at runtime using the `:theme <name>`
 command.

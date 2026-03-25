@@ -1,5 +1,7 @@
 /*
- * GUIConfig - loads simple GUI configuration from $HOME/.config/kte/kge.ini
+ * GUIConfig - loads GUI configuration from $HOME/.config/kte/kge.toml
+ *
+ * Falls back to legacy kge.ini if no TOML config is found.
  */
 #pragma once
 
@@ -22,12 +24,18 @@ public:
 	std::string background = "dark";
 
 	// Default syntax highlighting state for GUI (kge): on/off
-	// Accepts: on/off/true/false/yes/no/1/0 in the ini file.
-	bool syntax = true; // default: enabled
+	bool syntax = true;
 
-	// Load from default path: $HOME/.config/kte/kge.ini
+	// Per-mode font defaults
+	std::string code_font    = "default";
+	std::string writing_font = "crimsonpro";
+
+	// Load from default paths: try kge.toml first, fall back to kge.ini
 	static GUIConfig Load();
 
-	// Load from explicit path. Returns true if file existed and was parsed.
-	bool LoadFromFile(const std::string &path);
+	// Load from explicit TOML path. Returns true if file existed and was parsed.
+	bool LoadFromTOML(const std::string &path);
+
+	// Load from explicit INI path (legacy). Returns true if file existed and was parsed.
+	bool LoadFromINI(const std::string &path);
 };

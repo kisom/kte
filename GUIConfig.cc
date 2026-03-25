@@ -3,8 +3,28 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <filesystem>
+#include <iostream>
 
 #include "GUIConfig.h"
+
+// toml++ for TOML config parsing
+#if defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Weverything"
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wall"
+#  pragma GCC diagnostic ignored "-Wextra"
+#endif
+
+#include "ext/tomlplusplus/toml.hpp"
+
+#if defined(__clang__)
+#  pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic pop
+#endif
 
 
 static void
@@ -19,32 +39,104 @@ trim(std::string &s)
 
 
 static std::string
-default_config_path()
+config_dir()
 {
 	const char *home = std::getenv("HOME");
 	if (!home || !*home)
 		return {};
-	std::string path(home);
-	path += "/.config/kte/kge.ini";
-	return path;
+	return std::string(home) + "/.config/kte";
 }
 
 
 GUIConfig
 GUIConfig::Load()
 {
-	GUIConfig cfg; // defaults already set
-	const std::string path = default_config_path();
+	GUIConfig cfg;
+	std::string dir = config_dir();
+	if (dir.empty())
+		return cfg;
 
-	if (!path.empty()) {
-		cfg.LoadFromFile(path);
+	// Try TOML first
+	std::string toml_path = dir + "/kge.toml";
+	if (cfg.LoadFromTOML(toml_path))
+		return cfg;
+
+	// Fall back to legacy INI
+	std::string ini_path = dir + "/kge.ini";
+	if (cfg.LoadFromINI(ini_path)) {
+		std::cerr << "kge: loaded legacy kge.ini; consider migrating to kge.toml\n";
+		return cfg;
 	}
+
 	return cfg;
 }
 
 
 bool
-GUIConfig::LoadFromFile(const std::string &path)
+GUIConfig::LoadFromTOML(const std::string &path)
+{
+	if (!std::filesystem::exists(path))
+		return false;
+
+	toml::table tbl;
+	try {
+		tbl = toml::parse_file(path);
+	} catch (const toml::parse_error &err) {
+		std::cerr << "kge: TOML parse error in " << path << ": " << err.what() << "\n";
+		return false;
+	}
+
+	// [window]
+	if (auto win = tbl["window"].as_table()) {
+		if (auto v = (*win)["fullscreen"].value<bool>())
+			fullscreen = *v;
+		if (auto v = (*win)["columns"].value<int64_t>()) {
+			if (*v > 0) columns = static_cast<int>(*v);
+		}
+		if (auto v = (*win)["rows"].value<int64_t>()) {
+			if (*v > 0) rows = static_cast<int>(*v);
+		}
+	}
+
+	// [font]
+	if (auto sec = tbl["font"].as_table()) {
+		if (auto v = (*sec)["name"].value<std::string>())
+			font = *v;
+		if (auto v = (*sec)["size"].value<double>()) {
+			if (*v > 0.0) font_size = static_cast<float>(*v);
+		}
+		if (auto v = (*sec)["code"].value<std::string>())
+			code_font = *v;
+		if (auto v = (*sec)["writing"].value<std::string>())
+			writing_font = *v;
+	}
+
+	// [appearance]
+	if (auto sec = tbl["appearance"].as_table()) {
+		if (auto v = (*sec)["theme"].value<std::string>())
+			theme = *v;
+		if (auto v = (*sec)["background"].value<std::string>()) {
+			std::string bg = *v;
+			std::transform(bg.begin(), bg.end(), bg.begin(), [](unsigned char c) {
+				return (char) std::tolower(c);
+			});
+			if (bg == "light" || bg == "dark")
+				background = bg;
+		}
+	}
+
+	// [editor]
+	if (auto sec = tbl["editor"].as_table()) {
+		if (auto v = (*sec)["syntax"].value<bool>())
+			syntax = *v;
+	}
+
+	return true;
+}
+
+
+bool
+GUIConfig::LoadFromINI(const std::string &path)
 {
 	std::ifstream in(path);
 	if (!in.good())
@@ -104,6 +196,10 @@ GUIConfig::LoadFromFile(const std::string &path)
 			}
 		} else if (key == "font") {
 			font = val;
+		} else if (key == "code_font") {
+			code_font = val;
+		} else if (key == "writing_font") {
+			writing_font = val;
 		} else if (key == "theme") {
 			theme = val;
 		} else if (key == "background" || key == "bg") {

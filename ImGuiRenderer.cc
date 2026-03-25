@@ -175,29 +175,54 @@ ImGuiRenderer::Draw(Editor &ed)
 			if (by >= lines.size())
 				by = lines.empty() ? 0 : (lines.size() - 1);
 
-			// Convert mouse pos to rendered x
+			if (lines.empty())
+				return {0, 0};
+
+			// Expand tabs for the clicked line
+			std::string line_clicked = static_cast<std::string>(lines[by]);
+			const std::size_t tabw   = 8;
+			std::string click_expanded;
+			click_expanded.reserve(line_clicked.size() + 16);
+			std::size_t click_rx = 0;
+			// Map: source column -> expanded column
+			std::vector<std::size_t> src_to_exp;
+			src_to_exp.reserve(line_clicked.size() + 1);
+			for (std::size_t ci = 0; ci < line_clicked.size(); ++ci) {
+				src_to_exp.push_back(click_rx);
+				if (line_clicked[ci] == '\t') {
+					std::size_t adv = (tabw - (click_rx % tabw));
+					click_expanded.append(adv, ' ');
+					click_rx += adv;
+				} else {
+					click_expanded.push_back(line_clicked[ci]);
+					click_rx += 1;
+				}
+			}
+			src_to_exp.push_back(click_rx); // past-end position
+
+			// Pixel x relative to the line start (accounting for scroll)
 			float visual_x = mp.x - child_window_pos.x;
 			if (visual_x < 0.0f)
 				visual_x = 0.0f;
-			std::size_t clicked_rx = static_cast<std::size_t>(visual_x / space_w) + coloffs_now;
+			// Add scroll offset in pixels
+			visual_x += scroll_x;
 
-			// Convert rendered column to source column
-			if (lines.empty())
-				return {0, 0};
-			std::string line_clicked = static_cast<std::string>(lines[by]);
-			const std::size_t tabw   = 8;
-			std::size_t rx           = 0;
-			std::size_t best_col     = 0;
-			float best_dist          = std::numeric_limits<float>::infinity();
-			float clicked_rx_f       = static_cast<float>(clicked_rx);
-			for (std::size_t i = 0; i <= line_clicked.size(); ++i) {
-				float dist = std::fabs(clicked_rx_f - static_cast<float>(rx));
+			// Find the source column whose expanded position is closest
+			// to the click pixel, using actual text measurement.
+			std::size_t best_col  = 0;
+			float best_dist       = std::numeric_limits<float>::infinity();
+			for (std::size_t ci = 0; ci <= line_clicked.size(); ++ci) {
+				std::size_t exp_col = src_to_exp[ci];
+				float px = 0.0f;
+				if (exp_col > 0 && !click_expanded.empty()) {
+					std::size_t end = std::min(click_expanded.size(), exp_col);
+					px = ImGui::CalcTextSize(click_expanded.c_str(),
+					                         click_expanded.c_str() + end).x;
+				}
+				float dist = std::fabs(visual_x - px);
 				if (dist < best_dist) {
 					best_dist = dist;
-					best_col  = i;
-				}
-				if (i < line_clicked.size()) {
-					rx += (line_clicked[i] == '\t') ? (tabw - (rx % tabw)) : 1;
+					best_col  = ci;
 				}
 			}
 			return {by, best_col};
@@ -244,11 +269,37 @@ ImGuiRenderer::Draw(Editor &ed)
 			ImVec2 line_pos  = ImGui::GetCursorScreenPos();
 			std::string line = static_cast<std::string>(lines[i]);
 
-			// Expand tabs to spaces with width=8 and apply horizontal scroll offset
+			// Expand tabs to spaces with width=8
 			const std::size_t tabw = 8;
 			std::string expanded;
 			expanded.reserve(line.size() + 16);
-			std::size_t rx_abs_draw = 0; // rendered column for drawing
+			std::size_t rx_abs_draw = 0;
+			for (std::size_t src = 0; src < line.size(); ++src) {
+				char c = line[src];
+				if (c == '\t') {
+					std::size_t adv = (tabw - (rx_abs_draw % tabw));
+					expanded.append(adv, ' ');
+					rx_abs_draw += adv;
+				} else {
+					expanded.push_back(c);
+					rx_abs_draw += 1;
+				}
+			}
+
+			// Helper: convert a rendered column position to pixel x offset
+			// relative to the visible line start, using actual text measurement
+			// so proportional fonts render correctly.
+			auto rx_to_px = [&](std::size_t rx_col) -> float {
+				if (rx_col <= coloffs_now)
+					return 0.0f;
+				std::size_t start = coloffs_now;
+				std::size_t end   = std::min(expanded.size(), rx_col);
+				if (start >= expanded.size() || end <= start)
+					return 0.0f;
+				return ImGui::CalcTextSize(expanded.c_str() + start,
+				                           expanded.c_str() + end).x;
+			};
+
 			// Compute search highlight ranges for this line in source indices
 			bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
 			std::vector<std::pair<std::size_t, std::size_t> > hl_src_ranges;
@@ -303,10 +354,8 @@ ImGuiRenderer::Draw(Editor &ed)
 					// Apply horizontal scroll offset
 					if (rx_end <= coloffs_now)
 						continue; // fully left of view
-					std::size_t vx0 = (rx_start > coloffs_now) ? (rx_start - coloffs_now) : 0;
-					std::size_t vx1 = rx_end - coloffs_now;
-					ImVec2 p0 = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w, line_pos.y);
-					ImVec2 p1 = ImVec2(line_pos.x + static_cast<float>(vx1) * space_w,
+					ImVec2 p0 = ImVec2(line_pos.x + rx_to_px(rx_start), line_pos.y);
+					ImVec2 p1 = ImVec2(line_pos.x + rx_to_px(rx_end),
 					                   line_pos.y + line_h);
 					// Choose color: current match stronger
 					bool is_current = has_current && sx == cur_x && ex == cur_end;
@@ -344,13 +393,9 @@ ImGuiRenderer::Draw(Editor &ed)
 					std::size_t rx_start = src_to_rx(sx);
 					std::size_t rx_end   = src_to_rx(ex);
 					if (rx_end > coloffs_now) {
-						std::size_t vx0 = (rx_start > coloffs_now)
-							                  ? (rx_start - coloffs_now)
-							                  : 0;
-						std::size_t vx1 = rx_end - coloffs_now;
-						ImVec2 p0       = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w,
-						                         line_pos.y);
-						ImVec2 p1 = ImVec2(line_pos.x + static_cast<float>(vx1) * space_w,
+						ImVec2 p0 = ImVec2(line_pos.x + rx_to_px(rx_start),
+						                   line_pos.y);
+						ImVec2 p1 = ImVec2(line_pos.x + rx_to_px(rx_end),
 						                   line_pos.y + line_h);
 						ImU32 col = ImGui::GetColorU32(ImGuiCol_TextSelectedBg);
 						ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
@@ -369,31 +414,14 @@ ImGuiRenderer::Draw(Editor &ed)
 					rx_end = rx_start + 1;
 				}
 				if (rx_end > coloffs_now) {
-					std::size_t vx0 = (rx_start > coloffs_now)
-						                  ? (rx_start - coloffs_now)
-						                  : 0;
-					std::size_t vx1 = rx_end - coloffs_now;
-					ImVec2 p0       = ImVec2(line_pos.x + static_cast<float>(vx0) * space_w,
-					                         line_pos.y);
-					ImVec2 p1 = ImVec2(line_pos.x + static_cast<float>(vx1) * space_w,
+					ImVec2 p0 = ImVec2(line_pos.x + rx_to_px(rx_start),
+					                   line_pos.y);
+					ImVec2 p1 = ImVec2(line_pos.x + rx_to_px(rx_end),
 					                   line_pos.y + line_h);
 					ImU32 col = ImGui::GetColorU32(ImGuiCol_TextSelectedBg);
 					ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
 				}
 			}
-			// Emit entire line to an expanded buffer (tabs -> spaces)
-			for (std::size_t src = 0; src < line.size(); ++src) {
-				char c = line[src];
-				if (c == '\t') {
-					std::size_t adv = (tabw - (rx_abs_draw % tabw));
-					expanded.append(adv, ' ');
-					rx_abs_draw += adv;
-				} else {
-					expanded.push_back(c);
-					rx_abs_draw += 1;
-				}
-			}
-
 			// Draw syntax-colored runs (text above background highlights)
 			if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
 				kte::LineHighlight lh = buf->Highlighter()->GetLine(
@@ -445,10 +473,9 @@ ImGuiRenderer::Draw(Editor &ed)
 					std::size_t draw_end = std::min<std::size_t>(rx_e, expanded.size());
 					if (draw_end <= draw_start)
 						continue;
-					// Screen position is relative to coloffs_now
-					std::size_t screen_x = draw_start - coloffs_now;
+					// Screen position via actual text measurement
 					ImU32 col = ImGui::GetColorU32(kte::SyntaxInk(sp.k));
-					ImVec2 p = ImVec2(line_pos.x + static_cast<float>(screen_x) * space_w,
+					ImVec2 p = ImVec2(line_pos.x + rx_to_px(draw_start),
 					                  line_pos.y);
 					ImGui::GetWindowDrawList()->AddText(
 						p, col, expanded.c_str() + draw_start, expanded.c_str() + draw_end);
@@ -472,28 +499,8 @@ ImGuiRenderer::Draw(Editor &ed)
 
 			// Draw a visible cursor indicator on the current line
 			if (i == cy) {
-				// Compute rendered X (rx) from source column with tab expansion
-				std::size_t rx_abs = 0;
-				for (std::size_t k = 0; k < std::min(cx, line.size()); ++k) {
-					if (line[k] == '\t')
-						rx_abs += (tabw - (rx_abs % tabw));
-					else
-						rx_abs += 1;
-				}
-				// Convert to viewport x by subtracting horizontal col offset
-				std::size_t rx_viewport = (rx_abs > coloffs_now) ? (rx_abs - coloffs_now) : 0;
-				// For proportional fonts (Linux GUI), avoid accumulating drift by computing
-				// the exact pixel width of the expanded substring up to the cursor.
-				// expanded contains the line with tabs expanded to spaces and is what we draw.
-				float cursor_px = 0.0f;
-				if (rx_viewport > 0 && coloffs_now < expanded.size()) {
-					std::size_t start = coloffs_now;
-					std::size_t end   = std::min(expanded.size(), start + rx_viewport);
-					// Measure substring width in pixels
-					ImVec2 sz = ImGui::CalcTextSize(expanded.c_str() + start,
-					                                expanded.c_str() + end);
-					cursor_px = sz.x;
-				}
+				std::size_t rx_abs = src_to_rx(cx);
+				float cursor_px = rx_to_px(rx_abs);
 				ImVec2 p0 = ImVec2(line_pos.x + cursor_px, line_pos.y);
 				ImVec2 p1 = ImVec2(p0.x + space_w, p0.y + line_h);
 				ImU32 col = IM_COL32(200, 200, 255, 128); // soft highlight
@@ -539,29 +546,40 @@ ImGuiRenderer::Draw(Editor &ed)
 				last_row  = first_row + vis_rows - 1;
 			}
 
-			// Horizontal scroll: ensure cursor column is visible
-			long vis_cols = static_cast<long>(std::round(child_w_actual / space_w));
-			if (vis_cols < 1)
-				vis_cols = 1;
-			long first_col = static_cast<long>(scroll_x_now / space_w);
-			long last_col  = first_col + vis_cols - 1;
-
-			std::size_t cursor_rx = 0;
+			// Horizontal scroll: ensure cursor is visible (pixel-based for proportional fonts)
+			float cursor_px_abs = 0.0f;
 			if (cy < lines.size()) {
 				std::string cur_line   = static_cast<std::string>(lines[cy]);
 				const std::size_t tabw = 8;
-				for (std::size_t i = 0; i < cx && i < cur_line.size(); ++i) {
-					if (cur_line[i] == '\t') {
-						cursor_rx += tabw - (cursor_rx % tabw);
+				// Expand tabs for cursor line to measure pixel position
+				std::string cur_expanded;
+				cur_expanded.reserve(cur_line.size() + 16);
+				std::size_t cur_rx = 0;
+				for (std::size_t ci = 0; ci < cur_line.size(); ++ci) {
+					if (cur_line[ci] == '\t') {
+						std::size_t adv = tabw - (cur_rx % tabw);
+						cur_expanded.append(adv, ' ');
+						cur_rx += adv;
 					} else {
-						cursor_rx += 1;
+						cur_expanded.push_back(cur_line[ci]);
+						cur_rx += 1;
 					}
 				}
+				// Compute rendered column of cursor
+				std::size_t cursor_rx = 0;
+				for (std::size_t ci = 0; ci < cx && ci < cur_line.size(); ++ci) {
+					if (cur_line[ci] == '\t')
+						cursor_rx += tabw - (cursor_rx % tabw);
+					else
+						cursor_rx += 1;
+				}
+				std::size_t exp_end = std::min(cur_expanded.size(), cursor_rx);
+				if (exp_end > 0)
+					cursor_px_abs = ImGui::CalcTextSize(cur_expanded.c_str(),
+					                                    cur_expanded.c_str() + exp_end).x;
 			}
-			long cxr = static_cast<long>(cursor_rx);
-			if (cxr < first_col || cxr > last_col) {
-				float target_x = static_cast<float>(cxr) * space_w;
-				target_x       -= (child_w_actual / 2.0f);
+			if (cursor_px_abs < scroll_x_now || cursor_px_abs > scroll_x_now + child_w_actual) {
+				float target_x = cursor_px_abs - (child_w_actual / 2.0f);
 				if (target_x < 0.f)
 					target_x = 0.f;
 				float max_x = ImGui::GetScrollMaxX();

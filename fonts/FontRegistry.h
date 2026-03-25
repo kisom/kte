@@ -1,10 +1,12 @@
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "Font.h"
 
@@ -84,6 +86,19 @@ public:
 	{
 		std::lock_guard lock(mutex_);
 		return fonts_.count(name) > 0;
+	}
+
+
+	// Return all registered font names (sorted)
+	std::vector<std::string> FontNames() const
+	{
+		std::lock_guard lock(mutex_);
+		std::vector<std::string> names;
+		names.reserve(fonts_.size());
+		for (const auto &[name, _] : fonts_)
+			names.push_back(name);
+		std::sort(names.begin(), names.end());
+		return names;
 	}
 
 

@@ -38,6 +38,11 @@ apply_syntax_to_buffer(Buffer *b, const GUIConfig &cfg)
 {
 	if (!b)
 		return;
+
+	// Auto-detect edit mode from file extension
+	if (!b->Filename().empty())
+		b->SetEditMode(DetectEditMode(b->Filename()));
+
 	if (cfg.syntax) {
 		b->SetSyntaxEnabled(true);
 		b->EnsureHighlighter();
@@ -518,6 +523,9 @@ GUIFrontend::Step(Editor &ed, bool &running)
 		// Allow deferred opens
 		wed.ProcessPendingOpens();
 
+		// Ensure newly opened buffers get syntax + edit mode detection
+		apply_syntax_to_buffer(wed.CurrentBuffer(), config_);
+
 		// Drain input queue
 		for (;;) {
 			MappedInput mi;
@@ -555,6 +563,25 @@ GUIFrontend::Step(Editor &ed, bool &running)
 
 		if (wi == 0 && wed.QuitRequested()) {
 			running = false;
+		}
+
+		// Switch font based on current buffer's edit mode
+		{
+			Buffer *cur = wed.CurrentBuffer();
+			if (cur) {
+				auto &fr = kte::Fonts::FontRegistry::Instance();
+				const std::string &expected =
+					(cur->GetEditMode() == EditMode::Writing)
+						? config_.writing_font
+						: config_.code_font;
+				if (fr.CurrentFontName() != expected && fr.HasFont(expected)) {
+					float sz = fr.CurrentFontSize();
+					if (sz <= 0.0f) sz = config_.font_size;
+					fr.LoadFont(expected, sz);
+					ImGui_ImplOpenGL3_DestroyFontsTexture();
+					ImGui_ImplOpenGL3_CreateFontsTexture();
+				}
+			}
 		}
 
 		// Draw

@@ -84,6 +84,9 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 	case 'l':
 		out = CommandId::ReloadBuffer;
 		return true;
+	case 'm':
+		out = CommandId::ToggleEditMode;
+		return true;
 	case 'n':
 		out = CommandId::BufferPrev;
 		return true;

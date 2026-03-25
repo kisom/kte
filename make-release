@@ -22,5 +22,6 @@ fi
 
 git tag "${KTE_VERSION}"
 git push && git push --tags
+git push github && git push github --tags
 
 ( ./make-app-release )

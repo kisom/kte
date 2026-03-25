@@ -46,6 +46,16 @@ InstallDefaultFonts()
 		BrassMonoCode::DefaultFontBoldCompressedSize
 	));
 	FontRegistry::Instance().Register(std::make_unique<Font>(
+		"crimsonpro",
+		CrimsonPro::DefaultFontRegularCompressedData,
+		CrimsonPro::DefaultFontRegularCompressedSize
+	));
+	FontRegistry::Instance().Register(std::make_unique<Font>(
+		"etbook",
+		ETBook::DefaultFontRegularCompressedData,
+		ETBook::DefaultFontRegularCompressedSize
+	));
+	FontRegistry::Instance().Register(std::make_unique<Font>(
 		"fira",
 		FiraCode::DefaultFontRegularCompressedData,
 		FiraCode::DefaultFontRegularCompressedSize
@@ -94,6 +104,11 @@ InstallDefaultFonts()
 		"space",
 		SpaceMono::DefaultFontRegularCompressedData,
 		SpaceMono::DefaultFontRegularCompressedSize
+	));
+	FontRegistry::Instance().Register(std::make_unique<Font>(
+		"spectral",
+		Spectral::DefaultFontRegularCompressedData,
+		Spectral::DefaultFontRegularCompressedSize
 	));
 	FontRegistry::Instance().Register(std::make_unique<Font>(
 		"syne",
