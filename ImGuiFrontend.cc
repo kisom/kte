@@ -76,7 +76,9 @@ static void
 update_editor_dimensions(Editor &ed, float disp_w, float disp_h)
 {
 	float row_h = ImGui::GetTextLineHeightWithSpacing();
-	float ch_w  = ImGui::CalcTextSize("M").x;
+	// Use average character width rather than "M" (the widest character)
+	// so that column count is reasonable for proportional fonts too.
+	float ch_w  = ImGui::CalcTextSize("abcdefghijklmnopqrstuvwxyz").x / 26.0f;
 	if (row_h <= 0.0f)
 		row_h = 16.0f;
 	if (ch_w <= 0.0f)

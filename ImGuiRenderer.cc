@@ -85,11 +85,9 @@ ImGuiRenderer::Draw(Editor &ed)
 			float target_y = static_cast<float>(buf_rowoffs) * row_h;
 			ImGui::SetNextWindowScroll(ImVec2(-1.0f, target_y));
 		}
-		if (prev_buf_coloffs_ >= 0 && buf_coloffs != prev_buf_coloffs_) {
-			float target_x = static_cast<float>(buf_coloffs) * space_w;
-			float target_y = static_cast<float>(buf_rowoffs) * row_h;
-			ImGui::SetNextWindowScroll(ImVec2(target_x, target_y));
-		}
+		// Horizontal scroll is handled purely in pixel space (see
+		// cursor-visibility block after the line loop) so we don't
+		// convert the character-based coloffs to an ImGui scroll here.
 
 		// Reserve space for status bar at bottom.
 		// We calculate a height that is an exact multiple of the line height
@@ -114,26 +112,21 @@ ImGuiRenderer::Draw(Editor &ed)
 		bool forced_scroll = false;
 		{
 			const long scroll_top  = static_cast<long>(scroll_y / row_h);
-			const long scroll_left = static_cast<long>(scroll_x / space_w);
 
 			// Check if rowoffs was programmatically changed this frame
 			if (prev_buf_rowoffs_ >= 0 && buf_rowoffs != prev_buf_rowoffs_) {
 				forced_scroll = true;
 			}
 
-			// If user scrolled (not programmatic), update buffer offsets accordingly
+			// If user scrolled vertically (not programmatic), update buffer row offset
 			if (prev_scroll_y_ >= 0.0f && scroll_y != prev_scroll_y_ && !forced_scroll) {
 				if (Buffer *mbuf = const_cast<Buffer *>(buf)) {
 					mbuf->SetOffsets(static_cast<std::size_t>(std::max(0L, scroll_top)),
 					                 mbuf->Coloffs());
 				}
 			}
-			if (prev_scroll_x_ >= 0.0f && scroll_x != prev_scroll_x_ && !forced_scroll) {
-				if (Buffer *mbuf = const_cast<Buffer *>(buf)) {
-					mbuf->SetOffsets(mbuf->Rowoffs(),
-					                 static_cast<std::size_t>(std::max(0L, scroll_left)));
-				}
-			}
+			// Horizontal scroll is pixel-based and managed by the cursor
+			// visibility block below; we don't sync it back to coloffs.
 
 			// Update trackers for next frame
 			prev_scroll_y_ = scroll_y;
@@ -141,8 +134,8 @@ ImGuiRenderer::Draw(Editor &ed)
 		}
 		prev_buf_rowoffs_ = buf_rowoffs;
 		prev_buf_coloffs_ = buf_coloffs;
-		// Cache current horizontal offset in rendered columns for click handling
-		const std::size_t coloffs_now = buf->Coloffs();
+		// Track the widest line in pixels for ImGui content width
+		float max_line_width_px = 0.0f;
 
 		// Mark selection state (mark -> cursor), in source coordinates
 		bool sel_active    = false;
@@ -286,17 +279,14 @@ ImGuiRenderer::Draw(Editor &ed)
 				}
 			}
 
-			// Helper: convert a rendered column position to pixel x offset
-			// relative to the visible line start, using actual text measurement
-			// so proportional fonts render correctly.
+			// Helper: convert a rendered column position to an absolute
+			// pixel x offset from the start of the line.  ImGui's scroll
+			// handles viewport clipping so we measure from column 0.
 			auto rx_to_px = [&](std::size_t rx_col) -> float {
-				if (rx_col <= coloffs_now)
+				std::size_t end = std::min(expanded.size(), rx_col);
+				if (end == 0)
 					return 0.0f;
-				std::size_t start = coloffs_now;
-				std::size_t end   = std::min(expanded.size(), rx_col);
-				if (start >= expanded.size() || end <= start)
-					return 0.0f;
-				return ImGui::CalcTextSize(expanded.c_str() + start,
+				return ImGui::CalcTextSize(expanded.c_str(),
 				                           expanded.c_str() + end).x;
 			};
 
@@ -351,9 +341,6 @@ ImGuiRenderer::Draw(Editor &ed)
 					std::size_t sx       = rg.first, ex = rg.second;
 					std::size_t rx_start = src_to_rx(sx);
 					std::size_t rx_end   = src_to_rx(ex);
-					// Apply horizontal scroll offset
-					if (rx_end <= coloffs_now)
-						continue; // fully left of view
 					ImVec2 p0 = ImVec2(line_pos.x + rx_to_px(rx_start), line_pos.y);
 					ImVec2 p1 = ImVec2(line_pos.x + rx_to_px(rx_end),
 					                   line_pos.y + line_h);
@@ -392,14 +379,12 @@ ImGuiRenderer::Draw(Editor &ed)
 				if (line_has) {
 					std::size_t rx_start = src_to_rx(sx);
 					std::size_t rx_end   = src_to_rx(ex);
-					if (rx_end > coloffs_now) {
-						ImVec2 p0 = ImVec2(line_pos.x + rx_to_px(rx_start),
-						                   line_pos.y);
-						ImVec2 p1 = ImVec2(line_pos.x + rx_to_px(rx_end),
-						                   line_pos.y + line_h);
-						ImU32 col = ImGui::GetColorU32(ImGuiCol_TextSelectedBg);
-						ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
-					}
+					ImVec2 p0 = ImVec2(line_pos.x + rx_to_px(rx_start),
+					                   line_pos.y);
+					ImVec2 p1 = ImVec2(line_pos.x + rx_to_px(rx_end),
+					                   line_pos.y + line_h);
+					ImU32 col = ImGui::GetColorU32(ImGuiCol_TextSelectedBg);
+					ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
 				}
 			}
 			if (vsel_active && i >= vsel_sy && i <= vsel_ey) {
@@ -413,14 +398,12 @@ ImGuiRenderer::Draw(Editor &ed)
 					// EOL spot: draw a 1-cell highlight just past the last character.
 					rx_end = rx_start + 1;
 				}
-				if (rx_end > coloffs_now) {
-					ImVec2 p0 = ImVec2(line_pos.x + rx_to_px(rx_start),
-					                   line_pos.y);
-					ImVec2 p1 = ImVec2(line_pos.x + rx_to_px(rx_end),
-					                   line_pos.y + line_h);
-					ImU32 col = ImGui::GetColorU32(ImGuiCol_TextSelectedBg);
-					ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
-				}
+				ImVec2 p0 = ImVec2(line_pos.x + rx_to_px(rx_start),
+				                   line_pos.y);
+				ImVec2 p1 = ImVec2(line_pos.x + rx_to_px(rx_end),
+				                   line_pos.y + line_h);
+				ImU32 col = ImGui::GetColorU32(ImGuiCol_TextSelectedBg);
+				ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
 			}
 			// Draw syntax-colored runs (text above background highlights)
 			if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
@@ -464,16 +447,12 @@ ImGuiRenderer::Draw(Editor &ed)
 				for (const auto &sp: spans) {
 					std::size_t rx_s = src_to_rx_full(sp.s);
 					std::size_t rx_e = src_to_rx_full(sp.e);
-					if (rx_e <= coloffs_now)
-						continue; // fully left of viewport
-					// Clamp to visible portion and expanded length
-					std::size_t draw_start = (rx_s > coloffs_now) ? rx_s : coloffs_now;
+					std::size_t draw_start = rx_s;
 					if (draw_start >= expanded.size())
-						continue; // fully right of expanded text
+						continue;
 					std::size_t draw_end = std::min<std::size_t>(rx_e, expanded.size());
 					if (draw_end <= draw_start)
 						continue;
-					// Screen position via actual text measurement
 					ImU32 col = ImGui::GetColorU32(kte::SyntaxInk(sp.k));
 					ImVec2 p = ImVec2(line_pos.x + rx_to_px(draw_start),
 					                  line_pos.y);
@@ -484,17 +463,14 @@ ImGuiRenderer::Draw(Editor &ed)
 				// Use row_h (with spacing) to match click calculation and ensure consistent line positions.
 				ImGui::SetCursorScreenPos(ImVec2(line_pos.x, line_pos.y + row_h));
 			} else {
-				// No syntax: draw as one run, accounting for horizontal scroll offset
-				if (coloffs_now < expanded.size()) {
+				// No syntax: draw the full line; ImGui scroll handles clipping.
+				if (!expanded.empty()) {
 					ImVec2 p = ImVec2(line_pos.x, line_pos.y);
 					ImGui::GetWindowDrawList()->AddText(
 						p, ImGui::GetColorU32(ImGuiCol_Text),
-						expanded.c_str() + coloffs_now);
-					ImGui::SetCursorScreenPos(ImVec2(line_pos.x, line_pos.y + row_h));
-				} else {
-					// Line is fully scrolled out of view horizontally
-					ImGui::SetCursorScreenPos(ImVec2(line_pos.x, line_pos.y + row_h));
+						expanded.c_str());
 				}
+				ImGui::SetCursorScreenPos(ImVec2(line_pos.x, line_pos.y + row_h));
 			}
 
 			// Draw a visible cursor indicator on the current line
@@ -506,6 +482,18 @@ ImGuiRenderer::Draw(Editor &ed)
 				ImU32 col = IM_COL32(200, 200, 255, 128); // soft highlight
 				ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
 			}
+
+			// Track widest line for content width reporting
+			if (!expanded.empty()) {
+				float line_w = ImGui::CalcTextSize(expanded.c_str()).x;
+				if (line_w > max_line_width_px)
+					max_line_width_px = line_w;
+			}
+		}
+		// Report content width to ImGui so horizontal scrollbar works correctly.
+		if (max_line_width_px > 0.0f) {
+			ImGui::SetCursorPosX(max_line_width_px);
+			ImGui::Dummy(ImVec2(0, 0));
 		}
 		// Synchronize cursor and scrolling after rendering all lines so content size is known.
 		{
