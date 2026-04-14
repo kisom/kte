@@ -1363,6 +1363,9 @@ cmd_toggle_edit_mode(const CommandContext &ctx)
 		b->ToggleEditMode();
 	}
 
+	// Writing mode disables syntax highlighting; code mode re-enables it.
+	b->SetSyntaxEnabled(b->GetEditMode() == EditMode::Code);
+
 	const char *mode_str = (b->GetEditMode() == EditMode::Writing) ? "writing" : "code";
 	ctx.editor.SetStatus(std::string("Mode: ") + mode_str);
 	return true;

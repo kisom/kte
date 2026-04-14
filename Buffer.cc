@@ -231,10 +231,12 @@ Buffer::Buffer(const Buffer &other)
 	mark_set_         = other.mark_set_;
 	mark_curx_        = other.mark_curx_;
 	mark_cury_        = other.mark_cury_;
-	// Copy syntax/highlighting flags
-	version_        = other.version_;
-	syntax_enabled_ = other.syntax_enabled_;
-	filetype_       = other.filetype_;
+	// Copy edit mode + syntax/highlighting flags
+	edit_mode_          = other.edit_mode_;
+	edit_mode_detected_ = other.edit_mode_detected_;
+	version_            = other.version_;
+	syntax_enabled_     = other.syntax_enabled_;
+	filetype_           = other.filetype_;
 	// Fresh undo system for the copy
 	undo_tree_ = std::make_unique<UndoTree>();
 	undo_sys_  = std::make_unique<UndoSystem>(*this, *undo_tree_);
@@ -279,11 +281,13 @@ Buffer::operator=(const Buffer &other)
 	dirty_            = other.dirty_;
 	read_only_        = other.read_only_;
 	mark_set_         = other.mark_set_;
-	mark_curx_        = other.mark_curx_;
-	mark_cury_        = other.mark_cury_;
-	version_          = other.version_;
-	syntax_enabled_   = other.syntax_enabled_;
-	filetype_         = other.filetype_;
+	mark_curx_          = other.mark_curx_;
+	mark_cury_          = other.mark_cury_;
+	edit_mode_          = other.edit_mode_;
+	edit_mode_detected_ = other.edit_mode_detected_;
+	version_            = other.version_;
+	syntax_enabled_     = other.syntax_enabled_;
+	filetype_           = other.filetype_;
 	// Recreate undo system for this instance
 	undo_tree_ = std::make_unique<UndoTree>();
 	undo_sys_  = std::make_unique<UndoSystem>(*this, *undo_tree_);
@@ -326,13 +330,15 @@ Buffer::Buffer(Buffer &&other) noexcept
 	  undo_tree_(std::move(other.undo_tree_)),
 	  undo_sys_(std::move(other.undo_sys_))
 {
-	// Move syntax/highlighting state
-	version_          = other.version_;
-	syntax_enabled_   = other.syntax_enabled_;
-	filetype_         = std::move(other.filetype_);
-	highlighter_      = std::move(other.highlighter_);
-	content_          = std::move(other.content_);
-	rows_cache_dirty_ = other.rows_cache_dirty_;
+	// Move edit mode + syntax/highlighting state
+	edit_mode_          = other.edit_mode_;
+	edit_mode_detected_ = other.edit_mode_detected_;
+	version_            = other.version_;
+	syntax_enabled_     = other.syntax_enabled_;
+	filetype_           = std::move(other.filetype_);
+	highlighter_        = std::move(other.highlighter_);
+	content_            = std::move(other.content_);
+	rows_cache_dirty_   = other.rows_cache_dirty_;
 	// Update UndoSystem's buffer reference to point to this object
 	if (undo_sys_) {
 		undo_sys_->UpdateBufferReference(*this);
@@ -364,13 +370,15 @@ Buffer::operator=(Buffer &&other) noexcept
 	undo_tree_      = std::move(other.undo_tree_);
 	undo_sys_       = std::move(other.undo_sys_);
 
-	// Move syntax/highlighting state
-	version_          = other.version_;
-	syntax_enabled_   = other.syntax_enabled_;
-	filetype_         = std::move(other.filetype_);
-	highlighter_      = std::move(other.highlighter_);
-	content_          = std::move(other.content_);
-	rows_cache_dirty_ = other.rows_cache_dirty_;
+	// Move edit mode + syntax/highlighting state
+	edit_mode_          = other.edit_mode_;
+	edit_mode_detected_ = other.edit_mode_detected_;
+	version_            = other.version_;
+	syntax_enabled_     = other.syntax_enabled_;
+	filetype_           = std::move(other.filetype_);
+	highlighter_        = std::move(other.highlighter_);
+	content_            = std::move(other.content_);
+	rows_cache_dirty_   = other.rows_cache_dirty_;
 	// Update UndoSystem's buffer reference to point to this object
 	if (undo_sys_) {
 		undo_sys_->UpdateBufferReference(*this);

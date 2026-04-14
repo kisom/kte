@@ -517,6 +517,7 @@ public:
 	void SetEditMode(EditMode m)
 	{
 		edit_mode_ = m;
+		edit_mode_detected_ = true;
 	}
 
 
@@ -525,6 +526,13 @@ public:
 		edit_mode_ = (edit_mode_ == EditMode::Code)
 			             ? EditMode::Writing
 			             : EditMode::Code;
+		edit_mode_detected_ = true;
+	}
+
+
+	[[nodiscard]] bool EditModeDetected() const
+	{
+		return edit_mode_detected_;
 	}
 
 
@@ -660,6 +668,7 @@ private:
 
 	// Edit mode (code vs writing)
 	EditMode edit_mode_ = EditMode::Code;
+	bool edit_mode_detected_ = false; // true after initial auto-detection
 
 	// Syntax/highlighting state
 	std::uint64_t version_ = 0; // increment on edits

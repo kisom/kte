@@ -39,11 +39,13 @@ apply_syntax_to_buffer(Buffer *b, const GUIConfig &cfg)
 	if (!b)
 		return;
 
-	// Auto-detect edit mode from file extension
-	if (!b->Filename().empty())
+	// Auto-detect edit mode from file extension once per buffer so that
+	// manual toggles (C-k m / : mode) are not overridden every frame.
+	if (!b->EditModeDetected() && !b->Filename().empty())
 		b->SetEditMode(DetectEditMode(b->Filename()));
 
-	if (cfg.syntax) {
+	// Writing mode disables syntax; otherwise follow the global config.
+	if (cfg.syntax && b->GetEditMode() != EditMode::Writing) {
 		b->SetSyntaxEnabled(true);
 		b->EnsureHighlighter();
 		if (auto *eng = b->Highlighter()) {
