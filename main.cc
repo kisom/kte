@@ -12,6 +12,7 @@
 #include <random>
 #include <thread>
 #include <signal.h>
+#include <filesystem>
 #include <string>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -255,7 +256,18 @@ main(int argc, char *argv[])
 					// Fall through: not a +number, treat as filename starting with '+'
 				}
 
-				const std::string path = arg;
+				// Resolve to absolute path now, before any
+				// chdir (macOS GUI changes CWD to HOME before
+				// deferred opens are processed).
+				std::string path = arg;
+				try {
+					std::filesystem::path p(path);
+					if (p.is_relative()) {
+						path = std::filesystem::absolute(p).string();
+					}
+				} catch (...) {
+					// Fall through with original path
+				}
 				editor.RequestOpenFile(path, pending_line);
 				pending_line = 0; // consumed (if set)
 			}
