@@ -106,7 +106,6 @@ ImGuiRenderer::Draw(Editor &ed)
 		ImVec2 child_window_pos = ImGui::GetWindowPos();
 		float scroll_y          = ImGui::GetScrollY();
 		float scroll_x          = ImGui::GetScrollX();
-		std::size_t rowoffs     = 0; // we render from the first line; scrolling is handled by ImGui
 
 		// Synchronize buffer offsets from ImGui scroll if user scrolled manually
 		bool forced_scroll = false;
@@ -134,8 +133,65 @@ ImGuiRenderer::Draw(Editor &ed)
 		}
 		prev_buf_rowoffs_ = buf_rowoffs;
 		prev_buf_coloffs_ = buf_coloffs;
-		// Track the widest line in pixels for ImGui content width
-		float max_line_width_px = 0.0f;
+
+		// Max-line-width cache: reset when the buffer or font changes. We only
+		// measure visible lines per frame and maintain a running max, so the
+		// scrollbar may be slightly conservative on first view of a file until
+		// the user scrolls, but idle CPU drops dramatically on large files.
+		// Edits bump the buffer version but we intentionally do NOT reset the
+		// max on version changes — keeping a conservative (possibly too-wide)
+		// scrollbar is preferable to per-keystroke jitter.
+		{
+			ImFont *cur_font = ImGui::GetFont();
+			float cur_fsize  = ImGui::GetFontSize();
+			if (buf != max_width_buf_
+			    || cur_font != max_width_font_
+			    || cur_fsize != max_width_font_size_) {
+				max_width_buf_       = buf;
+				max_width_font_      = cur_font;
+				max_width_font_size_ = cur_fsize;
+				max_width_px_        = 0.0f;
+			}
+			max_width_version_ = buf->Version();
+		}
+
+		// Hoist the search-regex compilation out of the per-line loop. Compiling
+		// std::regex per line per frame was a large source of idle CPU on macOS.
+		const bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
+		const bool regex_mode  = search_mode && ed.PromptActive() && (
+			ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
+			ed.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind);
+		std::regex search_rx;
+		bool search_rx_valid = false;
+		if (regex_mode) {
+			try {
+				search_rx       = std::regex(ed.SearchQuery());
+				search_rx_valid = true;
+			} catch (const std::regex_error &) {
+				search_rx_valid = false;
+			}
+		}
+
+		// Compute the visible row range and skip rendering work for off-screen
+		// lines. ImGui clips drawing, but string allocation, tab expansion,
+		// syntax-highlight lookups, and width measurement are not free.
+		const std::size_t total_rows = lines.size();
+		std::size_t first_vis = 0;
+		std::size_t last_vis  = total_rows; // exclusive
+		if (row_h > 0.0f && total_rows > 0) {
+			const long margin = 4; // render a few extra rows above/below for smoother scrolling
+			long fv           = static_cast<long>(std::floor(scroll_y / row_h)) - margin;
+			long lv           = static_cast<long>(
+				std::ceil((scroll_y + child_h_plan) / row_h)) + margin;
+			if (fv < 0) fv = 0;
+			if (lv < 0) lv = 0;
+			if (static_cast<std::size_t>(fv) > total_rows)
+				fv = static_cast<long>(total_rows);
+			if (static_cast<std::size_t>(lv) > total_rows)
+				lv = static_cast<long>(total_rows);
+			first_vis = static_cast<std::size_t>(fv);
+			last_vis  = static_cast<std::size_t>(lv);
+		}
 
 		// Mark selection state (mark -> cursor), in source coordinates
 		bool sel_active    = false;
@@ -257,7 +313,13 @@ ImGuiRenderer::Draw(Editor &ed)
 		if (mouse_selecting_ && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
 			mouse_selecting_ = false;
 		}
-		for (std::size_t i = rowoffs; i < lines.size(); ++i) {
+		// Advance the cursor Y so the first visible line draws at its correct
+		// scroll position. Skipped rows simply leave the layout cursor untouched.
+		if (first_vis > 0) {
+			ImGui::SetCursorPosY(ImGui::GetCursorPosY() +
+			                     static_cast<float>(first_vis) * row_h);
+		}
+		for (std::size_t i = first_vis; i < last_vis; ++i) {
 			// Capture the screen position before drawing the line
 			ImVec2 line_pos  = ImGui::GetCursorScreenPos();
 			std::string line = static_cast<std::string>(lines[i]);
@@ -291,24 +353,22 @@ ImGuiRenderer::Draw(Editor &ed)
 			};
 
 			// Compute search highlight ranges for this line in source indices
-			bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
 			std::vector<std::pair<std::size_t, std::size_t> > hl_src_ranges;
 			if (search_mode) {
-				// If we're in RegexSearch or RegexReplaceFind mode, compute ranges using regex; otherwise plain substring
-				if (ed.PromptActive() && (
-					    ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch || ed.
-					    CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind)) {
-					try {
-						std::regex rx(ed.SearchQuery());
-						for (auto it = std::sregex_iterator(line.begin(), line.end(), rx);
-						     it != std::sregex_iterator(); ++it) {
-							const auto &m  = *it;
-							std::size_t sx = static_cast<std::size_t>(m.position());
-							std::size_t ex = sx + static_cast<std::size_t>(m.length());
-							hl_src_ranges.emplace_back(sx, ex);
+				// In regex mode, reuse the compiled regex hoisted above the loop.
+				if (regex_mode) {
+					if (search_rx_valid) {
+						try {
+							for (auto it = std::sregex_iterator(line.begin(), line.end(), search_rx);
+							     it != std::sregex_iterator(); ++it) {
+								const auto &m  = *it;
+								std::size_t sx = static_cast<std::size_t>(m.position());
+								std::size_t ex = sx + static_cast<std::size_t>(m.length());
+								hl_src_ranges.emplace_back(sx, ex);
+							}
+						} catch (const std::regex_error &) {
+							// ignore invalid patterns here; status line already shows the error
 						}
-					} catch (const std::regex_error &) {
-						// ignore invalid patterns here; status line already shows the error
 					}
 				} else {
 					const std::string &q = ed.SearchQuery();
@@ -483,18 +543,29 @@ ImGuiRenderer::Draw(Editor &ed)
 				ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, col);
 			}
 
-			// Track widest line for content width reporting
+			// Track widest line for content width reporting. We only measure
+			// visible lines and fold the result into a monotonic max cached on
+			// the renderer (see max_width_* members). Off-screen lines are not
+			// measured per frame; if the user scrolls or edits, the cache is
+			// refreshed accordingly.
 			if (!expanded.empty()) {
 				float line_w = ImGui::CalcTextSize(expanded.c_str()).x;
-				if (line_w > max_line_width_px)
-					max_line_width_px = line_w;
+				if (line_w > max_width_px_)
+					max_width_px_ = line_w;
 			}
 		}
-		// Report content width to ImGui so horizontal scrollbar works correctly.
-		if (max_line_width_px > 0.0f) {
-			ImGui::SetCursorPosX(max_line_width_px);
-			ImGui::Dummy(ImVec2(0, 0));
+		// After the visible-range loop, advance the layout cursor to the end of
+		// the (virtual) content so ImGui sees the correct total size. Vertical
+		// height comes from total_rows; horizontal width comes from the cached
+		// max line width. A Dummy at the final position records both.
+		if (total_rows > last_vis) {
+			ImGui::SetCursorPosY(ImGui::GetCursorPosY() +
+			                     static_cast<float>(total_rows - last_vis) * row_h);
 		}
+		if (max_width_px_ > 0.0f) {
+			ImGui::SetCursorPosX(max_width_px_);
+		}
+		ImGui::Dummy(ImVec2(0, 0));
 		// Synchronize cursor and scrolling after rendering all lines so content size is known.
 		{
 			float child_h_actual = ImGui::GetWindowHeight();
