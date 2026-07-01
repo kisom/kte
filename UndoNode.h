@@ -10,6 +10,12 @@ enum class UndoType : std::uint8_t {
 	Newline,
 	DeleteRow,
 	InsertRow,
+	// Inverse of Newline: forward = join_lines(row) [removes the newline at the
+	// end of `row`], backward = split_line(row, col) [recreates the original
+	// two lines]. Used by backspace-at-col-0 and delete-at-eol, whose forward
+	// action is a join, not a split — Newline's apply() semantics are the
+	// wrong direction for those.
+	JoinLines,
 };
 
 struct UndoNode {

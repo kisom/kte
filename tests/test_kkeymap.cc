@@ -37,6 +37,21 @@ TEST(KKeymap_KPrefix_CanonicalChords)
 }
 
 
+TEST(KKeymap_KPrefix_UppercaseE_RejectedAndDistinctFromLowercaseE)
+{
+	CommandId id{};
+
+	// 'e' is a real binding (OpenFileStart).
+	ASSERT_TRUE(KLookupKCommand('e', false, id));
+	ASSERT_EQ(id, CommandId::OpenFileStart);
+
+	// 'E' must be rejected, not silently aliased to 'e' via case-insensitive
+	// lookup (the switch normalizes to lowercase, so this has to be special-
+	// cased before it).
+	ASSERT_EQ(KLookupKCommand('E', false, id), false);
+}
+
+
 TEST(KKeymap_CtrlChords_CanonicalChords)
 {
 	CommandId id{};

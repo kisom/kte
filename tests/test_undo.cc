@@ -1198,6 +1198,312 @@ TEST (Undo_Command_RedoCountSelectsBranch)
 }
 
 
+TEST (Undo_Command_Newline_UndoRejoinsCorrectLines)
+{
+	InstallDefaultCommands();
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+
+	Buffer b;
+	ed.AddBuffer(std::move(b));
+	Buffer *buf = ed.CurrentBuffer();
+	ASSERT_TRUE(buf != nullptr);
+
+	buf->replace_all_bytes("abcdef\nghijkl");
+	buf->SetCursor(3, 0);
+
+	ASSERT_TRUE(Execute(ed, CommandId::Newline));
+	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(3));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("def"));
+	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("ghijkl"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Undo));
+	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(2));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abcdef"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("ghijkl"));
+
+	validate_undo_tree(*buf->Undo());
+}
+
+
+TEST (Undo_Command_Backspace_JoinUndoRedo)
+{
+	InstallDefaultCommands();
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+
+	Buffer b;
+	ed.AddBuffer(std::move(b));
+	Buffer *buf = ed.CurrentBuffer();
+	ASSERT_TRUE(buf != nullptr);
+
+	buf->replace_all_bytes("abc\ndef");
+	buf->SetCursor(0, 1);
+
+	ASSERT_TRUE(Execute(ed, CommandId::Backspace));
+	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(1));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abcdef"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Undo));
+	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(2));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("def"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Redo));
+	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(1));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abcdef"));
+
+	validate_undo_tree(*buf->Undo());
+}
+
+
+TEST (Undo_Command_DeleteChar_JoinUndoRedo)
+{
+	InstallDefaultCommands();
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+
+	Buffer b;
+	ed.AddBuffer(std::move(b));
+	Buffer *buf = ed.CurrentBuffer();
+	ASSERT_TRUE(buf != nullptr);
+
+	buf->replace_all_bytes("abc\ndef");
+	buf->SetCursor(3, 0);
+
+	ASSERT_TRUE(Execute(ed, CommandId::DeleteChar));
+	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(1));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abcdef"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Undo));
+	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(2));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("def"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Redo));
+	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(1));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abcdef"));
+
+	validate_undo_tree(*buf->Undo());
+}
+
+
+TEST (Undo_Command_RegexReplaceAll_UndoRedo)
+{
+	InstallDefaultCommands();
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+
+	Buffer b;
+	ed.AddBuffer(std::move(b));
+	Buffer *buf = ed.CurrentBuffer();
+	ASSERT_TRUE(buf != nullptr);
+
+	buf->replace_all_bytes("foo one\nfoo two\nbar three");
+	buf->SetCursor(0, 0);
+
+	ASSERT_TRUE(Execute(ed, CommandId::RegexpReplace));
+	ASSERT_TRUE(ed.PromptActive());
+	ed.SetPromptText("foo");
+	ASSERT_TRUE(Execute(ed, CommandId::Newline));
+	ASSERT_TRUE(ed.PromptActive());
+	ed.SetPromptText("baz");
+	ASSERT_TRUE(Execute(ed, CommandId::Newline));
+
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("baz one"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("baz two"));
+	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("bar three"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Undo));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("foo one"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("foo two"));
+	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("bar three"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Redo));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("baz one"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("baz two"));
+	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("bar three"));
+
+	validate_undo_tree(*buf->Undo());
+}
+
+
+TEST (Undo_Command_IndentUnindentRegion_UndoRedo)
+{
+	InstallDefaultCommands();
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+
+	Buffer b;
+	ed.AddBuffer(std::move(b));
+	Buffer *buf = ed.CurrentBuffer();
+	ASSERT_TRUE(buf != nullptr);
+
+	buf->replace_all_bytes("one\ntwo\nthree");
+	buf->SetMark(0, 0);
+	buf->SetCursor(0, 2);
+
+	ASSERT_TRUE(Execute(ed, CommandId::IndentRegion));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("\tone"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("\ttwo"));
+	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("\tthree"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Undo));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("one"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("two"));
+	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("three"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Redo));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("\tone"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("\ttwo"));
+	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("\tthree"));
+
+	buf->SetMark(0, 0);
+	buf->SetCursor(0, 2);
+	ASSERT_TRUE(Execute(ed, CommandId::UnindentRegion));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("one"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("two"));
+	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("three"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Undo));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("\tone"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("\ttwo"));
+	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("\tthree"));
+
+	validate_undo_tree(*buf->Undo());
+}
+
+
+TEST (Undo_Command_KillToEol_UndoRedo)
+{
+	InstallDefaultCommands();
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+
+	Buffer b;
+	ed.AddBuffer(std::move(b));
+	Buffer *buf = ed.CurrentBuffer();
+	ASSERT_TRUE(buf != nullptr);
+
+	buf->replace_all_bytes("abcdef\nghijkl");
+	buf->SetCursor(3, 0);
+
+	ASSERT_TRUE(Execute(ed, CommandId::KillToEOL));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Undo));
+	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(2));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abcdef"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("ghijkl"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Redo));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
+
+	validate_undo_tree(*buf->Undo());
+}
+
+
+TEST (Undo_Command_KillLine_UndoRedo)
+{
+	InstallDefaultCommands();
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+
+	Buffer b;
+	ed.AddBuffer(std::move(b));
+	Buffer *buf = ed.CurrentBuffer();
+	ASSERT_TRUE(buf != nullptr);
+
+	buf->replace_all_bytes("abc\ndef\nghi");
+	buf->SetCursor(0, 1);
+
+	ASSERT_TRUE(Execute(ed, CommandId::KillLine));
+	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(2));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("ghi"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Undo));
+	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(3));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("def"));
+	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("ghi"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Redo));
+	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(2));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
+	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("ghi"));
+
+	validate_undo_tree(*buf->Undo());
+}
+
+
+TEST (Undo_Command_KillRegion_UndoRedo)
+{
+	InstallDefaultCommands();
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+
+	Buffer b;
+	ed.AddBuffer(std::move(b));
+	Buffer *buf = ed.CurrentBuffer();
+	ASSERT_TRUE(buf != nullptr);
+
+	buf->replace_all_bytes("abc def ghi");
+	buf->SetMark(4, 0);
+	buf->SetCursor(8, 0);
+
+	ASSERT_TRUE(Execute(ed, CommandId::KillRegion));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc ghi"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Undo));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc def ghi"));
+
+	ASSERT_TRUE(Execute(ed, CommandId::Redo));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc ghi"));
+
+	validate_undo_tree(*buf->Undo());
+}
+
+
+TEST (Undo_Command_DeleteWordPrevNext_UndoRedo)
+{
+	InstallDefaultCommands();
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+
+	Buffer b;
+	ed.AddBuffer(std::move(b));
+	Buffer *buf = ed.CurrentBuffer();
+	ASSERT_TRUE(buf != nullptr);
+
+	buf->replace_all_bytes("abc def ghi");
+	buf->SetCursor(8, 0);
+
+	ASSERT_TRUE(Execute(ed, CommandId::DeleteWordPrev));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc ghi"));
+	ASSERT_TRUE(Execute(ed, CommandId::Undo));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc def ghi"));
+
+	buf->SetCursor(4, 0);
+	ASSERT_TRUE(Execute(ed, CommandId::DeleteWordNext));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc ghi"));
+	ASSERT_TRUE(Execute(ed, CommandId::Undo));
+	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc def ghi"));
+
+	validate_undo_tree(*buf->Undo());
+}
+
+
 TEST (Undo_InsertRow_UndoDeletesRow)
 {
 	Buffer b;

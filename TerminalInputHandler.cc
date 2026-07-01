@@ -1,4 +1,6 @@
 #include <cstdio>
+#include <climits>
+#include <cwchar>
 #include <ncurses.h>
 
 #include "TerminalInputHandler.h"
@@ -12,6 +14,22 @@ CTRL(char c)
 {
 	return c & 0x1F;
 }
+
+
+// Encode a single wide character in the process locale's multibyte encoding
+// (UTF-8, given main.cc's setlocale(LC_ALL, "")). Returns false if the
+// codepoint can't be represented, leaving `out` untouched.
+bool
+wchar_to_mb(wchar_t wc, std::string &out)
+{
+	std::mbstate_t state{};
+	char buf[MB_LEN_MAX];
+	std::size_t n = std::wcrtomb(buf, wc, &state);
+	if (n == static_cast<std::size_t>(-1))
+		return false;
+	out.assign(buf, n);
+	return true;
+}
 }
 
 TerminalInputHandler::TerminalInputHandler() = default;
@@ -21,6 +39,7 @@ TerminalInputHandler::~TerminalInputHandler() = default;
 
 static bool
 map_key_to_command(const int ch,
+                   const bool is_keycode,
                    bool &k_prefix,
                    bool &esc_meta,
                    bool &k_ctrl_pending,
@@ -28,9 +47,13 @@ map_key_to_command(const int ch,
                    Editor *ed,
                    MappedInput &out)
 {
-	// Handle special keys from ncurses
+	// Handle special keys from ncurses. These are only meaningful when
+	// get_wch() reported KEY_CODE_YES: a regular (possibly non-ASCII) wide
+	// character can numerically collide with a KEY_* constant otherwise
+	// (e.g. U+0107 'ć' equals KEY_BACKSPACE's value), which would wrongly
+	// swallow it as a special key instead of inserting it.
 	// These keys exit k-prefix mode if active (user pressed C-k then a special key).
-	switch (ch) {
+	switch (is_keycode ? ch : -1) {
 	case KEY_ENTER:
 		// Some terminals send KEY_ENTER distinct from '\n'/'\r'
 		k_prefix = false;
@@ -259,7 +282,7 @@ map_key_to_command(const int ch,
 		esc_meta      = false;
 		int ascii_key = ch;
 		// Handle ESC + BACKSPACE (meta-backspace, Alt-Backspace)
-		if (ch == KEY_BACKSPACE || ch == 127 || ch == CTRL('H')) {
+		if ((is_keycode && ch == KEY_BACKSPACE) || ch == 127 || ch == CTRL('H')) {
 			ascii_key = KEY_BACKSPACE; // normalized value for lookup
 		} else if (ch == ',') {
 			// Some terminals emit ',' when Shift state is lost after ESC; treat as '<'
@@ -281,7 +304,7 @@ map_key_to_command(const int ch,
 	}
 
 	// Backspace in ncurses can be KEY_BACKSPACE or 127
-	if (ch == KEY_BACKSPACE || ch == 127 || ch == CTRL('H')) {
+	if ((is_keycode && ch == KEY_BACKSPACE) || ch == 127 || ch == CTRL('H')) {
 		k_prefix       = false;
 		k_ctrl_pending = false;
 		out            = {true, CommandId::Backspace, "", 0};
@@ -297,12 +320,21 @@ map_key_to_command(const int ch,
 		return true;
 	}
 
-	// Printable ASCII
-	if (ch >= 0x20 && ch <= 0x7E) {
+	// Printable character: ASCII, or (for a regular decoded wide character,
+	// not a keycode) any other printable Unicode codepoint - e.g. accented
+	// Latin, Cyrillic, CJK, etc.
+	if (!is_keycode && ch >= 0x20 && ch != 0x7F) {
+		std::string mb;
+		if (ch <= 0x7E) {
+			mb.assign(1, static_cast<char>(ch));
+		} else if (!wchar_to_mb(static_cast<wchar_t>(ch), mb)) {
+			out.hasCommand = false;
+			return true;
+		}
 		out.hasCommand = true;
 		out.id         = CommandId::InsertText;
-		out.arg.assign(1, static_cast<char>(ch));
-		out.count = 0;
+		out.arg        = mb;
+		out.count      = 0;
 		return true;
 	}
 
@@ -314,12 +346,15 @@ map_key_to_command(const int ch,
 bool
 TerminalInputHandler::decode_(MappedInput &out)
 {
-	int ch = getch();
-	if (ch == ERR) {
+	wint_t wch;
+	int ret = get_wch(&wch);
+	if (ret == ERR) {
 		return false; // no input
 	}
+	const bool is_keycode = (ret == KEY_CODE_YES);
+	const int ch          = static_cast<int>(wch);
 	bool consumed = map_key_to_command(
-		ch,
+		ch, is_keycode,
 		k_prefix_, esc_meta_,
 		k_ctrl_pending_,
 		mouse_selecting_,

@@ -101,6 +101,36 @@ TEST(SearchFlow_SearchReplace_EmptyFind_DoesNotMutateBuffer_And_ClearsState)
 }
 
 
+TEST(SearchFlow_SearchReplace_EmptyWith_ReplacesAdjacentOverlappingMatches)
+{
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	Buffer &b  = h.Buf();
+
+	// "aaaa" with "aa" -> "" must remove both non-overlapping occurrences, not
+	// just the first: after deleting the match at column 0, the next "aa" now
+	// sits at column 0 too (not column 1), so the scan must resume at the
+	// deletion point rather than one character past it.
+	b.insert_text(0, 0, "aaaa\n");
+	b.SetCursor(0, 0);
+
+	ASSERT_TRUE(h.Exec(CommandId::SearchReplace));
+	ASSERT_TRUE(ed.PromptActive());
+	ASSERT_EQ(ed.CurrentPromptKind(), Editor::PromptKind::ReplaceFind);
+
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "aa"));
+	ASSERT_TRUE(h.Exec(CommandId::Newline));
+	ASSERT_TRUE(ed.PromptActive());
+	ASSERT_EQ(ed.CurrentPromptKind(), Editor::PromptKind::ReplaceWith);
+
+	// Leave the replacement empty and accept.
+	ASSERT_TRUE(h.Exec(CommandId::Newline));
+
+	ASSERT_TRUE(!ed.PromptActive());
+	ASSERT_EQ(std::string(b.Rows()[0]), std::string(""));
+}
+
+
 TEST(SearchFlow_RegexFind_InvalidPattern_FailsSafely_And_ClearsStateOnEnter)
 {
 	TestHarness h;

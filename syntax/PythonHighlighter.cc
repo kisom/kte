@@ -55,31 +55,26 @@ PythonHighlighter::HighlightLineStateful(const Buffer &buf, int row, const LineS
 	std::string s = buf.GetLineString(static_cast<std::size_t>(row));
 	int n         = static_cast<int>(s.size());
 
+	int i = 0;
+
 	// Triple-quoted string continuation uses in_raw_string with raw_delim either "'''" or "\"\"\""
 	if (state.in_raw_string && (state.raw_delim == "'''" || state.raw_delim == "\"\"\"")) {
 		auto pos = s.find(state.raw_delim);
 		if (pos == std::string::npos) {
 			push(out, 0, n, TokenKind::String);
 			return state; // still inside
-		} else {
-			int end = static_cast<int>(pos + static_cast<int>(state.raw_delim.size()));
-			push(out, 0, end, TokenKind::String);
-			// remainder processed normally
-			s                   = s.substr(end);
-			n                   = static_cast<int>(s.size());
-			state.in_raw_string = false;
-			state.raw_delim.clear();
-			// Continue parsing remainder as a separate small loop
-			int base = end;
-			// original offset, but we already emitted to 'out' with base=0; following spans should be from 'end'
-			// For simplicity, mark rest as Default
-			if (n > 0)
-				push(out, base, base + n, TokenKind::Default);
-			return state;
 		}
+		int end = static_cast<int>(pos + static_cast<int>(state.raw_delim.size()));
+		push(out, 0, end, TokenKind::String);
+		state.in_raw_string = false;
+		state.raw_delim.clear();
+		// Resume the normal tokenizer at the closing delimiter's end, on the
+		// same (unmodified) `s`/`n`, so anything after it - including a new
+		// triple-quoted string opening on this same line - is re-scanned
+		// instead of being dumped into a single opaque Default span.
+		i = end;
 	}
 
-	int i = 0;
 	// Detect comment start '#', ignoring inside strings
 	while (i < n) {
 		char c = s[i];

@@ -1,6 +1,4 @@
-#include <iostream>
 #include <ncurses.h>
-#include <ostream>
 
 #include "KKeymap.h"
 
@@ -40,6 +38,15 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 		out = CommandId::ToggleReadOnly; // C-k ' (toggle read-only)
 		return true;
 	}
+	if (ascii_key == 'E') {
+		// Explicitly rejected and kept distinct from 'e' (OpenFileStart): the
+		// switch below operates on the lowercased key, so it can't otherwise
+		// tell 'E' and 'e' apart. Return false and let the caller show its
+		// normal "unknown k-command" status-line message - curses already
+		// owns the terminal here, so writing to stderr would corrupt the
+		// screen.
+		return false;
+	}
 
 	switch (k_lower) {
 	case 'a':
@@ -66,9 +73,6 @@ KLookupKCommand(const int ascii_key, const bool ctrl, CommandId &out) -> bool
 	case 'e':
 		out = CommandId::OpenFileStart;
 		return true;
-	case 'E':
-		std::cerr << "E is not a valid command" << std::endl;
-		return false;
 	case 'f':
 		out = CommandId::FlushKillRing;
 		return true;

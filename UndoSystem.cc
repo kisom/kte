@@ -37,7 +37,7 @@ UndoSystem::Begin(UndoType type)
 
 	// Some operations should always be standalone undo steps.
 	const bool always_standalone = (type == UndoType::Newline || type == UndoType::DeleteRow || type ==
-	                                UndoType::InsertRow);
+	                                UndoType::InsertRow || type == UndoType::JoinLines);
 	if (always_standalone) {
 		commit();
 	}
@@ -77,6 +77,7 @@ UndoSystem::Begin(UndoType type)
 			case UndoType::Newline:
 			case UndoType::DeleteRow:
 			case UndoType::InsertRow:
+			case UndoType::JoinLines:
 				break;
 			}
 		}
@@ -325,6 +326,16 @@ UndoSystem::apply(const UndoNode *node, int direction)
 			buf_->SetCursor(0, static_cast<std::size_t>(node->row));
 		}
 		break;
+	case UndoType::JoinLines:
+		// Mirror image of Newline: forward removes a newline, backward restores it.
+		if (direction > 0) {
+			buf_->join_lines(node->row);
+			buf_->SetCursor(static_cast<std::size_t>(node->col), static_cast<std::size_t>(node->row));
+		} else {
+			buf_->split_line(node->row, node->col);
+			buf_->SetCursor(0, static_cast<std::size_t>(node->row + 1));
+		}
+		break;
 	}
 }
 
@@ -424,6 +435,8 @@ UndoSystem::type_str(UndoType t)
 		return "DeleteRow";
 	case UndoType::InsertRow:
 		return "InsertRow";
+	case UndoType::JoinLines:
+		return "JoinLines";
 	}
 	return "?";
 }

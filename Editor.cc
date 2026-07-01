@@ -165,9 +165,23 @@ std::size_t
 Editor::AddBuffer(const Buffer &buf)
 {
 	auto &bufs = Buffers();
+	// push_back may reallocate the vector's storage, moving every existing
+	// Buffer to a new address. Drain any in-flight swap records first so the
+	// writer thread never dereferences an address that's about to move, then
+	// rehome each attached buffer that actually moved.
+	if (swap_ && !bufs.empty())
+		swap_->Flush();
+	std::vector<Buffer *> old_addrs;
+	old_addrs.reserve(bufs.size());
+	for (auto &b: bufs)
+		old_addrs.push_back(&b);
 	bufs.push_back(buf);
-	// Attach swap recorder
 	if (swap_) {
+		for (std::size_t i = 0; i < old_addrs.size(); ++i) {
+			Buffer *new_addr = &bufs[i];
+			if (new_addr != old_addrs[i])
+				bufs[i].SetSwapRecorder(swap_->Rehome(old_addrs[i], new_addr));
+		}
 		swap_->Attach(&bufs.back());
 		bufs.back().SetSwapRecorder(swap_->RecorderFor(&bufs.back()));
 	}
@@ -182,8 +196,19 @@ std::size_t
 Editor::AddBuffer(Buffer &&buf)
 {
 	auto &bufs = Buffers();
+	if (swap_ && !bufs.empty())
+		swap_->Flush();
+	std::vector<Buffer *> old_addrs;
+	old_addrs.reserve(bufs.size());
+	for (auto &b: bufs)
+		old_addrs.push_back(&b);
 	bufs.push_back(std::move(buf));
 	if (swap_) {
+		for (std::size_t i = 0; i < old_addrs.size(); ++i) {
+			Buffer *new_addr = &bufs[i];
+			if (new_addr != old_addrs[i])
+				bufs[i].SetSwapRecorder(swap_->Rehome(old_addrs[i], new_addr));
+		}
 		swap_->Attach(&bufs.back());
 		bufs.back().SetSwapRecorder(swap_->RecorderFor(&bufs.back()));
 	}
@@ -495,8 +520,22 @@ Editor::CloseBuffer(std::size_t index)
 		// This prevents stale swap files from accumulating (e.g., when used as git editor).
 		swap_->Detach(&bufs[index], true);
 		bufs[index].SetSwapRecorder(nullptr);
+		// Drain in-flight records before the erase-shift below moves other
+		// buffers to new addresses (vector::erase never reallocates, but it does
+		// move-assign each trailing buffer into the previous slot).
+		swap_->Flush();
 	}
 	bufs.erase(bufs.begin() + static_cast<std::ptrdiff_t>(index));
+	if (swap_) {
+		// erase() shifts every buffer after `index` down by one slot in-place
+		// (no reallocation), so the buffer now at slot i used to live at slot
+		// i+1 (same underlying storage, since data() doesn't move on erase).
+		for (std::size_t i = index; i < bufs.size(); ++i) {
+			Buffer *new_addr = &bufs[i];
+			Buffer *old_addr = new_addr + 1;
+			bufs[i].SetSwapRecorder(swap_->Rehome(old_addr, new_addr));
+		}
+	}
 	if (bufs.empty()) {
 		curbuf_ = 0;
 	} else if (curbuf_ >= bufs.size()) {

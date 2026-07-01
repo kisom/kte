@@ -9,6 +9,19 @@
 #include "KKeymap.h"
 #include "Editor.h"
 
+// Verbose k-prefix suffix logging for debugging macOS/SDL key translation
+// issues. Default to off; enable by defining IMGUI_IH_DEBUG=1 at compile
+// time. Mirrors QtInputHandler.cc's QT_IH_DEBUG gate.
+#ifndef IMGUI_IH_DEBUG
+#define IMGUI_IH_DEBUG 0
+#endif
+
+#if IMGUI_IH_DEBUG
+#define IH_LOGF(...) do { std::fprintf(stderr, __VA_ARGS__); std::fflush(stderr); } while (0)
+#else
+#define IH_LOGF(...) ((void) 0)
+#endif
+
 
 static bool
 map_key(const SDL_Keycode key,
@@ -182,18 +195,19 @@ map_key(const SDL_Keycode key,
 			k_ctrl_pending             = false;
 			CommandId id;
 			bool mapped = KLookupKCommand(ascii_key, pass_ctrl, id);
+#if IMGUI_IH_DEBUG
 			// Diagnostics for u/U
 			if (lower == 'u') {
 				char disp = (ascii_key >= 0x20 && ascii_key <= 0x7e)
 					            ? static_cast<char>(ascii_key)
 					            : '?';
-				std::fprintf(stderr,
-				             "[kge] k-prefix suffix: sym=%d mods=0x%x ascii=%d '%c' ctrl2=%d pass_ctrl=%d mapped=%d id=%d\n",
-				             static_cast<int>(key), static_cast<unsigned int>(mod), ascii_key, disp,
-				             ctrl2 ? 1 : 0, pass_ctrl ? 1 : 0, mapped ? 1 : 0,
-				             mapped ? static_cast<int>(id) : -1);
-				std::fflush(stderr);
+				IH_LOGF(
+					"[kge] k-prefix suffix: sym=%d mods=0x%x ascii=%d '%c' ctrl2=%d pass_ctrl=%d mapped=%d id=%d\n",
+					static_cast<int>(key), static_cast<unsigned int>(mod), ascii_key, disp,
+					ctrl2 ? 1 : 0, pass_ctrl ? 1 : 0, mapped ? 1 : 0,
+					mapped ? static_cast<int>(id) : -1);
 			}
+#endif
 			if (mapped) {
 				out = {true, id, "", 0};
 				if (ed)
@@ -524,15 +538,17 @@ ImGuiInputHandler::ProcessSDLEvent(const SDL_Event &e)
 					bool pass_ctrl  = k_ctrl_pending_;
 					k_ctrl_pending_ = false;
 					bool mapped     = KLookupKCommand(ascii_key, pass_ctrl, id);
+#if IMGUI_IH_DEBUG
 					// Diagnostics: log any k-prefix TEXTINPUT suffix mapping
-					char disp = (ascii_key >= 0x20 && ascii_key <= 0x7e)
-						            ? static_cast<char>(ascii_key)
-						            : '?';
-					std::fprintf(stderr,
-					             "[kge] k-prefix TEXTINPUT suffix: ascii=%d '%c' mapped=%d id=%d\n",
-					             ascii_key, disp, mapped ? 1 : 0,
-					             mapped ? static_cast<int>(id) : -1);
-					std::fflush(stderr);
+					{
+						char disp = (ascii_key >= 0x20 && ascii_key <= 0x7e)
+							            ? static_cast<char>(ascii_key)
+							            : '?';
+						IH_LOGF("[kge] k-prefix TEXTINPUT suffix: ascii=%d '%c' mapped=%d id=%d\n",
+						       ascii_key, disp, mapped ? 1 : 0,
+						       mapped ? static_cast<int>(id) : -1);
+					}
+#endif
 					if (mapped) {
 						mi = {true, id, "", 0};
 						if (ed_)

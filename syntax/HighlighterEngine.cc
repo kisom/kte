@@ -74,7 +74,22 @@ HighlighterEngine::GetLine(const Buffer &buf, int row, std::uint64_t buf_version
 
 	StatefulHighlighter::LineState prev_state;
 	int start_row = -1;
-	if (!state_cache_.empty()) {
+
+	// Fast path: state_last_contig_ tracks the highest row we've cached state
+	// for, per version. If that row is already below our target, it's
+	// necessarily the best anchor the O(n) scan below would have found, so we
+	// can skip the scan entirely. Re-validated against state_cache_ before
+	// use since InvalidateFrom()/SetHighlighter() may have raced/cleared it.
+	auto contig_it = state_last_contig_.find(buf_version);
+	if (contig_it != state_last_contig_.end() && contig_it->second < row) {
+		auto sc_it = state_cache_.find(contig_it->second);
+		if (sc_it != state_cache_.end() && sc_it->second.version == buf_version) {
+			start_row  = contig_it->second;
+			prev_state = sc_it->second.state;
+		}
+	}
+
+	if (start_row < 0 && !state_cache_.empty()) {
 		// linear search over map (unordered), track best candidate
 		int best = -1;
 		for (const auto &kv: state_cache_) {
@@ -109,6 +124,9 @@ HighlighterEngine::GetLine(const Buffer &buf, int row, std::uint64_t buf_version
 		se.state        = next_state;
 		state_cache_[r] = se;
 		cur_state       = next_state;
+		int &contig     = state_last_contig_[buf_version];
+		if (r > contig)
+			contig = r;
 	}
 
 	// Store in cache and return by value
@@ -138,6 +156,14 @@ HighlighterEngine::InvalidateFrom(int row)
 			else
 				++it;
 		}
+	}
+	// A version's tracked contiguous-state row is no longer valid once any
+	// row at or above it has been evicted from state_cache_ above.
+	for (auto it = state_last_contig_.begin(); it != state_last_contig_.end();) {
+		if (it->second >= row)
+			it = state_last_contig_.erase(it);
+		else
+			++it;
 	}
 }
 

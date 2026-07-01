@@ -292,6 +292,20 @@ main(int argc, char *argv[])
 			fe = std::make_unique<TerminalFrontend>();
 		}
 
+		// Guarantee Shutdown() runs on every exit path from here on (normal
+		// return, early return, or exception unwinding e.g. from Init/Execute/
+		// Step) so a crash never leaves the terminal in raw/cbreak mode.
+		struct FrontendShutdownGuard {
+			Frontend *fe;
+
+
+			~FrontendShutdownGuard()
+			{
+				if (fe)
+					fe->Shutdown();
+			}
+		} shutdown_guard{fe.get()};
+
 #if defined(KTE_BUILD_GUI) && defined(__APPLE__)
 		if (use_gui) {
 			/* likely using the .app, so need to cd */
@@ -319,8 +333,6 @@ main(int argc, char *argv[])
 		while (running) {
 			fe->Step(editor, running);
 		}
-
-		fe->Shutdown();
 
 		return 0;
 	} catch (const std::exception &e) {

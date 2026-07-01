@@ -268,6 +268,43 @@ SwapManager::RecorderFor(Buffer *buf)
 }
 
 
+SwapRecorder *
+SwapManager::Rehome(Buffer *old_addr, Buffer *new_addr)
+{
+	if (!old_addr || !new_addr || old_addr == new_addr)
+		return nullptr;
+	std::lock_guard<std::mutex> lg(mtx_);
+	SwapRecorder *result = nullptr;
+
+	auto jit = journals_.find(old_addr);
+	if (jit != journals_.end()) {
+		JournalCtx ctx = std::move(jit->second);
+		journals_.erase(jit);
+		journals_[new_addr] = std::move(ctx);
+	}
+
+	auto rit = recorders_.find(old_addr);
+	if (rit != recorders_.end()) {
+		recorders_.erase(rit);
+		// BufferRecorder binds a Buffer& at construction, so it can't be
+		// repointed in place; rebuild it against the buffer's new address.
+		auto rec              = std::make_unique<BufferRecorder>(*this, *new_addr);
+		result                = rec.get();
+		recorders_[new_addr] = std::move(rec);
+	}
+
+	// Defensive: any record still queued (not yet drained by the writer thread)
+	// for the old address must follow the buffer to its new location. Callers
+	// are expected to Flush() before rehoming so this should normally be a no-op.
+	for (auto &p: queue_) {
+		if (p.buf == old_addr)
+			p.buf = new_addr;
+	}
+
+	return result;
+}
+
+
 void
 SwapManager::Attach(Buffer *buf)
 {

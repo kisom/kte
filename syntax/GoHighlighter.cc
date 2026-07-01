@@ -46,14 +46,45 @@ GoHighlighter::GoHighlighter()
 void
 GoHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<HighlightSpan> &out) const
 {
+	StatefulHighlighter::LineState prev;
+	(void) HighlightLineStateful(buf, row, prev, out);
+}
+
+
+StatefulHighlighter::LineState
+GoHighlighter::HighlightLineStateful(const Buffer &buf,
+                                     int row,
+                                     const LineState &prev,
+                                     std::vector<HighlightSpan> &out) const
+{
+	StatefulHighlighter::LineState state = prev;
 	if (row < 0 || static_cast<std::size_t>(row) >= buf.Nrows())
-		return;
+		return state;
 	std::string s = buf.GetLineString(static_cast<std::size_t>(row));
 	int n         = static_cast<int>(s.size());
 	int i         = 0;
 	int bol       = 0;
 	while (bol < n && (s[bol] == ' ' || s[bol] == '\t'))
 		++bol;
+
+	// Continue a multi-line block comment from the previous line.
+	if (state.in_block_comment) {
+		int j = i;
+		while (i + 1 < n) {
+			if (s[i] == '*' && s[i + 1] == '/') {
+				i += 2;
+				push(out, j, i, TokenKind::Comment);
+				state.in_block_comment = false;
+				break;
+			}
+			++i;
+		}
+		if (state.in_block_comment) {
+			push(out, j, n, TokenKind::Comment);
+			return state;
+		}
+	}
+
 	// line comment
 	while (i < n) {
 		char c = s[i];
@@ -82,7 +113,8 @@ GoHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<HighlightSp
 			}
 			if (!closed) {
 				push(out, i, n, TokenKind::Comment);
-				break;
+				state.in_block_comment = true;
+				return state;
 			} else {
 				push(out, i, j, TokenKind::Comment);
 				i = j;
@@ -152,5 +184,6 @@ GoHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<HighlightSp
 		push(out, i, i + 1, TokenKind::Default);
 		++i;
 	}
+	return state;
 }
 } // namespace kte

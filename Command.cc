@@ -159,6 +159,27 @@ ensure_at_least_one_line(Buffer &buf)
 }
 
 
+// RAII helper: brackets a multi-edit command so its individual undo nodes
+// undo/redo as a single atomic step, per the project's undo-grouping convention.
+struct UndoGroupGuard {
+	UndoSystem *u;
+
+
+	explicit UndoGroupGuard(UndoSystem *u_) : u(u_)
+	{
+		if (u)
+			u->BeginGroup();
+	}
+
+
+	~UndoGroupGuard()
+	{
+		if (u)
+			u->EndGroup();
+	}
+};
+
+
 // Determine if a command mutates the buffer contents (text edits)
 static bool
 is_mutating_command(CommandId id)
@@ -264,8 +285,12 @@ extract_region_text(const Buffer &buf, std::size_t sx, std::size_t sy, std::size
 
 
 // Helper: delete region and leave cursor at start (sx,sy). Adjust lines appropriately.
+// If `u` is non-null, each underlying mutation is recorded as its own undo node;
+// callers that want the whole region-delete to undo/redo as one step should
+// wrap the call in an UndoGroupGuard.
 static void
-delete_region(Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::size_t ey)
+delete_region(Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::size_t ey,
+              UndoSystem *u = nullptr)
 {
 	std::size_t nrows = buf.Nrows();
 	if (nrows == 0)
@@ -282,7 +307,14 @@ delete_region(Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::
 		std::size_t xe   = std::min(ex, line.size());
 		if (xe < xs)
 			std::swap(xs, xe);
+		std::string deleted = std::string(line.substr(xs, xe - xs));
 		buf.delete_text(static_cast<int>(sy), static_cast<int>(xs), xe - xs);
+		if (u && !deleted.empty()) {
+			buf.SetCursor(xs, sy);
+			u->Begin(UndoType::Delete);
+			u->Append(std::string_view(deleted));
+			u->commit();
+		}
 	} else {
 		// Multi-line: delete from (sx,sy) to (ex,ey)
 		// Strategy:
@@ -303,11 +335,25 @@ delete_region(Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::
 
 		// Delete tail of first line (from xs to end)
 		if (xs < first_line_len) {
+			std::string tail = std::string(rows[sy].substr(xs));
 			buf.delete_text(static_cast<int>(sy), static_cast<int>(xs), first_line_len - xs);
+			if (u && !tail.empty()) {
+				buf.SetCursor(xs, sy);
+				u->Begin(UndoType::Delete);
+				u->Append(std::string_view(tail));
+				u->commit();
+			}
 		}
 
 		// Delete lines from ey down to sy+1 (reverse order to preserve indices)
 		for (std::size_t i = ey; i > sy; --i) {
+			if (u) {
+				std::string row_text = static_cast<std::string>(buf.Rows()[i]);
+				buf.SetCursor(0, i);
+				u->Begin(UndoType::DeleteRow);
+				u->Append(std::string_view(row_text));
+				u->commit();
+			}
 			buf.delete_row(static_cast<int>(i));
 		}
 
@@ -317,6 +363,12 @@ delete_region(Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::
 			const auto &rows_after = buf.Rows();
 			std::size_t line_len   = rows_after[sy].size();
 			buf.insert_text(static_cast<int>(sy), static_cast<int>(line_len), suffix);
+			if (u) {
+				buf.SetCursor(line_len, sy);
+				u->Begin(UndoType::Insert);
+				u->Append(std::string_view(suffix));
+				u->commit();
+			}
 		}
 	}
 	buf.SetCursor(sx, sy);
@@ -908,6 +960,10 @@ cmd_unknown_esc_command(CommandContext &ctx)
 static void
 apply_filetype(Buffer &buf, const std::string &ft)
 {
+	// Only reachable from explicit user commands (:syntax on, :set
+	// filetype=...) - mark so frontends that re-apply config-driven syntax
+	// defaults every frame (e.g. ImGuiFrontend) don't stomp this choice.
+	buf.SetSyntaxUserOverride(true);
 	buf.EnsureHighlighter();
 	auto *eng = buf.Highlighter();
 	if (!eng)
@@ -977,6 +1033,7 @@ cmd_syntax(CommandContext &ctx)
 	};
 	trim(arg);
 	if (arg == "on") {
+		b->SetSyntaxUserOverride(true);
 		b->SetSyntaxEnabled(true);
 		// If no highlighter but filetype is cpp by extension, set it
 		if (!b->Highlighter() || !b->Highlighter()->HasHighlighter()) {
@@ -984,6 +1041,7 @@ cmd_syntax(CommandContext &ctx)
 		}
 		ctx.editor.SetStatus("syntax: on");
 	} else if (arg == "off") {
+		b->SetSyntaxUserOverride(true);
 		b->SetSyntaxEnabled(false);
 		ctx.editor.SetStatus("syntax: off");
 	} else if (arg == "reload") {
@@ -2509,12 +2567,10 @@ cmd_newline(CommandContext &ctx)
 						}
 						pos = p + with.size();
 					} else {
-						// When replacing with empty, continue after the deletion point to avoid re-matching
+						// Replacing with empty leaves nothing inserted at the deletion
+						// point, so resume scanning from `p` itself (not p+1) to catch
+						// adjacent/overlapping matches, e.g. "aaaa" -> "" replacing "aa".
 						pos = p;
-						if (pos < static_cast<std::size_t>(buf->Rows()[y].size()))
-							++pos;
-						else
-							break;
 					}
 					++total;
 				}
@@ -2923,14 +2979,28 @@ cmd_newline(CommandContext &ctx)
 				return true;
 			}
 			std::size_t changed = 0;
+			UndoSystem *ru      = buf->Undo();
+			UndoGroupGuard rguard(ru);
 			// Iterate by index to allow modifications via PieceTable helpers
 			for (std::size_t y = 0; y < buf->Rows().size(); ++y) {
 				std::string before = static_cast<std::string>(buf->Rows()[y]);
 				std::string after  = std::regex_replace(before, rx, repl);
 				if (after != before) {
 					// Replace entire line y with 'after' using PieceTable ops
+					if (ru) {
+						buf->SetCursor(0, y);
+						ru->Begin(UndoType::DeleteRow);
+						ru->Append(std::string_view(before));
+						ru->commit();
+					}
 					buf->delete_row(static_cast<int>(y));
 					buf->insert_row(static_cast<int>(y), std::string_view(after));
+					if (ru) {
+						buf->SetCursor(0, y);
+						ru->Begin(UndoType::InsertRow);
+						ru->Append(std::string_view(after));
+						ru->commit();
+					}
 					++changed;
 				}
 			}
@@ -3003,18 +3073,28 @@ cmd_newline(CommandContext &ctx)
 		ensure_cursor_visible(ctx.editor, *buf);
 		return true;
 	}
+	UndoSystem *u = buf->Undo();
+	if (u && repeat > 1)
+		u->BeginGroup();
 	for (int i = 0; i < repeat; ++i) {
+		// Sync the buffer's cursor to the split point before Begin(), which
+		// records its node's row/col from the buffer's *current* cursor. Undo
+		// must reverse this exact split, not wherever the cursor ends up after
+		// the whole loop finishes.
+		buf->SetCursor(x, y);
+		if (u) {
+			u->Begin(UndoType::Newline);
+			u->commit();
+		}
 		buf->split_line(static_cast<int>(y), static_cast<int>(x));
 		// Move to start of next line
 		y += 1;
 		x = 0;
 	}
+	if (u && repeat > 1)
+		u->EndGroup();
 	buf->SetCursor(x, y);
 	buf->SetDirty(true);
-	if (auto *u = buf->Undo()) {
-		u->Begin(UndoType::Newline);
-		u->commit();
-	}
 	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
 }
@@ -3198,7 +3278,9 @@ cmd_backspace(CommandContext &ctx)
 			x = prev_len;
 			buf->SetCursor(x, y);
 			if (u) {
-				u->Begin(UndoType::Newline);
+				// Forward action here is a join, not a split: JoinLines has the
+				// correct (inverted) apply() semantics, unlike Newline.
+				u->Begin(UndoType::JoinLines);
 				u->commit();
 			}
 		} else {
@@ -3277,7 +3359,9 @@ cmd_delete_char(CommandContext &ctx)
 		} else if (y + 1 < rows_view.size()) {
 			buf->join_lines(static_cast<int>(y));
 			if (u) {
-				u->Begin(UndoType::Newline);
+				// Forward action here is a join, not a split: JoinLines has the
+				// correct (inverted) apply() semantics, unlike Newline.
+				u->Begin(UndoType::JoinLines);
 				u->commit();
 			}
 		} else {
@@ -3350,18 +3434,32 @@ cmd_kill_to_eol(CommandContext &ctx)
 	std::size_t x = buf->Curx();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
 	std::string killed_total;
+	UndoSystem *u = buf->Undo();
+	UndoGroupGuard guard(u);
 	for (int i = 0; i < repeat; ++i) {
 		const auto &rows_view = buf->Rows();
 		if (y >= rows_view.size())
 			break;
 		if (x < rows_view[y].size()) {
 			// delete from cursor to end of line
-			killed_total    += rows_view[y].substr(x);
+			std::string seg = static_cast<std::string>(rows_view[y].substr(x));
+			killed_total    += seg;
 			std::size_t len = rows_view[y].size() - x;
 			buf->delete_text(static_cast<int>(y), static_cast<int>(x), len);
+			if (u) {
+				buf->SetCursor(x, y);
+				u->Begin(UndoType::Delete);
+				u->Append(std::string_view(seg));
+				u->commit();
+			}
 		} else if (y + 1 < rows_view.size()) {
 			// at EOL: delete the newline (join with next line)
 			killed_total += "\n";
+			if (u) {
+				buf->SetCursor(x, y);
+				u->Begin(UndoType::JoinLines);
+				u->commit();
+			}
 			buf->join_lines(static_cast<int>(y));
 		} else {
 			// nothing to delete
@@ -3395,20 +3493,37 @@ cmd_kill_line(CommandContext &ctx)
 	(void) x; // cursor x will be reset to 0
 	int repeat = ctx.count > 0 ? ctx.count : 1;
 	std::string killed_total;
+	UndoSystem *u = buf->Undo();
+	UndoGroupGuard guard(u);
 	for (int i = 0; i < repeat; ++i) {
 		const auto &rows_view = buf->Rows();
 		if (rows_view.empty())
 			break;
 		if (rows_view.size() == 1) {
 			// last remaining line: clear its contents
-			killed_total += static_cast<std::string>(rows_view[0]);
-			if (!rows_view[0].empty())
-				buf->delete_text(0, 0, rows_view[0].size());
+			std::string content = static_cast<std::string>(rows_view[0]);
+			killed_total += content;
+			if (!content.empty()) {
+				buf->delete_text(0, 0, content.size());
+				if (u) {
+					buf->SetCursor(0, 0);
+					u->Begin(UndoType::Delete);
+					u->Append(std::string_view(content));
+					u->commit();
+				}
+			}
 			y = 0;
 		} else if (y < rows_view.size()) {
 			// erase current line; keep y pointing at the next line
-			killed_total += static_cast<std::string>(rows_view[y]);
+			std::string content = static_cast<std::string>(rows_view[y]);
+			killed_total += content;
 			killed_total += "\n";
+			if (u) {
+				buf->SetCursor(0, y);
+				u->Begin(UndoType::DeleteRow);
+				u->Append(std::string_view(content));
+				u->commit();
+			}
 			buf->delete_row(static_cast<int>(y));
 			const auto &rows_after = buf->Rows();
 			if (y >= rows_after.size()) {
@@ -3622,7 +3737,10 @@ cmd_kill_region(CommandContext &ctx)
 		return false;
 	}
 	std::string text = extract_region_text(*buf, sx, sy, ex, ey);
-	delete_region(*buf, sx, sy, ex, ey);
+	{
+		UndoGroupGuard guard(buf->Undo());
+		delete_region(*buf, sx, sy, ex, ey, buf->Undo());
+	}
 	ensure_cursor_visible(ctx.editor, *buf);
 	if (!text.empty()) {
 		if (ctx.editor.KillChain())
@@ -4234,6 +4352,7 @@ cmd_delete_word_prev(CommandContext &ctx)
 	std::size_t x = buf->Curx();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
 	std::string killed_total;
+	UndoGroupGuard guard(buf->Undo());
 	for (int i = 0; i < repeat; ++i) {
 		if (y >= rows.size()) {
 			y = rows.empty() ? 0 : rows.size() - 1;
@@ -4275,7 +4394,7 @@ cmd_delete_word_prev(CommandContext &ctx)
 		}
 		// Now delete from (x, y) to (start_x, start_y) using PieceTable
 		std::string deleted = extract_region_text(*buf, x, y, start_x, start_y);
-		delete_region(*buf, x, y, start_x, start_y);
+		delete_region(*buf, x, y, start_x, start_y, buf->Undo());
 		// Prepend to killed_total (since we're deleting backwards)
 		killed_total = deleted + killed_total;
 	}
@@ -4307,6 +4426,7 @@ cmd_delete_word_next(CommandContext &ctx)
 	std::size_t x    = buf->Curx();
 	int repeat       = ctx.count > 0 ? ctx.count : 1;
 	std::string killed_total;
+	UndoGroupGuard guard(buf->Undo());
 	for (int i = 0; i < repeat; ++i) {
 		if (y >= rows.size())
 			break;
@@ -4346,7 +4466,7 @@ cmd_delete_word_next(CommandContext &ctx)
 		}
 		// Now delete from (start_x, start_y) to (x, y) using PieceTable
 		std::string deleted = extract_region_text(*buf, start_x, start_y, x, y);
-		delete_region(*buf, start_x, start_y, x, y);
+		delete_region(*buf, start_x, start_y, x, y, buf->Undo());
 		y            = start_y;
 		x            = start_x;
 		killed_total += deleted;
@@ -4380,8 +4500,16 @@ cmd_indent_region(CommandContext &ctx)
 		ctx.editor.SetStatus("No region to indent");
 		return false;
 	}
+	UndoSystem *u = buf->Undo();
+	UndoGroupGuard guard(u);
 	for (std::size_t y = sy; y <= ey && y < buf->Rows().size(); ++y) {
 		buf->insert_text(static_cast<int>(y), 0, std::string_view("\t"));
+		if (u) {
+			buf->SetCursor(0, y);
+			u->Begin(UndoType::Insert);
+			u->Append('\t');
+			u->commit();
+		}
 	}
 	buf->SetDirty(true);
 	buf->ClearMark();
@@ -4405,6 +4533,8 @@ cmd_unindent_region(CommandContext &ctx)
 		ctx.editor.SetStatus("No region to unindent");
 		return false;
 	}
+	UndoSystem *u = buf->Undo();
+	UndoGroupGuard guard(u);
 	for (std::size_t y = sy; y <= ey && y < buf->Rows().size(); ++y) {
 		const auto &rows_view = buf->Rows();
 		if (y >= rows_view.size())
@@ -4413,13 +4543,26 @@ cmd_unindent_region(CommandContext &ctx)
 		if (!line.empty()) {
 			if (line[0] == '\t') {
 				buf->delete_text(static_cast<int>(y), 0, 1);
+				if (u) {
+					buf->SetCursor(0, y);
+					u->Begin(UndoType::Delete);
+					u->Append('\t');
+					u->commit();
+				}
 			} else if (line[0] == ' ') {
 				std::size_t spaces = 0;
 				while (spaces < line.size() && spaces < 8 && line[spaces] == ' ') {
 					++spaces;
 				}
-				if (spaces > 0)
+				if (spaces > 0) {
 					buf->delete_text(static_cast<int>(y), 0, spaces);
+					if (u) {
+						buf->SetCursor(0, y);
+						u->Begin(UndoType::Delete);
+						u->Append(line.substr(0, spaces));
+						u->commit();
+					}
+				}
 			}
 		}
 	}
@@ -4436,25 +4579,8 @@ cmd_reflow_paragraph(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (!buf)
 		return false;
-	struct GroupGuard {
-		UndoSystem *u;
-
-
-		explicit GroupGuard(UndoSystem *u_) : u(u_)
-		{
-			if (u)
-				u->BeginGroup();
-		}
-
-
-		~GroupGuard()
-		{
-			if (u)
-				u->EndGroup();
-		}
-	};
 	// Reflow performs a multi-edit transformation; make it a single standalone undo/redo step.
-	GroupGuard guard(buf->Undo());
+	UndoGroupGuard guard(buf->Undo());
 	if (auto *u = buf->Undo())
 		u->commit();
 	ensure_at_least_one_line(*buf);

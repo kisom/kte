@@ -44,6 +44,12 @@ apply_syntax_to_buffer(Buffer *b, const GUIConfig &cfg)
 	if (!b->EditModeDetected() && !b->Filename().empty())
 		b->SetEditMode(DetectEditMode(b->Filename()));
 
+	// If the user explicitly set syntax state via a command (:syntax on/off,
+	// :set filetype=...), leave it alone - otherwise this runs every frame
+	// and silently undoes a manual ":syntax off" on the very next frame.
+	if (b->SyntaxUserOverride())
+		return;
+
 	// Writing mode disables syntax; otherwise follow the global config.
 	if (cfg.syntax && b->GetEditMode() != EditMode::Writing) {
 		b->SetSyntaxEnabled(true);
@@ -469,7 +475,19 @@ GUIFrontend::Step(Editor &ed, bool &running)
 
 		// Route input events to the correct window's input handler
 		if (target) {
-			target->input.ProcessSDLEvent(e);
+			Editor &tgt_ed = (target_idx == 0) ? ed : target->editor;
+			if (tgt_ed.FilePickerVisible()) {
+				// Modal: don't let keystrokes fall through as edit commands
+				// to the buffer underneath. Escape closes the picker;
+				// everything else (navigation, filtering, double-click) is
+				// handled by the picker's own ImGui widgets via
+				// ImGui_ImplSDL2_ProcessEvent above.
+				if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) {
+					tgt_ed.SetFilePickerVisible(false);
+				}
+			} else {
+				target->input.ProcessSDLEvent(e);
+			}
 		}
 	}
 

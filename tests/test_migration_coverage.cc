@@ -414,17 +414,21 @@ TEST (Migration_EmptyBufferCheck_Pattern)
 
 TEST (Migration_SyntaxHighlighter_Pattern)
 {
-	// Test the pattern used in syntax highlighters
+	// Test the pattern used in syntax highlighters: loop Nrows(), fetch each
+	// line via GetLineString(row). Assert the pattern actually returns the
+	// right content, not just that it doesn't crash - see syntax highlighter
+	// correctness tests (test_syntax_highlighting.cc) for tokenization coverage.
 	Buffer buf;
 	buf.insert_text(0, 0, std::string("int main() {\n    return 0;\n}"));
 
+	ASSERT_EQ(buf.Nrows(), static_cast<std::size_t>(3));
+	const std::vector<std::string> expected = {"int main() {", "    return 0;", "}"};
 	for (std::size_t row = 0; row < buf.Nrows(); ++row) {
-		// This is the pattern used in all migrated highlighters
 		if (row >= buf.Nrows()) {
 			break; // Should never happen
 		}
 		std::string line = buf.GetLineString(row);
-		// Successfully accessed line - size() is always valid for std::string
+		ASSERT_EQ(line, expected[row]);
 	}
 }
 

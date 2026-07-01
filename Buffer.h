@@ -548,6 +548,25 @@ public:
 	}
 
 
+	// Marks that the user explicitly set syntax state via a command (:syntax
+	// on/off, :set filetype=...), as opposed to it being auto-applied from
+	// GUIConfig. Frontends that re-apply the config-driven default every
+	// frame (e.g. ImGuiFrontend::apply_syntax_to_buffer) must check this
+	// first, mirroring EditModeDetected()'s "don't stomp a manual toggle"
+	// pattern - otherwise a manual :syntax off is silently undone on the very
+	// next frame.
+	void SetSyntaxUserOverride(bool on)
+	{
+		syntax_user_override_ = on;
+	}
+
+
+	[[nodiscard]] bool SyntaxUserOverride() const
+	{
+		return syntax_user_override_;
+	}
+
+
 	void SetFiletype(const std::string &ft)
 	{
 		filetype_ = ft;
@@ -673,6 +692,7 @@ private:
 	// Syntax/highlighting state
 	std::uint64_t version_ = 0; // increment on edits
 	bool syntax_enabled_   = true;
+	bool syntax_user_override_ = false; // true once user explicitly set syntax state via a command
 	std::string filetype_;
 	std::unique_ptr<kte::HighlighterEngine> highlighter_;
 	// Non-owning pointer to swap recorder managed by Editor/SwapManager

@@ -235,7 +235,8 @@ Buffer::Buffer(const Buffer &other)
 	edit_mode_          = other.edit_mode_;
 	edit_mode_detected_ = other.edit_mode_detected_;
 	version_            = other.version_;
-	syntax_enabled_     = other.syntax_enabled_;
+	syntax_enabled_        = other.syntax_enabled_;
+	syntax_user_override_  = other.syntax_user_override_;
 	filetype_           = other.filetype_;
 	// Fresh undo system for the copy
 	undo_tree_ = std::make_unique<UndoTree>();
@@ -286,7 +287,8 @@ Buffer::operator=(const Buffer &other)
 	edit_mode_          = other.edit_mode_;
 	edit_mode_detected_ = other.edit_mode_detected_;
 	version_            = other.version_;
-	syntax_enabled_     = other.syntax_enabled_;
+	syntax_enabled_        = other.syntax_enabled_;
+	syntax_user_override_  = other.syntax_user_override_;
 	filetype_           = other.filetype_;
 	// Recreate undo system for this instance
 	undo_tree_ = std::make_unique<UndoTree>();
@@ -327,6 +329,9 @@ Buffer::Buffer(Buffer &&other) noexcept
 	  mark_set_(other.mark_set_),
 	  mark_curx_(other.mark_curx_),
 	  mark_cury_(other.mark_cury_),
+	  visual_line_active_(other.visual_line_active_),
+	  visual_line_anchor_y_(other.visual_line_anchor_y_),
+	  visual_line_active_y_(other.visual_line_active_y_),
 	  undo_tree_(std::move(other.undo_tree_)),
 	  undo_sys_(std::move(other.undo_sys_))
 {
@@ -334,11 +339,18 @@ Buffer::Buffer(Buffer &&other) noexcept
 	edit_mode_          = other.edit_mode_;
 	edit_mode_detected_ = other.edit_mode_detected_;
 	version_            = other.version_;
-	syntax_enabled_     = other.syntax_enabled_;
+	syntax_enabled_        = other.syntax_enabled_;
+	syntax_user_override_  = other.syntax_user_override_;
 	filetype_           = std::move(other.filetype_);
 	highlighter_        = std::move(other.highlighter_);
 	content_            = std::move(other.content_);
 	rows_cache_dirty_   = other.rows_cache_dirty_;
+	on_disk_identity_   = other.on_disk_identity_;
+	// Non-owning: the recorder object itself is owned by SwapManager and outlives
+	// this move. The caller (Editor) is responsible for calling SwapManager::Rehome()
+	// so the journal's Buffer* key follows this object to its new address.
+	swap_rec_       = other.swap_rec_;
+	other.swap_rec_ = nullptr;
 	// Update UndoSystem's buffer reference to point to this object
 	if (undo_sys_) {
 		undo_sys_->UpdateBufferReference(*this);
@@ -353,32 +365,42 @@ Buffer::operator=(Buffer &&other) noexcept
 	if (this == &other)
 		return *this;
 
-	curx_           = other.curx_;
-	cury_           = other.cury_;
-	rx_             = other.rx_;
-	nrows_          = other.nrows_;
-	rowoffs_        = other.rowoffs_;
-	coloffs_        = other.coloffs_;
-	rows_           = std::move(other.rows_);
-	filename_       = std::move(other.filename_);
-	is_file_backed_ = other.is_file_backed_;
-	dirty_          = other.dirty_;
-	read_only_      = other.read_only_;
-	mark_set_       = other.mark_set_;
-	mark_curx_      = other.mark_curx_;
-	mark_cury_      = other.mark_cury_;
-	undo_tree_      = std::move(other.undo_tree_);
-	undo_sys_       = std::move(other.undo_sys_);
+	curx_                 = other.curx_;
+	cury_                 = other.cury_;
+	rx_                   = other.rx_;
+	nrows_                = other.nrows_;
+	rowoffs_              = other.rowoffs_;
+	coloffs_              = other.coloffs_;
+	rows_                 = std::move(other.rows_);
+	filename_             = std::move(other.filename_);
+	is_file_backed_       = other.is_file_backed_;
+	dirty_                = other.dirty_;
+	read_only_            = other.read_only_;
+	mark_set_             = other.mark_set_;
+	mark_curx_            = other.mark_curx_;
+	mark_cury_            = other.mark_cury_;
+	visual_line_active_   = other.visual_line_active_;
+	visual_line_anchor_y_ = other.visual_line_anchor_y_;
+	visual_line_active_y_ = other.visual_line_active_y_;
+	undo_tree_            = std::move(other.undo_tree_);
+	undo_sys_             = std::move(other.undo_sys_);
 
 	// Move edit mode + syntax/highlighting state
 	edit_mode_          = other.edit_mode_;
 	edit_mode_detected_ = other.edit_mode_detected_;
 	version_            = other.version_;
-	syntax_enabled_     = other.syntax_enabled_;
+	syntax_enabled_        = other.syntax_enabled_;
+	syntax_user_override_  = other.syntax_user_override_;
 	filetype_           = std::move(other.filetype_);
 	highlighter_        = std::move(other.highlighter_);
 	content_            = std::move(other.content_);
 	rows_cache_dirty_   = other.rows_cache_dirty_;
+	on_disk_identity_   = other.on_disk_identity_;
+	// Non-owning: the recorder object itself is owned by SwapManager and outlives
+	// this move. The caller (Editor) is responsible for calling SwapManager::Rehome()
+	// so the journal's Buffer* key follows this object to its new address.
+	swap_rec_       = other.swap_rec_;
+	other.swap_rec_ = nullptr;
 	// Update UndoSystem's buffer reference to point to this object
 	if (undo_sys_) {
 		undo_sys_->UpdateBufferReference(*this);

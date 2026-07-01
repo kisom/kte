@@ -47,11 +47,41 @@ SqlHighlighter::SqlHighlighter()
 void
 SqlHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<HighlightSpan> &out) const
 {
+	StatefulHighlighter::LineState prev;
+	(void) HighlightLineStateful(buf, row, prev, out);
+}
+
+
+StatefulHighlighter::LineState
+SqlHighlighter::HighlightLineStateful(const Buffer &buf,
+                                      int row,
+                                      const LineState &prev,
+                                      std::vector<HighlightSpan> &out) const
+{
+	StatefulHighlighter::LineState state = prev;
 	if (row < 0 || static_cast<std::size_t>(row) >= buf.Nrows())
-		return;
+		return state;
 	std::string s = buf.GetLineString(static_cast<std::size_t>(row));
 	int n         = static_cast<int>(s.size());
 	int i         = 0;
+
+	// Continue a multi-line block comment from the previous line.
+	if (state.in_block_comment) {
+		int j = i;
+		while (i + 1 < n) {
+			if (s[i] == '*' && s[i + 1] == '/') {
+				i += 2;
+				push(out, j, i, TokenKind::Comment);
+				state.in_block_comment = false;
+				break;
+			}
+			++i;
+		}
+		if (state.in_block_comment) {
+			push(out, j, n, TokenKind::Comment);
+			return state;
+		}
+	}
 
 	while (i < n) {
 		char c = s[i];
@@ -68,7 +98,7 @@ SqlHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<HighlightS
 			push(out, i, n, TokenKind::Comment);
 			break;
 		}
-		// simple block comment on same line: /* ... */
+		// block comment: /* ... */ (may span multiple lines)
 		if (c == '/' && i + 1 < n && s[i + 1] == '*') {
 			int j       = i + 2;
 			bool closed = false;
@@ -82,7 +112,8 @@ SqlHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<HighlightS
 			}
 			if (!closed) {
 				push(out, i, n, TokenKind::Comment);
-				break;
+				state.in_block_comment = true;
+				return state;
 			} else {
 				push(out, i, j, TokenKind::Comment);
 				i = j;
@@ -151,5 +182,6 @@ SqlHighlighter::HighlightLine(const Buffer &buf, int row, std::vector<HighlightS
 		push(out, i, i + 1, TokenKind::Default);
 		++i;
 	}
+	return state;
 }
 } // namespace kte

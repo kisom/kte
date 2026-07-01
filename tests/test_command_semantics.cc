@@ -108,3 +108,26 @@ TEST(CommandSemantics_CopyRegion_And_KillRegion)
 	ASSERT_EQ(b.MarkSet(), false);
 	ASSERT_EQ(h.Text(), std::string("hello "));
 }
+
+
+TEST(CommandSemantics_Syntax_OnOff_SetsUserOverride)
+{
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	Buffer &b  = h.Buf();
+
+	// Before any explicit :syntax command, nothing has overridden the
+	// frontend's config-driven default.
+	ASSERT_EQ(b.SyntaxUserOverride(), false);
+
+	ASSERT_TRUE(Execute(ed, CommandId::Syntax, "off"));
+	ASSERT_EQ(b.SyntaxEnabled(), false);
+	// This flag is what a frontend's per-frame "apply config default" pass
+	// must check before re-enabling syntax, or a manual :syntax off gets
+	// silently undone on the next frame.
+	ASSERT_EQ(b.SyntaxUserOverride(), true);
+
+	ASSERT_TRUE(Execute(ed, CommandId::Syntax, "on"));
+	ASSERT_EQ(b.SyntaxEnabled(), true);
+	ASSERT_EQ(b.SyntaxUserOverride(), true);
+}

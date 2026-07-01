@@ -94,6 +94,15 @@ public:
 	// Detach(buf) or SwapManager destruction.
 	SwapRecorder *RecorderFor(Buffer *buf);
 
+	// Re-key an attached buffer's journal/recorder entries after its Buffer object
+	// has moved to a new address (e.g. std::vector<Buffer> reallocation/erase-shift).
+	// Callers must ensure no swap records for old_addr are in flight (see Flush())
+	// before calling this, and must not call it with an address that isn't
+	// currently attached. Returns the recorder for new_addr (nullptr if old_addr
+	// wasn't attached); the caller is responsible for calling
+	// new_buf->SetSwapRecorder() with the result.
+	SwapRecorder *Rehome(Buffer *old_addr, Buffer *new_addr);
+
 	// Notify that the buffer's filename changed (e.g., SaveAs)
 	void NotifyFilenameChanged(Buffer &buf);
 
