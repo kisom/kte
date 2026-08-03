@@ -4,7 +4,7 @@ project(kte)
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 20)
-set(KTE_VERSION "1.11.2")
+set(KTE_VERSION "1.11.3")
 
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
@@ -345,6 +345,7 @@ if (BUILD_TESTS)
             tests/test_smart_newline.cc
             tests/test_reflow_undo.cc
             tests/test_syntax_highlighting.cc
+            tests/test_paste_split.cc
 
             # minimal engine sources required by Buffer
             PieceTable.cc

@@ -8,6 +8,7 @@
 #include "ImGuiInputHandler.h"
 #include "KKeymap.h"
 #include "Editor.h"
+#include "PasteSplit.h"
 
 // Verbose k-prefix suffix logging for debugging macOS/SDL key translation
 // issues. Default to off; enable by defining IMGUI_IH_DEBUG=1 at compile
@@ -390,32 +391,12 @@ ImGuiInputHandler::ProcessSDLEvent(const SDL_Event &e)
 			if (clip) {
 				std::string text(clip);
 				SDL_free(clip);
-				// Split on '\n' and enqueue as InsertText/Newline commands
+				// Turn line breaks (\n, \r\n, or bare \r) into Newline
+				// commands and the rest into InsertText; InsertText itself
+				// rejects any embedded '\r'/'\n'.
 				std::lock_guard<std::mutex> lk(mu_);
-				std::size_t start = 0;
-				while (start <= text.size()) {
-					std::size_t pos = text.find('\n', start);
-					std::string_view segment;
-					bool has_nl = (pos != std::string::npos);
-					if (has_nl) {
-						segment = std::string_view(text).substr(start, pos - start);
-					} else {
-						segment = std::string_view(text).substr(start);
-					}
-					if (!segment.empty()) {
-						MappedInput ins{
-							true, CommandId::InsertText, std::string(segment), 0
-						};
-						q_.push(ins);
-					}
-					if (has_nl) {
-						MappedInput nl{true, CommandId::Newline, std::string(), 0};
-						q_.push(nl);
-						start = pos + 1;
-					} else {
-						break;
-					}
-				}
+				for (const auto &cmd : SplitPasteIntoCommands(text))
+					q_.push(cmd);
 				// Suppress the corresponding TEXTINPUT that may follow
 				suppress_text_input_once_ = true;
 				return true; // consumed
