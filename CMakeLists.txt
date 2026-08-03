@@ -71,6 +71,23 @@ endif ()
 # NCurses for terminal mode
 set(CURSES_NEED_NCURSES TRUE)
 set(CURSES_NEED_WIDE TRUE)
+
+# macOS ships only a narrow-char ncurses in the SDK, and Homebrew's wide-char
+# build is keg-only, so FindCurses can't see it without a hint.
+if (APPLE)
+    find_program(BREW_EXECUTABLE brew)
+    if (BREW_EXECUTABLE)
+        execute_process(COMMAND "${BREW_EXECUTABLE}" --prefix ncurses
+                OUTPUT_VARIABLE HOMEBREW_NCURSES_PREFIX
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET)
+        if (HOMEBREW_NCURSES_PREFIX AND IS_DIRECTORY "${HOMEBREW_NCURSES_PREFIX}")
+            message(STATUS "Using Homebrew ncursesw: ${HOMEBREW_NCURSES_PREFIX}")
+            list(PREPEND CMAKE_PREFIX_PATH "${HOMEBREW_NCURSES_PREFIX}")
+        endif ()
+    endif ()
+endif ()
+
 find_package(Curses REQUIRED)
 include_directories(${CURSES_INCLUDE_DIR})
 
