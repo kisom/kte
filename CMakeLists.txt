@@ -89,7 +89,16 @@ if (APPLE)
 endif ()
 
 find_package(Curses REQUIRED)
-include_directories(${CURSES_INCLUDE_DIR})
+
+# FindCurses exports CURSES_INCLUDE_DIRS; the singular CURSES_INCLUDE_DIR was
+# never set, so this silently expanded to nothing and the compiler fell back
+# to whatever curses header happened to be on the default include path.
+include_directories(${CURSES_INCLUDE_DIRS})
+
+# The wide-char entry points we rely on (get_wch, etc.) are declared only when
+# NCURSES_WIDECHAR is set; the header defaults it to 0 unless a feature-test
+# macro says otherwise. We always link the wide library, so ask for them.
+add_compile_definitions(NCURSES_WIDECHAR=1)
 
 # On Alpine Linux, CMake's FindCurses looks in wrong paths
 # Manually find the correct ncurses library
