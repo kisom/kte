@@ -442,6 +442,9 @@ if (BUILD_TESTS)
     if (NOT APPLE AND KTE_STATIC_LINK)
         target_link_options(kte_tests PRIVATE -static)
     endif ()
+
+    enable_testing()
+    add_test(NAME kte_tests COMMAND kte_tests)
 endif ()
 
 if (BUILD_GUI)
