@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=kge
+GenericName=Text Editor
+Comment=kyle's graphical text editor
+Exec=/usr/local/bin/kge %F
+TryExec=/usr/local/bin/kge
+Icon=kge
+Terminal=false
+StartupNotify=true
+StartupWMClass=kge
+Categories=Utility;TextEditor;
+MimeType=text/plain;text/x-c;text/x-c++;text/x-python;text/x-go;text/x-rust;application/json;text/markdown;text/x-shellscript;
+Keywords=text;editor;code;

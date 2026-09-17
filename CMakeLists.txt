@@ -509,6 +509,25 @@ if (BUILD_GUI)
     # Install kge man page only when GUI is built
     install(FILES docs/kge.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
     install(FILES kge.png DESTINATION ${CMAKE_INSTALL_PREFIX}/share/icons)
+    if (UNIX AND NOT APPLE)
+        install(FILES kge.desktop DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
+        install(FILES kge.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pixmaps)
+        install(FILES kge.iconset/icon_16x16.png
+                DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/16x16/apps
+                RENAME kge.png)
+        install(FILES kge.iconset/icon_32x32.png
+                DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/32x32/apps
+                RENAME kge.png)
+        install(FILES kge.iconset/icon_128x128.png
+                DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/128x128/apps
+                RENAME kge.png)
+        install(FILES kge.iconset/icon_256x256.png
+                DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/256x256/apps
+                RENAME kge.png)
+        install(FILES kge.iconset/icon_512x512.png
+                DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/512x512/apps
+                RENAME kge.png)
+    endif ()
 
     # Optional post-build bundle fixup (can also be run from scripts).
     # This provides a CMake target to run BundleUtilities' fixup_bundle on the
