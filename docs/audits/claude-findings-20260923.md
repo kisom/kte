@@ -477,6 +477,20 @@ before the fix (unless noted).
 - Fuzzing every highlighter (incremental vs full), 20,000 random command
   sequences, and 6,300 random buffer-list sessions found nothing else.
 
+**Eighth round (reflow review; large-file performance)**
+- Reflow's CRLF handling applied only when every line had a CR, so the
+  last paragraph of a CRLF file without a final newline still got CRs
+  mid-line; wrapping could start a line with "-" or "1.", which the next
+  reflow read as a list.
+- Large files (26-105 MB): the stateful highlighter cached spans for
+  every row above the viewport (854 MB for a 78 MB C++ file after
+  jumping to the end; now 197 MB); search built and kept a string per
+  line on every keystroke after an edit (now one scan of the
+  materialized text: 42 -> 28 ms per keystroke on 26 MB); indent,
+  unindent and visual-line insert/delete/backspace/newline/yank made one
+  piece-table edit per row (1.1 s per keystroke with 5,000 rows
+  selected; now 4 ms, as one edit).
+
 **Known limitations (not fixed)**
 - Catastrophic regex backtracking (e.g. `(a*)*b`) can still take very
   long; std::regex has no time limit.
@@ -488,6 +502,10 @@ before the fix (unless noted).
 - Journals are created at the first edit, so a second kte that opens
   the file before the first one edits it is not warned at open; the
   session that is locked out is told at its first edit instead.
+- Regex search runs std::regex over the whole buffer per keystroke
+  (about 0.4 s on 26 MB); replace-all on a file with matches spread
+  throughout records nearly the whole file in the undo tree, which has
+  no size limit.
 - A journal whose buffer exceeds 16 MiB cannot be checkpointed; after a
   lost record such a journal stays incomplete until the file is saved
   (reported to the user).

@@ -65,6 +65,7 @@ HighlighterEngine::GetLine(const Buffer &buf, int row, std::uint64_t buf_version
 	if (!stateful) {
 		hl_->HighlightLine(buf, row, result.spans);
 		cache_[row] = result;
+		trim_cache_locked(row);
 		return result;
 	}
 
@@ -86,11 +87,25 @@ HighlighterEngine::GetLine(const Buffer &buf, int row, std::uint64_t buf_version
 			states_[static_cast<std::size_t>(r)] = state;
 		if (r == row)
 			result = lh;
-		else
+		else if (row - r <= kCacheNear)
 			cache_.insert_or_assign(r, std::move(lh));
+		// Rows further above only needed their end state (kept in states_):
+		// caching their spans too held about 10x the file size in memory
+		// after jumping to the end of a large file.
 	}
 	cache_[row] = result;
+	trim_cache_locked(row);
 	return result;
+}
+
+
+void
+HighlighterEngine::trim_cache_locked(const int row) const
+{
+	if (cache_.size() <= kCacheMax)
+		return;
+	cache_.erase(cache_.begin(), cache_.lower_bound(row - kCacheNear));
+	cache_.erase(cache_.upper_bound(row + kCacheNear), cache_.end());
 }
 
 
