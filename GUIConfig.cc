@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -20,11 +21,28 @@
 
 #include "ext/tomlplusplus/toml.hpp"
 
+
 #if defined(__clang__)
 #  pragma clang diagnostic pop
 #elif defined(__GNUC__)
 #  pragma GCC diagnostic pop
 #endif
+
+
+// Reject values that would overflow later arithmetic (columns * font size)
+// or that are not usable: "size = inf" is valid TOML.
+static bool
+valid_dimension(long long v)
+{
+	return v > 0 && v <= 1000;
+}
+
+
+static bool
+valid_font_size(double v)
+{
+	return std::isfinite(v) && v >= 4.0 && v <= 200.0;
+}
 
 
 static void
@@ -91,10 +109,10 @@ GUIConfig::LoadFromTOML(const std::string &path)
 		if (auto v = (*win)["fullscreen"].value<bool>())
 			fullscreen = *v;
 		if (auto v = (*win)["columns"].value<int64_t>()) {
-			if (*v > 0) columns = static_cast<int>(*v);
+			if (valid_dimension(*v)) columns = static_cast<int>(*v);
 		}
 		if (auto v = (*win)["rows"].value<int64_t>()) {
-			if (*v > 0) rows = static_cast<int>(*v);
+			if (valid_dimension(*v)) rows = static_cast<int>(*v);
 		}
 	}
 
@@ -105,7 +123,7 @@ GUIConfig::LoadFromTOML(const std::string &path)
 		if (auto v = (*sec)["name"].value<std::string>())
 			font = *v;
 		if (auto v = (*sec)["size"].value<double>()) {
-			if (*v > 0.0) font_size = static_cast<float>(*v);
+			if (valid_font_size(*v)) font_size = static_cast<float>(*v);
 		}
 		if (auto v = (*sec)["code"].value<std::string>()) {
 			code_font = *v;
@@ -192,21 +210,21 @@ GUIConfig::LoadFromINI(const std::string &path)
 			try {
 				v = std::stoi(val);
 			} catch (...) {}
-			if (v > 0)
+			if (valid_dimension(v))
 				columns = v;
 		} else if (key == "rows") {
 			int v = rows;
 			try {
 				v = std::stoi(val);
 			} catch (...) {}
-			if (v > 0)
+			if (valid_dimension(v))
 				rows = v;
 		} else if (key == "font_size" || key == "fontsize") {
 			float v = font_size;
 			try {
 				v = std::stof(val);
 			} catch (...) {}
-			if (v > 0.0f) {
+			if (valid_font_size(v)) {
 				font_size = v;
 			}
 		} else if (key == "font") {

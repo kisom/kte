@@ -11,6 +11,7 @@
 
 #include "TerminalRenderer.h"
 #include "RegexGuard.h"
+#include "TermWidth.h"
 #include "Buffer.h"
 #include "Editor.h"
 #include "Highlight.h"
@@ -177,10 +178,7 @@ TerminalRenderer::Draw(Editor &ed)
 							const std::size_t next_tab      = tab_width - (rc % tab_width);
 							rc                              += next_tab;
 						} else {
-							int w = wcwidth(wch);
-							if (w < 0)
-								w = 1;
-							rc += static_cast<std::size_t>(w);
+							rc += static_cast<std::size_t>(kte::CellWidth(wch));
 						}
 						si += static_cast<std::size_t>(wch_len);
 					}
@@ -315,10 +313,8 @@ TerminalRenderer::Draw(Editor &ed)
 							src_i += wch_len;
 							continue;
 						} else {
-							// normal char
-							disp_w = wcwidth(wch);
-							if (disp_w < 0)
-								disp_w = 1; // non-printable or similar
+							// normal char (controls are drawn as ^X or '?')
+							disp_w = kte::CellWidth(wch);
 
 							if (render_col < coloffs) {
 								render_col += disp_w;
@@ -366,7 +362,12 @@ TerminalRenderer::Draw(Editor &ed)
 					}
 					attrset(a);
 
-					if (from_src) {
+					if (from_src && kte::IsCaretControl(wch)) {
+						addch('^');
+						addch(wch == 0x7f ? '?' : static_cast<chtype>(wch + 0x40));
+					} else if (from_src && kte::IsC1Control(wch)) {
+						addch('?');
+					} else if (from_src) {
 						cchar_t cch;
 						wchar_t warr[2] = {wch, L'\0'};
 						setcchar(&cch, warr, 0, 0, nullptr);
@@ -405,21 +406,22 @@ TerminalRenderer::Draw(Editor &ed)
 					&wch, &line_for_cursor[src_i_cur], line_for_cursor.size() - src_i_cur,
 					&state);
 
+				// Same decoding and widths as the drawing loop above.
+				std::size_t len = res;
 				if (res == (size_t) -1 || res == (size_t) -2) {
-					render_col_cur += 1;
-					src_i_cur      += 1;
+					wch = static_cast<unsigned char>(line_for_cursor[src_i_cur]);
+					len = 1;
 				} else if (res == 0) {
-					src_i_cur += 1;
-				} else {
-					if (wch == L'\t') {
-						std::size_t next_tab = tabw - (render_col_cur % tabw);
-						render_col_cur       += next_tab;
-					} else {
-						int dw         = wcwidth(wch);
-						render_col_cur += (dw < 0) ? 1 : dw;
-					}
-					src_i_cur += res;
+					wch = L'\0';
+					len = 1;
 				}
+				if (wch == L'\t') {
+					std::size_t next_tab = tabw - (render_col_cur % tabw);
+					render_col_cur       += next_tab;
+				} else {
+					render_col_cur += static_cast<std::size_t>(kte::CellWidth(wch));
+				}
+				src_i_cur += len;
 			}
 			rx_recomputed = render_col_cur;
 		}

@@ -818,3 +818,16 @@ TEST(Audit_SaveAs_ExistingFile_AsksFirst)
 	ASSERT_TRUE(h.Exec(CommandId::Newline));
 	ASSERT_EQ(slurp(d.path / "other.txt"), std::string("precious\n"));
 }
+
+
+// Control characters are drawn as ^X (two cells); horizontal scrolling must
+// count them the same way.
+TEST(Audit_HorizontalScroll_ControlCharsAreTwoCells)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, std::string(50, '\r'));
+	b.SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::MoveEnd));
+	ASSERT_EQ(b.Coloffs(), (std::size_t) (100 - 80 + 1));
+}
