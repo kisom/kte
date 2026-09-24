@@ -131,3 +131,55 @@ TEST(CommandSemantics_Syntax_OnOff_SetsUserOverride)
 	ASSERT_EQ(b.SyntaxEnabled(), true);
 	ASSERT_EQ(b.SyntaxUserOverride(), true);
 }
+
+
+// Word motion and word deletion with counts, across line ends and
+// punctuation; deleting backwards N words kills them in text order.
+TEST(CommandSemantics_WordMotionAndDelete_WithCounts)
+{
+	const std::string text = "alpha beta,  gamma\n\n  delta.epsilon zeta\nend";
+	struct Pos {
+		std::size_t x, y;
+	};
+	auto run_motion = [&](CommandId id, Pos start, int count) {
+		TestHarness h;
+		h.Buf().insert_text(0, 0, text);
+		h.Buf().SetCursor(start.x, start.y);
+		(void) h.Exec(id, "", count);
+		return Pos{h.Buf().Curx(), h.Buf().Cury()};
+	};
+	Pos p = run_motion(CommandId::WordNext, {0, 0}, 1);
+	ASSERT_EQ(p.x, (std::size_t) 6);
+	p = run_motion(CommandId::WordNext, {0, 0}, 3);
+	ASSERT_EQ(p.y, (std::size_t) 2);
+	ASSERT_EQ(p.x, (std::size_t) 2);
+	p = run_motion(CommandId::WordNext, {0, 0}, 5);
+	ASSERT_EQ(p.y, (std::size_t) 2);
+	ASSERT_EQ(p.x, (std::size_t) 16);
+	p = run_motion(CommandId::WordPrev, {3, 3}, 1);
+	ASSERT_EQ(p.y, (std::size_t) 3);
+	ASSERT_EQ(p.x, (std::size_t) 0);
+	p = run_motion(CommandId::WordPrev, {3, 3}, 3);
+	ASSERT_EQ(p.y, (std::size_t) 2);
+	ASSERT_EQ(p.x, (std::size_t) 8);
+	p = run_motion(CommandId::WordPrev, {3, 3}, 50);
+	ASSERT_EQ(p.y, (std::size_t) 0);
+	ASSERT_EQ(p.x, (std::size_t) 0);
+
+	{
+		TestHarness h;
+		h.Buf().insert_text(0, 0, text);
+		h.Buf().SetCursor(3, 3);
+		ASSERT_TRUE(h.Exec(CommandId::DeleteWordPrev, "", 3));
+		ASSERT_EQ(h.Text(), std::string("alpha beta,  gamma\n\n  delta."));
+		ASSERT_EQ(h.EditorRef().KillRingHead(), std::string("epsilon zeta\nend"));
+	}
+	{
+		TestHarness h;
+		h.Buf().insert_text(0, 0, text);
+		h.Buf().SetCursor(6, 0);
+		ASSERT_TRUE(h.Exec(CommandId::DeleteWordNext, "", 2));
+		ASSERT_EQ(h.Text(), std::string("alpha delta.epsilon zeta\nend"));
+		ASSERT_EQ(h.EditorRef().KillRingHead(), std::string("beta,  gamma\n\n  "));
+	}
+}
