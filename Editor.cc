@@ -10,6 +10,12 @@
 
 
 namespace {
+// Universal-argument repeat counts are capped here (well below INT_MAX).
+constexpr int kMaxUArgCount = 1000000;
+} // namespace
+
+
+namespace {
 static std::string
 buffer_bytes_via_views(const Buffer &b)
 {
@@ -594,7 +600,7 @@ Editor::UArgStart()
 		if (ucount_ == 0) {
 			ucount_ = 1;
 		}
-		ucount_ *= 4;
+		ucount_ = std::min(ucount_ * 4, kMaxUArgCount); // no int overflow
 	}
 	uarg_ = 1;
 	char buf[64];
@@ -614,7 +620,7 @@ Editor::UArgDigit(int d)
 		uarg_   = 1;
 		ucount_ = 0;
 	}
-	ucount_ = ucount_ * 10 + d;
+	ucount_ = (ucount_ > (kMaxUArgCount - d) / 10) ? kMaxUArgCount : ucount_ * 10 + d;
 	char buf[64];
 	std::snprintf(buf, sizeof(buf), "C-u %d", ucount_);
 	SetStatus(buf);

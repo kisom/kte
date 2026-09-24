@@ -46,3 +46,27 @@ inline std::vector<MappedInput> SplitPasteIntoCommands(const std::string &text)
 
 	return out;
 }
+
+
+// Pasted text destined for a prompt (search, file name, command). Newline
+// would accept the prompt, so each line break (\n, \r\n or \r) becomes a
+// single space and the whole paste is one InsertText.
+inline std::vector<MappedInput> SplitPasteForPrompt(const std::string &text)
+{
+	std::string flat;
+	flat.reserve(text.size());
+	for (std::size_t i = 0; i < text.size(); ++i) {
+		const char c = text[i];
+		if (c == '\n' || c == '\r') {
+			flat.push_back(' ');
+			if (c == '\r' && i + 1 < text.size() && text[i + 1] == '\n')
+				++i;
+		} else {
+			flat.push_back(c);
+		}
+	}
+	std::vector<MappedInput> out;
+	if (!flat.empty())
+		out.push_back(MappedInput{true, CommandId::InsertText, flat, 0});
+	return out;
+}

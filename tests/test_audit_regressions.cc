@@ -578,3 +578,120 @@ TEST(Audit_PieceTable_MovedFrom_LineIndexReset)
 	ASSERT_EQ(a.LineCount(), (std::size_t) 1);
 	ASSERT_EQ(b.LineCount(), (std::size_t) 4);
 }
+
+
+// Kill-line with a count stops at the end of the buffer instead of killing
+// lines above the starting line.
+TEST(Audit_KillLine_Count_StopsAtEndOfBuffer)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "a\nb\nc");
+	b.SetCursor(0, 1);
+	ASSERT_TRUE(h.Exec(CommandId::KillLine, std::string(), 3));
+	ASSERT_EQ(h.Text(), std::string("a"));
+}
+
+
+// A mark left past the end of the buffer by edits is clamped before use:
+// kill-region deletes the text between the clamped mark and the cursor.
+TEST(Audit_KillRegion_StaleMarkIsClamped)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "abcdefgh");
+	b.SetMark(1, 3); // no such row
+	b.SetCursor(5, 0);
+	ASSERT_TRUE(h.Exec(CommandId::KillRegion));
+	ASSERT_EQ(h.Text(), std::string("abcde"));
+	ASSERT_EQ(h.EditorRef().KillRingHead(), std::string("fgh"));
+}
+
+
+// After kill-region the cursor is on a real column, so typing then undoing
+// removes exactly what was typed.
+TEST(Audit_KillRegion_CursorClampedForUndo)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "worldond\nsecond\n");
+	b.SetMark(11, 0); // past end of line 0 (the line was shortened)
+	b.SetCursor(3, 1);
+	ASSERT_TRUE(h.Exec(CommandId::KillRegion));
+	ASSERT_EQ(h.Text(), std::string("worldondond\n"));
+	ASSERT_EQ(b.Curx(), (std::size_t) 8);
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "Z"));
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), std::string("worldondond\n"));
+}
+
+
+// Undo groups nest: SmartNewline in visual-line mode (which groups the
+// visual newline inside its own group) is a single undo step.
+TEST(Audit_UndoGroups_Nest_SmartNewlineVisual)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "  ab\n  cd");
+	b.SetCursor(3, 0);
+	b.VisualLineStart();
+	b.VisualLineSetActiveY(1);
+	b.SetCursor(3, 1);
+	ASSERT_TRUE(h.Exec(CommandId::SmartNewline));
+	b.VisualLineClear();
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), std::string("  ab\n  cd"));
+}
+
+
+// Word motion and word deletion never stop inside a UTF-8 character.
+TEST(Audit_WordMotion_Utf8)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "ab \xC3\xA9");
+	b.SetCursor(5, 0);
+	ASSERT_TRUE(h.Exec(CommandId::WordPrev));
+	ASSERT_EQ(b.Curx(), (std::size_t) 3);
+	b.SetCursor(5, 0);
+	ASSERT_TRUE(h.Exec(CommandId::DeleteWordPrev));
+	ASSERT_EQ(h.Text(), std::string("ab "));
+}
+
+
+// With a prompt open, buffer-editing commands do not run (they used to edit
+// the buffer behind the prompt, skipping the read-only check).
+TEST(Audit_Prompt_BlocksBufferCommands)
+{
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	Buffer &b  = h.Buf();
+	b.insert_text(0, 0, "one\ntwo\n");
+	b.SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::FindStart));
+	ASSERT_TRUE(ed.PromptActive());
+	ASSERT_TRUE(h.Exec(CommandId::KillLine));
+	ASSERT_TRUE(h.Exec(CommandId::DeleteChar));
+	ASSERT_TRUE(h.Exec(CommandId::BufferNext));
+	ASSERT_TRUE(ed.PromptActive());
+	ASSERT_TRUE(ed.CurrentBuffer() == &b);
+	ASSERT_TRUE(h.Exec(CommandId::Refresh)); // C-g still cancels
+	ASSERT_TRUE(!ed.PromptActive());
+	ASSERT_EQ(h.Text(), std::string("one\ntwo\n"));
+}
+
+
+// The universal-argument count saturates instead of overflowing int.
+TEST(Audit_UArg_DoesNotOverflow)
+{
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	ed.UArgStart();
+	for (int i = 0; i < 12; ++i)
+		ed.UArgDigit(9);
+	ASSERT_EQ(ed.UArgGet(), 1000000);
+	ed.UArgStart();
+	for (int i = 0; i < 40; ++i)
+		ed.UArgStart();
+	ASSERT_EQ(ed.UArgGet(), 1000000);
+}
