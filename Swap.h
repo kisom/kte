@@ -192,6 +192,11 @@ private:
 		std::uint64_t last_chkpt_ns{0};
 		std::uint64_t edit_bytes_since_chkpt{0};
 		std::uint64_t approx_size_bytes{0};
+		// A record was lost (write failure, breaker open, oversize). Records are
+		// position-based, so later ones no longer apply to the journal's state:
+		// drop them until a checkpoint re-establishes the full content.
+		bool gap{false};
+		std::uint64_t gap_chkpt_request_ns{0};
 	};
 
 	struct Pending {

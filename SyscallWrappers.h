@@ -34,6 +34,11 @@ int Fstat(int fd, struct stat *buf);
 // Automatically retries on EINTR.
 int Fchmod(int fd, mode_t mode);
 
+// EINTR-safe wrapper for ftruncate(2).
+// Returns 0 on success, -1 on failure (errno set).
+// Automatically retries on EINTR.
+int Ftruncate(int fd, off_t length);
+
 // EINTR-safe wrapper for mkstemp(3).
 // Returns file descriptor on success, -1 on failure (errno set).
 // Automatically retries on EINTR.
