@@ -628,6 +628,7 @@ Buffer::insert_text(int row, int col, std::string_view text)
 	if (!text.empty()) {
 		content_.Insert(off, text.data(), text.size());
 		rows_cache_dirty_ = true;
+		edited_at_(row);
 		if (swap_rec_)
 			swap_rec_->OnInsert(row, col, text);
 	}
@@ -709,6 +710,7 @@ Buffer::delete_text(int row, int col, std::size_t len)
 		return;
 	content_.Delete(start, actual);
 	rows_cache_dirty_ = true;
+	edited_at_(row);
 	if (swap_rec_)
 		swap_rec_->OnDelete(row, col, actual);
 }
@@ -727,6 +729,7 @@ Buffer::split_line(int row, const int col)
 	const char nl = '\n';
 	content_.Insert(off, &nl, 1);
 	rows_cache_dirty_ = true;
+	edited_at_(row);
 	if (swap_rec_)
 		swap_rec_->OnInsert(row, c, std::string_view("\n", 1));
 }
@@ -746,6 +749,7 @@ Buffer::join_lines(int row)
 	// end_of_line now equals line end (clamped before newline). The newline should be exactly at this position.
 	content_.Delete(end_of_line, 1);
 	rows_cache_dirty_ = true;
+	edited_at_(row);
 	if (swap_rec_)
 		swap_rec_->OnDelete(row, col, 1);
 }
@@ -762,6 +766,7 @@ Buffer::insert_row(int row, const std::string_view text)
 	const char nl = '\n';
 	content_.Insert(off + text.size(), &nl, 1);
 	rows_cache_dirty_ = true;
+	edited_at_(row);
 	if (swap_rec_) {
 		// Avoid allocation: emit the row text insertion (if any) and the newline insertion.
 		if (!text.empty())
@@ -789,6 +794,7 @@ Buffer::delete_row(int row)
 		return;
 	content_.Delete(start, actual);
 	rows_cache_dirty_ = true;
+	edited_at_(row);
 	if (swap_rec_)
 		swap_rec_->OnDelete(row, 0, actual);
 }

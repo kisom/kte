@@ -9,6 +9,9 @@
 #include "ErrorRecovery.h"
 #include "PieceTable.h"
 #include "UndoTree.h"
+#include "syntax/HighlighterEngine.h"
+#include "syntax/HighlighterRegistry.h"
+#include "syntax/LanguageHighlighter.h"
 
 #include <chrono>
 #include <random>
@@ -202,15 +205,77 @@ TEST(Audit_D6_Reflow_OnBlankLine_KeepsParagraphsSeparate)
 }
 
 
-// D9: clearing the dirty flag (undo to the saved state) changes the version
-// so version-keyed highlight caches are refreshed.
-TEST(Audit_D9_SetDirtyFalse_BumpsVersion)
+static bool
+row_has_comment(Buffer &b, int row)
 {
-	Buffer b;
-	b.SetDirty(true);
-	const auto v = b.Version();
+	const auto lh = b.Highlighter()->GetLine(b, row, b.Version());
+	for (const auto &sp: lh.spans)
+		if (sp.kind == kte::TokenKind::Comment)
+			return true;
+	return false;
+}
+
+
+// D9: undo back to the saved state must not leave stale highlighting (the
+// rest of the file coloured as a comment after "/*" is undone).
+TEST(Audit_D9_UndoToSaved_RefreshesHighlighting)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "int a;\nint b;\n");
+	b.EnsureHighlighter();
+	b.Highlighter()->SetHighlighter(kte::HighlighterRegistry::CreateFor("cpp"));
+	if (auto *u = b.Undo())
+		u->mark_saved();
 	b.SetDirty(false);
-	ASSERT_TRUE(b.Version() != v);
+	ASSERT_TRUE(!row_has_comment(b, 1));
+
+	b.SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "/*"));
+	ASSERT_TRUE(row_has_comment(b, 1));
+
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Line(0), std::string("int a;"));
+	ASSERT_TRUE(!b.Dirty());
+	ASSERT_TRUE(!row_has_comment(b, 1));
+}
+
+
+// P3: an edit keeps cached highlighting for the rows above it; only rows
+// from the edit down are recomputed.
+TEST(Audit_P3_EditKeepsHighlightCacheAbove)
+{
+	struct Counting : kte::StatefulHighlighter {
+		int *calls;
+		explicit Counting(int *c) : calls(c) {}
+
+		void HighlightLine(const Buffer &, int, std::vector<kte::HighlightSpan> &) const override {}
+
+		LineState HighlightLineStateful(const Buffer &, int, const LineState &prev,
+		                                std::vector<kte::HighlightSpan> &) const override
+		{
+			++*calls;
+			return prev;
+		}
+	};
+
+	TestHarness h;
+	Buffer &b = h.Buf();
+	std::string text;
+	for (int i = 0; i < 1000; ++i)
+		text += "line\n";
+	b.insert_text(0, 0, text);
+	b.EnsureHighlighter();
+	int calls = 0;
+	b.Highlighter()->SetHighlighter(std::make_unique<Counting>(&calls));
+
+	(void) b.Highlighter()->GetLine(b, 999, b.Version());
+	ASSERT_EQ(calls, 1000);
+
+	calls = 0;
+	b.insert_text(990, 0, "x");
+	(void) b.Highlighter()->GetLine(b, 999, b.Version());
+	ASSERT_EQ(calls, 10); // rows 990..999, not the whole file
 }
 
 
