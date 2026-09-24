@@ -1,26 +1,12 @@
 #include "HighlighterEngine.h"
 #include "../Buffer.h"
 #include "LanguageHighlighter.h"
-#include <thread>
 
 namespace kte {
 HighlighterEngine::HighlighterEngine() = default;
 
 
-HighlighterEngine::~HighlighterEngine()
-{
-	// stop background worker
-	if (worker_running_.load()) {
-		{
-			std::lock_guard<std::mutex> lock(mtx_);
-			worker_running_.store(false);
-			has_request_ = true; // wake it up to exit
-		}
-		cv_.notify_one();
-		if (worker_.joinable())
-			worker_.join();
-	}
-}
+HighlighterEngine::~HighlighterEngine() = default;
 
 
 void
@@ -169,52 +155,8 @@ HighlighterEngine::InvalidateFrom(int row)
 
 
 void
-HighlighterEngine::ensure_worker_started() const
-{
-	if (worker_running_.load())
-		return;
-	worker_running_.store(true);
-	worker_ = std::thread([this]() {
-		this->worker_loop();
-	});
-}
-
-
-void
-HighlighterEngine::worker_loop() const
-{
-	std::unique_lock<std::mutex> lock(mtx_);
-	while (worker_running_.load()) {
-		cv_.wait(lock, [this]() {
-			return has_request_ || !worker_running_.load();
-		});
-		if (!worker_running_.load())
-			break;
-		WarmRequest req = pending_;
-		has_request_    = false;
-		// Copy locals then release lock while computing
-		lock.unlock();
-		if (req.buf) {
-			int start  = std::max(0, req.start_row);
-			int end    = std::max(start, req.end_row);
-			int skip_f = std::min(req.skip_first, req.skip_last);
-			int skip_l = std::max(req.skip_first, req.skip_last);
-			for (int r = start; r <= end; ++r) {
-				// Avoid touching rows that the foreground just computed/drew.
-				if (r >= skip_f && r <= skip_l)
-					continue;
-				// Compute line; GetLine is thread-safe and will refresh caches.
-				(void) this->GetLine(*req.buf, r, req.version);
-			}
-		}
-		lock.lock();
-	}
-}
-
-
-void
 HighlighterEngine::PrefetchViewport(const Buffer &buf, int first_row, int row_count, std::uint64_t buf_version,
-                                    int warm_margin) const
+                                    int /*warm_margin*/) const
 {
 	if (row_count <= 0)
 		return;
@@ -230,21 +172,5 @@ HighlighterEngine::PrefetchViewport(const Buffer &buf, int first_row, int row_co
 	for (int r = start; r <= end; ++r) {
 		(void) GetLine(buf, r, buf_version);
 	}
-
-	// Enqueue background warm-around
-	int warm_start = std::max(0, start - warm_margin);
-	int warm_end   = std::min(max_rows - 1, end + warm_margin);
-	{
-		std::lock_guard<std::mutex> lock(mtx_);
-		pending_.buf        = &buf;
-		pending_.version    = buf_version;
-		pending_.start_row  = warm_start;
-		pending_.end_row    = warm_end;
-		pending_.skip_first = start;
-		pending_.skip_last  = end;
-		has_request_        = true;
-	}
-	ensure_worker_started();
-	cv_.notify_one();
 }
 } // namespace kte
