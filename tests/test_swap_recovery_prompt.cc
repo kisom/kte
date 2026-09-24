@@ -165,7 +165,9 @@ TEST(SwapRecoveryPrompt_Discard_DeletesSwapAndOpensClean)
 	ASSERT_EQ(ed.PendingRecoveryPrompt(), Editor::RecoveryPromptKind::RecoverOrDiscard);
 	ASSERT_EQ(ed.PromptActive(), true);
 
-	// Default answer (empty) is 'no' => discard.
+	// An explicit 'n' discards. (An empty answer cancels instead; see
+	// SwapRecoveryPrompt_EmptyAnswer_KeepsSwap.)
+	ASSERT_TRUE(Execute(ed, CommandId::InsertText, "n"));
 	ASSERT_TRUE(Execute(ed, CommandId::Newline));
 	ASSERT_EQ(ed.PendingRecoveryPrompt(), Editor::RecoveryPromptKind::None);
 	ASSERT_EQ(ed.PromptActive(), false);
@@ -506,6 +508,9 @@ TEST(SwapJournal_Reload_ResetsJournal)
 	Buffer *cur = ed.CurrentBuffer();
 	cur->SetCursor(0, 0);
 	ASSERT_TRUE(Execute(ed, CommandId::InsertText, "XXXX"));
+	// The buffer is dirty: the first reload only asks for confirmation.
+	ASSERT_TRUE(Execute(ed, CommandId::ReloadBuffer));
+	ASSERT_TRUE(ed.CurrentBuffer()->Dirty());
 	ASSERT_TRUE(Execute(ed, CommandId::ReloadBuffer));
 	cur = ed.CurrentBuffer();
 	cur->SetCursor(0, 1);
@@ -621,4 +626,30 @@ TEST(SwapJournal_SecondSession_DoesNotDeleteOwnersJournal)
 	ASSERT_TRUE(check.OpenFromFile(file, err));
 	ASSERT_TRUE(kte::SwapManager::ReplayFile(check, swp, rerr));
 	ASSERT_EQ(buffer_bytes_via_views(check), std::string("Abase\n"));
+}
+
+
+// Enter alone (or any key other than y/n) at the recovery prompt cancels and
+// keeps the journal: it used to count as "no" and delete it.
+TEST(SwapRecoveryPrompt_EmptyAnswer_KeepsSwap)
+{
+	ktet::InstallDefaultCommandsOnce();
+	XdgSandbox sb("empty_answer");
+	const std::string file = (sb.root / "work" / "e.txt").string();
+	write_file_bytes(file, "base\n");
+	std::string expected;
+	const std::string swp = make_journal(file, [](Buffer &b) {
+		b.insert_text(0, 0, std::string("A"));
+	}, expected);
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+	ed.AddBuffer(Buffer());
+	ed.RequestOpenFile(file);
+	(void) ed.ProcessPendingOpens();
+	ASSERT_EQ(ed.PendingRecoveryPrompt(), Editor::RecoveryPromptKind::RecoverOrDiscard);
+	answer(ed, "x");
+	ASSERT_EQ(ed.PendingRecoveryPrompt(), Editor::RecoveryPromptKind::None);
+	ASSERT_TRUE(!ed.PromptActive());
+	ASSERT_TRUE(std::filesystem::exists(swp));
 }

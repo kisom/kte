@@ -555,7 +555,7 @@ Editor::ProcessPendingOpens()
 						pending_recovery_open_      = req;
 						pending_recovery_swap_path_ = swp;
 						StartPrompt(PromptKind::Confirm, "Recover", "");
-						SetStatus("Recover swap edits for " + req.path + "? (y/N, C-g cancel)");
+						SetStatus("Recover swap edits for " + req.path + "? (y/n, C-g cancel)");
 						return opened_any;
 					}
 				} else {
