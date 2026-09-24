@@ -272,6 +272,7 @@ set(COMMON_HEADERS
         TestInputHandler.h
         TestRenderer.h
         TestFrontend.h
+        TextSpan.h
         UndoNode.h
         UndoTree.h
         UndoSystem.h

@@ -664,10 +664,41 @@ public:
 
 	void delete_row(int row);
 
+	// Insert the bytes of storage spans (see TextSpan.h) at (row, col)
+	// without copying them into storage again. Used by undo for large texts.
+	void insert_spans(int row, int col, const std::vector<TextSpan> &spans);
+
 	// Replace the entire buffer content with raw bytes.
 	// Intended for crash recovery (swap replay) and test harnesses.
-	// This does not trigger swap or undo recording.
+	// This does not trigger swap or undo recording, and clears undo history
+	// (recorded against the previous content, which it also references).
 	void replace_all_bytes(std::string_view bytes);
+
+	// ===== Span access for undo (see TextSpan.h) =====
+	[[nodiscard]] std::vector<TextSpan> SpansAt(int row, int col, std::size_t len) const;
+
+	// Spans removed by the most recent deletion, if it was exactly `len`
+	// bytes at (row, col) (see PieceTable::TakeDeletedSpans).
+	[[nodiscard]] std::vector<TextSpan> TakeDeletedSpans(int row, int col, std::size_t len);
+
+	[[nodiscard]] bool SpansEqual(const std::vector<TextSpan> &spans, std::string_view text) const
+	{
+		return content_.SpansEqual(spans, text);
+	}
+
+
+	template<typename Fn>
+	void VisitSpans(const std::vector<TextSpan> &spans, Fn &&fn) const
+	{
+		content_.VisitSpans(spans, std::forward<Fn>(fn));
+	}
+
+
+	// Total size of the content in bytes.
+	[[nodiscard]] std::size_t ContentBytes() const
+	{
+		return content_.Size();
+	}
 
 	// Undo system accessors (created per-buffer)
 	[[nodiscard]] UndoSystem *Undo();
