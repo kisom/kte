@@ -127,7 +127,7 @@ TEST(SearchFlow_SearchReplace_EmptyWith_ReplacesAdjacentOverlappingMatches)
 	ASSERT_TRUE(h.Exec(CommandId::Newline));
 
 	ASSERT_TRUE(!ed.PromptActive());
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string(""));
+	ASSERT_EQ(b.GetLineString(0), std::string(""));
 }
 
 

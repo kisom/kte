@@ -354,12 +354,9 @@ Buffer::Buffer(const Buffer &other)
 {
 	curx_             = other.curx_;
 	cury_             = other.cury_;
-	nrows_            = other.nrows_;
 	rowoffs_          = other.rowoffs_;
 	coloffs_          = other.coloffs_;
-	rows_             = other.rows_;
 	content_          = other.content_;
-	rows_cache_dirty_ = other.rows_cache_dirty_;
 	filename_         = other.filename_;
 	is_file_backed_   = other.is_file_backed_;
 	is_virtual_       = other.is_virtual_;
@@ -407,12 +404,9 @@ Buffer::operator=(const Buffer &other)
 		return *this;
 	curx_             = other.curx_;
 	cury_             = other.cury_;
-	nrows_            = other.nrows_;
 	rowoffs_          = other.rowoffs_;
 	coloffs_          = other.coloffs_;
-	rows_             = other.rows_;
 	content_          = other.content_;
-	rows_cache_dirty_ = other.rows_cache_dirty_;
 	filename_         = other.filename_;
 	is_file_backed_   = other.is_file_backed_;
 	is_virtual_       = other.is_virtual_;
@@ -455,10 +449,8 @@ Buffer::operator=(const Buffer &other)
 Buffer::Buffer(Buffer &&other) noexcept
 	: curx_(other.curx_),
 	  cury_(other.cury_),
-	  nrows_(other.nrows_),
 	  rowoffs_(other.rowoffs_),
 	  coloffs_(other.coloffs_),
-	  rows_(std::move(other.rows_)),
 	  filename_(std::move(other.filename_)),
 	  is_file_backed_(other.is_file_backed_),
 	  is_virtual_(other.is_virtual_),
@@ -483,7 +475,6 @@ Buffer::Buffer(Buffer &&other) noexcept
 	filetype_           = std::move(other.filetype_);
 	highlighter_        = std::move(other.highlighter_);
 	content_            = std::move(other.content_);
-	rows_cache_dirty_   = other.rows_cache_dirty_;
 	on_disk_identity_   = other.on_disk_identity_;
 	// Non-owning: the recorder object itself is owned by SwapManager and outlives
 	// this move. The caller (Editor) is responsible for calling SwapManager::Rehome()
@@ -506,10 +497,8 @@ Buffer::operator=(Buffer &&other) noexcept
 
 	curx_                 = other.curx_;
 	cury_                 = other.cury_;
-	nrows_                = other.nrows_;
 	rowoffs_              = other.rowoffs_;
 	coloffs_              = other.coloffs_;
-	rows_                 = std::move(other.rows_);
 	filename_             = std::move(other.filename_);
 	is_file_backed_       = other.is_file_backed_;
 	is_virtual_           = other.is_virtual_;
@@ -534,7 +523,6 @@ Buffer::operator=(Buffer &&other) noexcept
 	filetype_           = std::move(other.filetype_);
 	highlighter_        = std::move(other.highlighter_);
 	content_            = std::move(other.content_);
-	rows_cache_dirty_   = other.rows_cache_dirty_;
 	on_disk_identity_   = other.on_disk_identity_;
 	// Non-owning: the recorder object itself is owned by SwapManager and outlives
 	// this move. The caller (Editor) is responsible for calling SwapManager::Rehome()
@@ -588,8 +576,6 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		return false;
 	}
 	if (!exists) {
-		rows_.clear();
-		nrows_          = 0;
 		filename_       = norm;
 		is_file_backed_ = false;
 		is_virtual_     = false;
@@ -603,7 +589,6 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 
 		// Empty PieceTable
 		content_.Clear();
-		rows_cache_dirty_ = true;
 		// History recorded against the previous content no longer applies.
 		if (undo_sys_)
 			undo_sys_->clear();
@@ -662,9 +647,7 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 	// copy runs out of memory, the buffer keeps its old text (clearing first
 	// left an empty buffer that a later save wrote over the file).
 	// The bytes become the piece table's original storage, uncopied.
-	content_.AdoptOriginal(std::move(data));
-	rows_cache_dirty_ = true;
-	nrows_            = 0; // not used under PieceTable
+	content_.AdoptOriginal(std::move(data)); // not used under PieceTable
 	filename_         = norm;
 	is_file_backed_   = true;
 	is_virtual_       = false;
@@ -778,7 +761,6 @@ Buffer::insert_text(int row, int col, std::string_view text)
 	                                                     static_cast<std::size_t>(col));
 	if (!text.empty()) {
 		content_.Insert(off, text.data(), text.size());
-		rows_cache_dirty_ = true;
 		edited_at_(row);
 		if (swap_rec_)
 			swap_rec_->OnInsert(row, col, text);
@@ -807,24 +789,6 @@ Buffer::GetLineView(std::size_t row) const
 }
 
 
-void
-Buffer::ensure_rows_cache() const
-{
-	std::lock_guard<std::mutex> lock(buffer_mutex_);
-	if (!rows_cache_dirty_)
-		return;
-	rows_.clear();
-	const std::size_t lc = content_.LineCount();
-	rows_.reserve(lc);
-	for (std::size_t i = 0; i < lc; ++i) {
-		rows_.emplace_back(content_.GetLine(i));
-	}
-	// Keep nrows_ in sync for any legacy code that still reads it
-	const_cast<Buffer *>(this)->nrows_ = rows_.size();
-	rows_cache_dirty_                  = false;
-}
-
-
 std::size_t
 Buffer::content_LineCount_() const
 {
@@ -837,6 +801,16 @@ std::string
 Buffer::BytesForTests() const
 {
 	return Bytes();
+}
+
+
+std::vector<std::string>
+Buffer::LinesForTests() const
+{
+	std::vector<std::string> out;
+	for (std::size_t i = 0; i < Nrows(); ++i)
+		out.push_back(GetLineString(i));
+	return out;
 }
 #endif
 
@@ -860,7 +834,6 @@ Buffer::delete_text(int row, int col, std::size_t len)
 	if (actual == 0)
 		return;
 	content_.Delete(start, actual);
-	rows_cache_dirty_ = true;
 	edited_at_(row);
 	if (swap_rec_)
 		swap_rec_->OnDelete(row, col, actual);
@@ -879,7 +852,6 @@ Buffer::split_line(int row, const int col)
 	                                                     static_cast<std::size_t>(c));
 	const char nl = '\n';
 	content_.Insert(off, &nl, 1);
-	rows_cache_dirty_ = true;
 	edited_at_(row);
 	if (swap_rec_)
 		swap_rec_->OnInsert(row, c, std::string_view("\n", 1));
@@ -899,7 +871,6 @@ Buffer::join_lines(int row)
 	std::size_t end_of_line = content_.LineColToByteOffset(r, std::numeric_limits<std::size_t>::max());
 	// end_of_line now equals line end (clamped before newline). The newline should be exactly at this position.
 	content_.Delete(end_of_line, 1);
-	rows_cache_dirty_ = true;
 	edited_at_(row);
 	if (swap_rec_)
 		swap_rec_->OnDelete(row, col, 1);
@@ -916,7 +887,6 @@ Buffer::insert_row(int row, const std::string_view text)
 		content_.Insert(off, text.data(), text.size());
 	const char nl = '\n';
 	content_.Insert(off + text.size(), &nl, 1);
-	rows_cache_dirty_ = true;
 	edited_at_(row);
 	if (swap_rec_) {
 		// One record: the first of two could trigger a journal checkpoint,
@@ -948,7 +918,6 @@ Buffer::delete_row(int row)
 	if (actual == 0)
 		return;
 	content_.Delete(start, actual);
-	rows_cache_dirty_ = true;
 	edited_at_(row);
 	if (swap_rec_)
 		swap_rec_->OnDelete(row, 0, actual);
@@ -961,7 +930,6 @@ Buffer::replace_all_bytes(const std::string_view bytes)
 	content_.Clear();
 	if (!bytes.empty())
 		content_.Append(bytes.data(), bytes.size());
-	rows_cache_dirty_ = true;
 	if (undo_sys_)
 		undo_sys_->clear();
 	MarkContentChanged();
@@ -978,7 +946,6 @@ Buffer::insert_spans(int row, int col, const std::vector<TextSpan> &spans)
 	const std::size_t off = content_.LineColToByteOffset(static_cast<std::size_t>(row),
 	                                                     static_cast<std::size_t>(col));
 	content_.InsertSpans(off, spans);
-	rows_cache_dirty_ = true;
 	edited_at_(row);
 	if (swap_rec_) {
 		// The journal needs the bytes as one record (see insert_row).

@@ -7,7 +7,7 @@
  * Benchmarks cover:
  * - PieceTable operations (insert, delete, GetLine, GetLineRange)
  * - Buffer operations (Nrows, GetLineString, GetLineView)
- * - Iteration patterns (comparing old Rows() vs new GetLineString/GetLineView)
+ * - Iteration patterns (GetLineString vs GetLineView)
  * - Syntax highlighting on large files
  *
  * Each benchmark reports execution time in milliseconds.
@@ -240,26 +240,6 @@ TEST (Benchmark_Buffer_GetLineView_Sequential)
 }
 
 
-TEST (Benchmark_Buffer_Rows_Materialization)
-{
-	std::cout << "\n=== Buffer Rows() Materialization Benchmark ===\n";
-	Buffer buf;
-	std::string data = generate_large_file(10000, 80);
-	buf.insert_text(0, 0, data);
-
-	std::size_t total_chars = 0;
-	{
-		BenchmarkTimer timer("Rows() materialization + iteration on 10K lines");
-		const auto &rows = buf.Rows();
-		for (std::size_t i = 0; i < rows.size(); ++i) {
-			total_chars += rows[i].size();
-		}
-	}
-
-	EXPECT_TRUE(total_chars > 0);
-}
-
-
 TEST (Benchmark_Buffer_Iteration_Comparison)
 {
 	std::cout << "\n=== Buffer Iteration Pattern Comparison ===\n";
@@ -267,16 +247,8 @@ TEST (Benchmark_Buffer_Iteration_Comparison)
 	std::string data = generate_large_file(5000, 80);
 	buf.insert_text(0, 0, data);
 
-	std::size_t sum1 = 0, sum2 = 0, sum3 = 0;
-
-	// Pattern 1: Old style with Rows()
-	{
-		BenchmarkTimer timer("Pattern 1: Rows() + iteration");
-		const auto &rows = buf.Rows();
-		for (std::size_t i = 0; i < rows.size(); ++i) {
-			sum1 += rows[i].size();
-		}
-	}
+	std::size_t sum2 = 0, sum3 = 0;
+	std::size_t newlines = 0;
 
 	// Pattern 2: New style with GetLineString
 	{
@@ -290,14 +262,15 @@ TEST (Benchmark_Buffer_Iteration_Comparison)
 	{
 		BenchmarkTimer timer("Pattern 3: Nrows() + GetLineView (zero-copy)");
 		for (std::size_t i = 0; i < buf.Nrows(); ++i) {
-			sum3 += buf.GetLineView(i).size();
+			const auto v = buf.GetLineView(i);
+			sum3 += v.size();
+			newlines += !v.empty() && v.back() == '\n';
 		}
 	}
 
-	// sum1 and sum2 should match (both strip newlines)
-	ASSERT_EQ(sum1, sum2);
-	// sum3 includes newlines, so it will be larger
-	EXPECT_TRUE(sum3 > sum2);
+	// GetLineView includes the newlines GetLineString strips.
+	ASSERT_EQ(sum3, sum2 + newlines);
+	EXPECT_TRUE(newlines > 0);
 }
 
 

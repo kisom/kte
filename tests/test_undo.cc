@@ -75,9 +75,9 @@ TEST (Undo_InsertRun_Coalesces_OneStep)
 	b.SetCursor(2, 0);
 	u->commit();
 
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("hi"));
+	ASSERT_EQ(b.GetLineString(0), std::string("hi"));
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string(""));
+	ASSERT_EQ(b.GetLineString(0), std::string(""));
 }
 
 
@@ -101,11 +101,11 @@ TEST (Undo_InsertRun_BreaksOnNonAdjacentCursor)
 	b.SetCursor(1, 0);
 	u->commit();
 
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ba"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ba"));
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string(""));
+	ASSERT_EQ(b.GetLineString(0), std::string(""));
 }
 
 
@@ -120,7 +120,7 @@ TEST (Undo_BackspaceRun_Coalesces_OneStep)
 
 	// Delete 'c' then 'b' with backspace shape.
 	{
-		const auto &rows = b.Rows();
+		const auto &rows = b.LinesForTests();
 		char deleted     = rows[0][2];
 		b.delete_text(0, 2, 1);
 		b.SetCursor(2, 0);
@@ -128,7 +128,7 @@ TEST (Undo_BackspaceRun_Coalesces_OneStep)
 		u->Append(deleted);
 	}
 	{
-		const auto &rows = b.Rows();
+		const auto &rows = b.LinesForTests();
 		char deleted     = rows[0][1];
 		b.delete_text(0, 1, 1);
 		b.SetCursor(1, 0);
@@ -136,10 +136,10 @@ TEST (Undo_BackspaceRun_Coalesces_OneStep)
 		u->Append(deleted);
 	}
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("abc"));
+	ASSERT_EQ(b.GetLineString(0), std::string("abc"));
 }
 
 
@@ -153,7 +153,7 @@ TEST (Undo_DeleteKeyRun_Coalesces_OneStep)
 	// Simulate delete-key at col 1 twice (cursor stays).
 	b.SetCursor(1, 0);
 	{
-		const auto &rows = b.Rows();
+		const auto &rows = b.LinesForTests();
 		char deleted     = rows[0][1];
 		b.delete_text(0, 1, 1);
 		b.SetCursor(1, 0);
@@ -161,7 +161,7 @@ TEST (Undo_DeleteKeyRun_Coalesces_OneStep)
 		u->Append(deleted);
 	}
 	{
-		const auto &rows = b.Rows();
+		const auto &rows = b.LinesForTests();
 		char deleted     = rows[0][1];
 		b.delete_text(0, 1, 1);
 		b.SetCursor(1, 0);
@@ -169,10 +169,10 @@ TEST (Undo_DeleteKeyRun_Coalesces_OneStep)
 		u->Append(deleted);
 	}
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ad"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ad"));
 
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("abcd"));
+	ASSERT_EQ(b.GetLineString(0), std::string("abcd"));
 }
 
 
@@ -201,8 +201,8 @@ TEST (Undo_Newline_IsStandalone)
 	b.SetCursor(1, 1);
 	u->commit();
 
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
-	ASSERT_EQ(std::string(b.Rows()[1]), std::string("xi"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 2);
+	ASSERT_EQ(b.GetLineString(1), std::string("xi"));
 	u->undo();
 	// Undoing the insert should not also undo the newline.
 	ASSERT_EQ(b.BytesForTests(), after_nl);
@@ -233,9 +233,9 @@ TEST (Undo_ExplicitGroup_UndoesAsUnit)
 	u->commit();
 	u->EndGroup();
 
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string(""));
+	ASSERT_EQ(b.GetLineString(0), std::string(""));
 }
 
 
@@ -254,12 +254,12 @@ TEST (Undo_Branching_RedoBranchSelectionDeterministic)
 		b.SetCursor(b.Curx() + 1, 0);
 		u->commit();
 	}
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ABC"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ABC"));
 
 	// Undo twice -> back to "A"
 	u->undo();
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("A"));
+	ASSERT_EQ(b.GetLineString(0), std::string("A"));
 
 	// Type D to create a new branch.
 	u->Begin(UndoType::Insert);
@@ -268,18 +268,18 @@ TEST (Undo_Branching_RedoBranchSelectionDeterministic)
 	u->Append('D');
 	b.SetCursor(2, 0);
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("AD"));
+	ASSERT_EQ(b.GetLineString(0), std::string("AD"));
 
 	// Undo D, then redo branch 0 should redo D (new head).
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("A"));
+	ASSERT_EQ(b.GetLineString(0), std::string("A"));
 	u->redo(0);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("AD"));
+	ASSERT_EQ(b.GetLineString(0), std::string("AD"));
 
 	// Undo back to A again, redo branch 1 should follow the older path (to AB).
 	u->undo();
 	u->redo(1);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("AB"));
+	ASSERT_EQ(b.GetLineString(0), std::string("AB"));
 }
 
 
@@ -336,9 +336,9 @@ TEST (Undo_RoundTrip_Lossless_RandomEdits)
 		} else {
 			// Delete one char at a stable position.
 			std::size_t x = b.Curx();
-			if (x >= b.Rows()[0].size())
-				x = b.Rows()[0].size() - 1;
-			char deleted = b.Rows()[0][x];
+			if (x >= b.GetLineString(0).size())
+				x = b.GetLineString(0).size() - 1;
+			char deleted = b.GetLineString(0)[x];
 			b.delete_text(0, static_cast<int>(x), 1);
 			b.SetCursor(x, 0);
 			u->Begin(UndoType::Delete);
@@ -390,10 +390,10 @@ TEST (Undo_Branching_RedoPreservedAfterNewEdit)
 	b.SetCursor(2, 0);
 	u->commit();
 
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 
 	// New edit after undo creates a new branch; the old redo should remain as an alternate branch.
 	u->Begin(UndoType::Insert);
@@ -402,17 +402,17 @@ TEST (Undo_Branching_RedoPreservedAfterNewEdit)
 	b.SetCursor(2, 0);
 	u->commit();
 
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ac"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ac"));
 
 	// No further redo from the tip.
 	u->redo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ac"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ac"));
 
 	// Undo back to the branch point and redo the original branch.
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 	u->redo(1);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 }
 
 
@@ -453,20 +453,20 @@ TEST (Undo_Newline_UndoRedo_SplitJoin)
 	b.split_line(0, 2);
 	u->commit();
 
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("he"));
-	ASSERT_EQ(std::string(b.Rows()[1]), std::string("llo"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 2);
+	ASSERT_EQ(b.GetLineString(0), std::string("he"));
+	ASSERT_EQ(b.GetLineString(1), std::string("llo"));
 
 	// Undo should join the lines back.
 	u->undo();
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 1);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("hello"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 1);
+	ASSERT_EQ(b.GetLineString(0), std::string("hello"));
 
 	// Redo should split again at the same point.
 	u->redo();
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("he"));
-	ASSERT_EQ(std::string(b.Rows()[1]), std::string("llo"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 2);
+	ASSERT_EQ(b.GetLineString(0), std::string("he"));
+	ASSERT_EQ(b.GetLineString(1), std::string("llo"));
 }
 
 
@@ -482,7 +482,7 @@ TEST (Undo_DeleteKeyRun_Coalesces)
 
 	// Delete 'b'
 	{
-		const auto &rows = b.Rows();
+		const auto &rows = b.LinesForTests();
 		char deleted     = rows[0][1];
 		u->Begin(UndoType::Delete);
 		b.delete_text(0, 1, 1);
@@ -491,7 +491,7 @@ TEST (Undo_DeleteKeyRun_Coalesces)
 	}
 	// Delete next char (was 'c', now at same col=1)
 	{
-		const auto &rows = b.Rows();
+		const auto &rows = b.LinesForTests();
 		char deleted     = rows[0][1];
 		u->Begin(UndoType::Delete);
 		b.delete_text(0, 1, 1);
@@ -500,11 +500,11 @@ TEST (Undo_DeleteKeyRun_Coalesces)
 	}
 
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ad"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ad"));
 
 	// One undo should restore both deleted characters.
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("abcd"));
+	ASSERT_EQ(b.GetLineString(0), std::string("abcd"));
 }
 
 
@@ -529,19 +529,19 @@ TEST (Undo_UndoPastFirstEdit_RedoFromPreFirstEdit)
 	b.SetCursor(2, 0);
 	u->commit();
 
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 
 	// Undo twice: we should reach the pre-first-edit state.
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string(""));
+	ASSERT_EQ(b.GetLineString(0), std::string(""));
 
 	// Redo twice should restore both edits.
 	u->redo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 	u->redo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 }
 
 
@@ -566,12 +566,12 @@ TEST (Undo_NewEditFromPreFirstEdit_PreservesOldHistoryAsAlternateRootBranch)
 	b.SetCursor(2, 0);
 	u->commit();
 
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 
 	// Undo past first edit so current becomes null.
 	u->undo();
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string(""));
+	ASSERT_EQ(b.GetLineString(0), std::string(""));
 
 	// Commit a new edit from the pre-first-edit state.
 	b.SetCursor(0, 0);
@@ -581,17 +581,17 @@ TEST (Undo_NewEditFromPreFirstEdit_PreservesOldHistoryAsAlternateRootBranch)
 	b.SetCursor(1, 0);
 	u->commit();
 
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("x"));
+	ASSERT_EQ(b.GetLineString(0), std::string("x"));
 
 	// From the tip, no further redo.
 	u->redo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("x"));
+	ASSERT_EQ(b.GetLineString(0), std::string("x"));
 
 	// Undo back to pre-first-edit and select the older root branch.
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string(""));
+	ASSERT_EQ(b.GetLineString(0), std::string(""));
 	u->redo(1);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 }
 
 
@@ -603,9 +603,9 @@ TEST (Undo_MultiLineDelete_ConsumesNewline_UndoRestores)
 
 	// Create two lines. PieceTable treats '\n' between logical lines.
 	b.insert_text(0, 0, std::string_view("ab\ncd"));
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
-	ASSERT_EQ(std::string(b.Rows()[1]), std::string("cd"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 2);
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(1), std::string("cd"));
 
 	// Delete spanning the newline: delete "b\n" starting at (0,1).
 	b.SetCursor(1, 0);
@@ -614,14 +614,14 @@ TEST (Undo_MultiLineDelete_ConsumesNewline_UndoRestores)
 	u->Append(std::string_view("b\n"));
 	u->commit();
 
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 1);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("acd"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 1);
+	ASSERT_EQ(b.GetLineString(0), std::string("acd"));
 
 	// Undo should restore exact original text/line structure.
 	u->undo();
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
-	ASSERT_EQ(std::string(b.Rows()[1]), std::string("cd"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 2);
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(1), std::string("cd"));
 }
 
 
@@ -634,12 +634,12 @@ TEST (Undo_DeleteIndent_UndoRestoresCursorAtText)
 	// Seed 3-line content with indentation on the middle line.
 	b.insert_text(0, 0,
 	              std::string_view("I did a thing\n  and then I edited a thing\nbut there were gaps"));
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 3);
+	ASSERT_EQ(b.Nrows(), (std::size_t) 3);
 
 	// Cursor at start of the line (before spaces), then C-d C-d deletes two spaces.
 	b.SetCursor(0, 1);
 	for (int i = 0; i < 2; ++i) {
-		const auto &rows = b.Rows();
+		const auto &rows = b.LinesForTests();
 		char deleted     = rows[1][0];
 		ASSERT_EQ(deleted, ' ');
 		u->Begin(UndoType::Delete);
@@ -649,13 +649,13 @@ TEST (Undo_DeleteIndent_UndoRestoresCursorAtText)
 	}
 	u->commit();
 
-	ASSERT_EQ(std::string(b.Rows()[1]), std::string("and then I edited a thing"));
+	ASSERT_EQ(b.GetLineString(1), std::string("and then I edited a thing"));
 	ASSERT_EQ(b.Cury(), (std::size_t) 1);
 	ASSERT_EQ(b.Curx(), (std::size_t) 0);
 
 	// Undo should restore indentation, and keep cursor on the text (at 'a'), not at EOL.
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[1]), std::string("  and then I edited a thing"));
+	ASSERT_EQ(b.GetLineString(1), std::string("  and then I edited a thing"));
 	ASSERT_EQ(b.Cury(), (std::size_t) 1);
 	ASSERT_EQ(b.Curx(), (std::size_t) 2);
 }
@@ -681,12 +681,12 @@ TEST (Undo_StructuralInvariants_BranchingAndRoots)
 	u->Append('b');
 	b.SetCursor(2, 0);
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 
 	// Undo past first edit; now create a new root-level branch x.
 	u->undo();
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string(""));
+	ASSERT_EQ(b.GetLineString(0), std::string(""));
 
 	b.SetCursor(0, 0);
 	u->Begin(UndoType::Insert);
@@ -694,13 +694,13 @@ TEST (Undo_StructuralInvariants_BranchingAndRoots)
 	u->Append('x');
 	b.SetCursor(1, 0);
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("x"));
+	ASSERT_EQ(b.GetLineString(0), std::string("x"));
 
 	// Return to the older root branch.
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string(""));
+	ASSERT_EQ(b.GetLineString(0), std::string(""));
 	u->redo(1);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 
 	// Create a normal branch under 'a'.
 	u->Begin(UndoType::Insert);
@@ -708,7 +708,7 @@ TEST (Undo_StructuralInvariants_BranchingAndRoots)
 	u->Append('c');
 	b.SetCursor(2, 0);
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ac"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ac"));
 
 	validate_undo_tree(*u);
 }
@@ -727,7 +727,7 @@ TEST (Undo_BranchSelection_ThreeSiblingsAndHeadPersists)
 	u->Append('a');
 	b.SetCursor(1, 0);
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 
 	// Branch 1: a->b
 	u->Begin(UndoType::Insert);
@@ -735,11 +735,11 @@ TEST (Undo_BranchSelection_ThreeSiblingsAndHeadPersists)
 	u->Append('b');
 	b.SetCursor(2, 0);
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 
 	// Back to branch point.
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 
 	// Branch 2: a->c
 	u->Begin(UndoType::Insert);
@@ -747,10 +747,10 @@ TEST (Undo_BranchSelection_ThreeSiblingsAndHeadPersists)
 	u->Append('c');
 	b.SetCursor(2, 0);
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ac"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ac"));
 
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 
 	// Branch 3: a->d
 	u->Begin(UndoType::Insert);
@@ -758,37 +758,37 @@ TEST (Undo_BranchSelection_ThreeSiblingsAndHeadPersists)
 	u->Append('d');
 	b.SetCursor(2, 0);
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ad"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ad"));
 
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 
 	// Under 'a', the sibling list should now contain 3 branches.
 	validate_undo_tree(*u);
 
 	// Select the 3rd sibling (branch_index=2) which should be the oldest ("b"), and make it active.
 	u->redo(2);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 
 	// Since we selected "b", redo with default should now follow "b" again.
 	u->redo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 
 	// Select another branch by index and ensure it becomes the new default.
 	u->redo(1);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ad"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ad"));
 	u->undo();
 	u->redo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ad"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ad"));
 	u->undo();
 
 	// Out-of-range selection should be a no-op.
 	u->redo(99);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 
 	validate_undo_tree(*u);
 }
@@ -812,7 +812,7 @@ TEST (Undo_Branching_SwitchBetweenTwoRedoBranches_TextAndCursor)
 	u->Append('a');
 	b.SetCursor(1, 0);
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 	ASSERT_EQ(b.Cury(), (std::size_t) 0);
 	ASSERT_EQ(b.Curx(), (std::size_t) 1);
 
@@ -821,12 +821,12 @@ TEST (Undo_Branching_SwitchBetweenTwoRedoBranches_TextAndCursor)
 	u->Append('b');
 	b.SetCursor(2, 0);
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 	ASSERT_EQ(b.Curx(), (std::size_t) 2);
 
 	// Undo to A.
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 	ASSERT_EQ(b.Curx(), (std::size_t) 1);
 
 	// Create sibling branch A->C.
@@ -835,37 +835,37 @@ TEST (Undo_Branching_SwitchBetweenTwoRedoBranches_TextAndCursor)
 	u->Append('c');
 	b.SetCursor(2, 0);
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ac"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ac"));
 	ASSERT_EQ(b.Curx(), (std::size_t) 2);
 
 	// Back to A.
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 	ASSERT_EQ(b.Curx(), (std::size_t) 1);
 
 	// Redo into B as the alternate branch (older sibling), and confirm cursor is consistent.
 	u->redo(1);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 	ASSERT_EQ(b.Curx(), (std::size_t) 2);
 
 	// Both branches remain reachable: undo to A, redo defaults to B (head reordered).
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 	u->redo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 
 	// And the other branch C should still be selectable.
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 	u->redo(1);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ac"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ac"));
 	ASSERT_EQ(b.Curx(), (std::size_t) 2);
 
 	// After selecting C, default redo from A should now follow C.
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 	u->redo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ac"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ac"));
 
 	validate_undo_tree(*u);
 }
@@ -886,15 +886,15 @@ TEST (Undo_Randomized_Deterministic_EditUndoRedoBranchSelect)
 	const int max_branch = 4;
 
 	for (int i = 0; i < steps; ++i) {
-		ASSERT_TRUE(!b.Rows().empty());
+		ASSERT_TRUE((b.Nrows() > 0));
 		ASSERT_EQ(b.Cury(), (std::size_t) 0);
-		ASSERT_EQ(b.Rows().size(), (std::size_t) 1);
-		ASSERT_TRUE(b.Curx() <= b.Rows()[0].size());
+		ASSERT_EQ(b.Nrows(), (std::size_t) 1);
+		ASSERT_TRUE(b.Curx() <= b.GetLineString(0).size());
 
 		validate_undo_tree(*u);
 
 		int r           = op(rng);
-		std::string cur = std::string(b.Rows()[0]);
+		std::string cur = b.GetLineString(0);
 		int len         = static_cast<int>(cur.size());
 
 		if (r < 40 && len < max_len) {
@@ -917,14 +917,14 @@ TEST (Undo_Randomized_Deterministic_EditUndoRedoBranchSelect)
 		} else if (r < 80) {
 			// Undo then redo should round-trip to the exact same node/text/cursor when possible.
 			const UndoNode *before_node = u->TreeForTests().current;
-			const std::string before_text(std::string(b.Rows()[0]));
+			const std::string before_text(b.GetLineString(0));
 			const std::size_t before_x = b.Curx();
 
 			if (before_node) {
 				u->undo();
 				u->redo();
 				ASSERT_TRUE(u->TreeForTests().current == before_node);
-				ASSERT_EQ(std::string(b.Rows()[0]), before_text);
+				ASSERT_EQ(b.GetLineString(0), before_text);
 				ASSERT_EQ(b.Curx(), before_x);
 			} else {
 				// Nothing to undo; just exercise redo/branch-select paths.
@@ -962,14 +962,14 @@ TEST (Undo_PendingCoalescedRun_UndoCommitsThenUndoes)
 	u->Append('b');
 	b.SetCursor(2, 0);
 
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 
 	// undo() should implicitly commit pending and then undo it as one step.
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string(""));
+	ASSERT_EQ(b.GetLineString(0), std::string(""));
 
 	u->redo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 
 	validate_undo_tree(*u);
 }
@@ -994,32 +994,32 @@ TEST (Undo_PendingRunAtBranchPoint_UndoThenBranchSelectionStillWorks)
 	u->Append('b');
 	b.SetCursor(2, 0);
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 
 	// Undo to the branch point.
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 
 	// Start a pending insert "c" at the branch point, but don't commit.
 	u->Begin(UndoType::Insert);
 	b.insert_text(0, 1, std::string_view("c"));
 	u->Append('c');
 	b.SetCursor(2, 0);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ac"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ac"));
 
 	// Undo should seal the pending "c" as a new branch, then undo it, leaving us at "a".
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 
 	// The active redo should now be "c".
 	u->redo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ac"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ac"));
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 
 	// Select the older "b" branch.
 	u->redo(1);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 
 	validate_undo_tree(*u);
 }
@@ -1049,21 +1049,21 @@ TEST (Undo_SavedNodeOnOtherBranch_DirtyClearsWhenReturning)
 
 	// Move to a different branch.
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 
 	u->Begin(UndoType::Insert);
 	b.insert_text(0, 1, std::string_view("c"));
 	u->Append('c');
 	b.SetCursor(2, 0);
 	u->commit();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ac"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ac"));
 	ASSERT_TRUE(b.Dirty());
 
 	// Return to the saved node by selecting the older branch.
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("a"));
+	ASSERT_EQ(b.GetLineString(0), std::string("a"));
 	u->redo(1);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("ab"));
+	ASSERT_EQ(b.GetLineString(0), std::string("ab"));
 	ASSERT_TRUE(!b.Dirty());
 
 	validate_undo_tree(*u);
@@ -1095,7 +1095,7 @@ TEST (Undo_Clear_AfterSaved_ResetsStateSafely)
 	u->clear();
 	ASSERT_TRUE(!b.Dirty());
 	// clear() resets undo history, but does not mutate buffer contents.
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("xy"));
+	ASSERT_EQ(b.GetLineString(0), std::string("xy"));
 
 	validate_undo_tree(*u);
 }
@@ -1128,12 +1128,12 @@ TEST (Undo_Command_UndoHonorsRepeatCount)
 	u->Append('b');
 	buf->SetCursor(2, 0);
 	u->commit();
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("ab"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("ab"));
 
 	// Undo twice via command repeat count.
 	ed.SetUniversalArg(1, 2);
 	ASSERT_TRUE(Execute(ed, CommandId::Undo));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string(""));
+	ASSERT_EQ(buf->GetLineString(0), std::string(""));
 
 	validate_undo_tree(*u);
 }
@@ -1166,33 +1166,33 @@ TEST (Undo_Command_RedoCountSelectsBranch)
 	u->Append('b');
 	buf->SetCursor(2, 0);
 	u->commit();
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("ab"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("ab"));
 
 	// Undo to the branch point and create a sibling branch "c".
 	u->undo();
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("a"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("a"));
 
 	u->Begin(UndoType::Insert);
 	buf->insert_text(0, 1, std::string_view("c"));
 	u->Append('c');
 	buf->SetCursor(2, 0);
 	u->commit();
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("ac"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("ac"));
 
 	// Back to branch point.
 	ASSERT_TRUE(Execute(ed, CommandId::Undo));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("a"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("a"));
 
 	// Command redo with count=2 should select branch_index=1 (the older "b" branch).
 	ed.SetUniversalArg(1, 2);
 	ASSERT_TRUE(Execute(ed, CommandId::Redo));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("ab"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("ab"));
 
 	// After selection, "b" should be the default redo from the branch point.
 	ASSERT_TRUE(Execute(ed, CommandId::Undo));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("a"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("a"));
 	ASSERT_TRUE(Execute(ed, CommandId::Redo));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("ab"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("ab"));
 
 	validate_undo_tree(*u);
 }
@@ -1215,14 +1215,14 @@ TEST (Undo_Command_Newline_UndoRejoinsCorrectLines)
 
 	ASSERT_TRUE(Execute(ed, CommandId::Newline));
 	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(3));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("def"));
-	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("ghijkl"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abc"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("def"));
+	ASSERT_EQ(buf->GetLineString(2), std::string("ghijkl"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Undo));
 	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(2));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abcdef"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("ghijkl"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abcdef"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("ghijkl"));
 
 	validate_undo_tree(*buf->Undo());
 }
@@ -1245,16 +1245,16 @@ TEST (Undo_Command_Backspace_JoinUndoRedo)
 
 	ASSERT_TRUE(Execute(ed, CommandId::Backspace));
 	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(1));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abcdef"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abcdef"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Undo));
 	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(2));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("def"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abc"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("def"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Redo));
 	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(1));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abcdef"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abcdef"));
 
 	validate_undo_tree(*buf->Undo());
 }
@@ -1277,16 +1277,16 @@ TEST (Undo_Command_DeleteChar_JoinUndoRedo)
 
 	ASSERT_TRUE(Execute(ed, CommandId::DeleteChar));
 	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(1));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abcdef"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abcdef"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Undo));
 	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(2));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("def"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abc"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("def"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Redo));
 	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(1));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abcdef"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abcdef"));
 
 	validate_undo_tree(*buf->Undo());
 }
@@ -1315,19 +1315,19 @@ TEST (Undo_Command_RegexReplaceAll_UndoRedo)
 	ed.SetPromptText("baz");
 	ASSERT_TRUE(Execute(ed, CommandId::Newline));
 
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("baz one"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("baz two"));
-	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("bar three"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("baz one"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("baz two"));
+	ASSERT_EQ(buf->GetLineString(2), std::string("bar three"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Undo));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("foo one"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("foo two"));
-	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("bar three"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("foo one"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("foo two"));
+	ASSERT_EQ(buf->GetLineString(2), std::string("bar three"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Redo));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("baz one"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("baz two"));
-	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("bar three"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("baz one"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("baz two"));
+	ASSERT_EQ(buf->GetLineString(2), std::string("bar three"));
 
 	validate_undo_tree(*buf->Undo());
 }
@@ -1350,31 +1350,31 @@ TEST (Undo_Command_IndentUnindentRegion_UndoRedo)
 	buf->SetCursor(0, 2);
 
 	ASSERT_TRUE(Execute(ed, CommandId::IndentRegion));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("\tone"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("\ttwo"));
-	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("\tthree"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("\tone"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("\ttwo"));
+	ASSERT_EQ(buf->GetLineString(2), std::string("\tthree"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Undo));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("one"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("two"));
-	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("three"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("one"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("two"));
+	ASSERT_EQ(buf->GetLineString(2), std::string("three"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Redo));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("\tone"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("\ttwo"));
-	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("\tthree"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("\tone"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("\ttwo"));
+	ASSERT_EQ(buf->GetLineString(2), std::string("\tthree"));
 
 	buf->SetMark(0, 0);
 	buf->SetCursor(0, 2);
 	ASSERT_TRUE(Execute(ed, CommandId::UnindentRegion));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("one"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("two"));
-	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("three"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("one"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("two"));
+	ASSERT_EQ(buf->GetLineString(2), std::string("three"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Undo));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("\tone"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("\ttwo"));
-	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("\tthree"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("\tone"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("\ttwo"));
+	ASSERT_EQ(buf->GetLineString(2), std::string("\tthree"));
 
 	validate_undo_tree(*buf->Undo());
 }
@@ -1396,15 +1396,15 @@ TEST (Undo_Command_KillToEol_UndoRedo)
 	buf->SetCursor(3, 0);
 
 	ASSERT_TRUE(Execute(ed, CommandId::KillToEOL));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abc"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Undo));
 	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(2));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abcdef"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("ghijkl"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abcdef"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("ghijkl"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Redo));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abc"));
 
 	validate_undo_tree(*buf->Undo());
 }
@@ -1427,19 +1427,19 @@ TEST (Undo_Command_KillLine_UndoRedo)
 
 	ASSERT_TRUE(Execute(ed, CommandId::KillLine));
 	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(2));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("ghi"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abc"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("ghi"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Undo));
 	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(3));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("def"));
-	ASSERT_EQ(std::string(buf->Rows()[2]), std::string("ghi"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abc"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("def"));
+	ASSERT_EQ(buf->GetLineString(2), std::string("ghi"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Redo));
 	ASSERT_EQ(buf->Nrows(), static_cast<std::size_t>(2));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc"));
-	ASSERT_EQ(std::string(buf->Rows()[1]), std::string("ghi"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abc"));
+	ASSERT_EQ(buf->GetLineString(1), std::string("ghi"));
 
 	validate_undo_tree(*buf->Undo());
 }
@@ -1462,13 +1462,13 @@ TEST (Undo_Command_KillRegion_UndoRedo)
 	buf->SetCursor(8, 0);
 
 	ASSERT_TRUE(Execute(ed, CommandId::KillRegion));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc ghi"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abc ghi"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Undo));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc def ghi"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abc def ghi"));
 
 	ASSERT_TRUE(Execute(ed, CommandId::Redo));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc ghi"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abc ghi"));
 
 	validate_undo_tree(*buf->Undo());
 }
@@ -1490,15 +1490,15 @@ TEST (Undo_Command_DeleteWordPrevNext_UndoRedo)
 	buf->SetCursor(8, 0);
 
 	ASSERT_TRUE(Execute(ed, CommandId::DeleteWordPrev));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc ghi"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abc ghi"));
 	ASSERT_TRUE(Execute(ed, CommandId::Undo));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc def ghi"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abc def ghi"));
 
 	buf->SetCursor(4, 0);
 	ASSERT_TRUE(Execute(ed, CommandId::DeleteWordNext));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc ghi"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abc ghi"));
 	ASSERT_TRUE(Execute(ed, CommandId::Undo));
-	ASSERT_EQ(std::string(buf->Rows()[0]), std::string("abc def ghi"));
+	ASSERT_EQ(buf->GetLineString(0), std::string("abc def ghi"));
 
 	validate_undo_tree(*buf->Undo());
 }
@@ -1512,12 +1512,12 @@ TEST (Undo_InsertRow_UndoDeletesRow)
 
 	// Seed two lines so insert_row has proper newline context.
 	b.insert_text(0, 0, std::string_view("first\nlast"));
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
+	ASSERT_EQ(b.Nrows(), (std::size_t) 2);
 
 	// Insert a row at position 1 (between first and last), then record it.
 	b.insert_row(1, std::string_view("second"));
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 3);
-	ASSERT_EQ(std::string(b.Rows()[1]), std::string("second"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 3);
+	ASSERT_EQ(b.GetLineString(1), std::string("second"));
 
 	b.SetCursor(0, 1);
 	u->Begin(UndoType::InsertRow);
@@ -1526,14 +1526,14 @@ TEST (Undo_InsertRow_UndoDeletesRow)
 
 	// Undo should remove the inserted row.
 	u->undo();
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("first"));
-	ASSERT_EQ(std::string(b.Rows()[1]), std::string("last"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 2);
+	ASSERT_EQ(b.GetLineString(0), std::string("first"));
+	ASSERT_EQ(b.GetLineString(1), std::string("last"));
 
 	// Redo should re-insert it.
 	u->redo();
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 3);
-	ASSERT_EQ(std::string(b.Rows()[1]), std::string("second"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 3);
+	ASSERT_EQ(b.GetLineString(1), std::string("second"));
 
 	validate_undo_tree(*u);
 }
@@ -1546,28 +1546,28 @@ TEST (Undo_DeleteRow_UndoRestoresRow)
 	ASSERT_TRUE(u != nullptr);
 
 	b.insert_text(0, 0, std::string_view("alpha\nbeta\ngamma"));
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 3);
+	ASSERT_EQ(b.Nrows(), (std::size_t) 3);
 
 	// Record a DeleteRow for row 1 ("beta").
 	b.SetCursor(0, 1);
 	u->Begin(UndoType::DeleteRow);
-	u->Append(static_cast<std::string>(b.Rows()[1]));
+	u->Append(static_cast<std::string>(b.GetLineString(1)));
 	u->commit();
 	b.delete_row(1);
 
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("alpha"));
-	ASSERT_EQ(std::string(b.Rows()[1]), std::string("gamma"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 2);
+	ASSERT_EQ(b.GetLineString(0), std::string("alpha"));
+	ASSERT_EQ(b.GetLineString(1), std::string("gamma"));
 
 	// Undo should restore "beta" at row 1.
 	u->undo();
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 3);
-	ASSERT_EQ(std::string(b.Rows()[1]), std::string("beta"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 3);
+	ASSERT_EQ(b.GetLineString(1), std::string("beta"));
 
 	// Redo should delete it again.
 	u->redo();
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
-	ASSERT_EQ(std::string(b.Rows()[1]), std::string("gamma"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 2);
+	ASSERT_EQ(b.GetLineString(1), std::string("gamma"));
 
 	validate_undo_tree(*u);
 }
@@ -1581,7 +1581,7 @@ TEST (Undo_InsertRow_IsStandalone)
 
 	// Seed with two lines so InsertRow has proper newline context.
 	b.insert_text(0, 0, std::string_view("x\nend"));
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
+	ASSERT_EQ(b.Nrows(), (std::size_t) 2);
 
 	// Start a pending insert on row 0.
 	b.SetCursor(1, 0);
@@ -1597,18 +1597,18 @@ TEST (Undo_InsertRow_IsStandalone)
 	u->Append(std::string_view("row2"));
 	u->commit();
 
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("xy"));
-	ASSERT_EQ(std::string(b.Rows()[1]), std::string("row2"));
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 3);
+	ASSERT_EQ(b.GetLineString(0), std::string("xy"));
+	ASSERT_EQ(b.GetLineString(1), std::string("row2"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 3);
 
 	// Undo InsertRow only.
 	u->undo();
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 2);
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("xy"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 2);
+	ASSERT_EQ(b.GetLineString(0), std::string("xy"));
 
 	// Undo the insert "y".
 	u->undo();
-	ASSERT_EQ(std::string(b.Rows()[0]), std::string("x"));
+	ASSERT_EQ(b.GetLineString(0), std::string("x"));
 
 	validate_undo_tree(*u);
 }
@@ -1622,7 +1622,7 @@ TEST (Undo_GroupedDeleteAndInsertRows_UndoesAsUnit)
 
 	// Seed three lines (with trailing newline so delete_row/insert_row work cleanly).
 	b.insert_text(0, 0, std::string_view("aaa\nbbb\nccc\n"));
-	ASSERT_EQ(b.Rows().size(), (std::size_t) 4); // 3 content + 1 empty trailing
+	ASSERT_EQ(b.Nrows(), (std::size_t) 4); // 3 content + 1 empty trailing
 	const std::string original = b.AsString();
 
 	// Group: delete content rows then insert replacements (simulates reflow).
@@ -1632,7 +1632,7 @@ TEST (Undo_GroupedDeleteAndInsertRows_UndoesAsUnit)
 	for (int i = 2; i >= 0; --i) {
 		b.SetCursor(0, static_cast<std::size_t>(i));
 		u->Begin(UndoType::DeleteRow);
-		u->Append(static_cast<std::string>(b.Rows()[static_cast<std::size_t>(i)]));
+		u->Append(static_cast<std::string>(b.GetLineString(static_cast<std::size_t>(i))));
 		u->commit();
 		b.delete_row(i);
 	}

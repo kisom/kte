@@ -22,13 +22,8 @@
  *    - Buffers can be file-backed (associated with a path) or scratch (unnamed)
  *    - File identity tracking detects external modifications
  *
- * 3. Legacy Line wrapper:
- *    - Buffer::Line provides a string-like interface for legacy command code
- *    - New code should prefer direct PieceTable operations
- *    - See DEVELOPER_GUIDE.md for migration guidance
- *
- * 4. Content access:
- *    - Rows(): Materialized line cache (legacy, being phased out)
+ * 3. Content access:
+ *    - Nrows(), GetLineString(): per-line access
  *    - GetLineView(): line access via string_view (zero-copy within a piece)
  *    - Direct PieceTable access for new editing operations
  */
@@ -136,169 +131,7 @@ public:
 	}
 
 
-	// Line wrapper used by legacy command paths.
-	// Keep this lightweight: store materialized bytes only for that line.
-	class Line {
-	public:
-		Line() = default;
-
-
-		explicit Line(const char *s)
-		{
-			assign_from(s ? std::string(s) : std::string());
-		}
-
-
-		explicit Line(const std::string &s)
-		{
-			assign_from(s);
-		}
-
-
-		Line(const Line &other) = default;
-
-		Line &operator=(const Line &other) = default;
-
-		Line(Line &&other) noexcept = default;
-
-		Line &operator=(Line &&other) noexcept = default;
-
-		// capacity helpers
-		void Clear()
-		{
-			s_.clear();
-		}
-
-
-		// size/access
-		[[nodiscard]] std::size_t size() const
-		{
-			return s_.size();
-		}
-
-
-		[[nodiscard]] bool empty() const
-		{
-			return s_.empty();
-		}
-
-
-		// read-only raw view
-		[[nodiscard]] const char *Data() const
-		{
-			return s_.data();
-		}
-
-
-		[[nodiscard]] std::size_t Size() const
-		{
-			return s_.size();
-		}
-
-
-		// element access (read-only)
-		[[nodiscard]] char operator[](std::size_t i) const
-		{
-			return (i < s_.size()) ? s_[i] : '\0';
-		}
-
-
-		// conversions
-		explicit operator std::string() const
-		{
-			return s_;
-		}
-
-
-		// string-like API used by command/renderer layers (implemented via materialization for now)
-		[[nodiscard]] std::string substr(std::size_t pos) const
-		{
-			return pos < s_.size() ? s_.substr(pos) : std::string();
-		}
-
-
-		[[nodiscard]] std::string substr(std::size_t pos, std::size_t len) const
-		{
-			return pos < s_.size() ? s_.substr(pos, len) : std::string();
-		}
-
-
-		// minimal find() to support search within a line
-		[[nodiscard]] std::size_t find(const std::string &needle, const std::size_t pos = 0) const
-		{
-			return s_.find(needle, pos);
-		}
-
-
-		void erase(std::size_t pos)
-		{
-			if (pos < s_.size())
-				s_.erase(pos);
-		}
-
-
-		void erase(std::size_t pos, std::size_t len)
-		{
-			if (pos < s_.size())
-				s_.erase(pos, len);
-		}
-
-
-		void insert(std::size_t pos, const std::string &seg)
-		{
-			if (pos > s_.size())
-				pos = s_.size();
-			s_.insert(pos, seg);
-		}
-
-
-		Line &operator+=(const Line &other)
-		{
-			s_ += other.s_;
-			return *this;
-		}
-
-
-		Line &operator+=(const std::string &s)
-		{
-			s_ += s;
-			return *this;
-		}
-
-
-		Line &operator=(const std::string &s)
-		{
-			assign_from(s);
-			return *this;
-		}
-
-	private:
-		void assign_from(const std::string &s)
-		{
-			s_ = s;
-		}
-
-
-		std::string s_;
-	};
-
-
-	[[nodiscard]] const std::vector<Line> &Rows() const
-	{
-		ensure_rows_cache();
-		return rows_;
-	}
-
-
-	[[nodiscard]] std::vector<Line> &Rows()
-	{
-		ensure_rows_cache();
-		return rows_;
-	}
-
-
-	// Lightweight, lazy per-line accessors that avoid materializing all rows.
-	// Prefer these over Rows() in hot paths to reduce memory overhead on large files.
+	// A line's text without its trailing newline.
 	[[nodiscard]] std::string GetLineString(std::size_t row) const
 	{
 		return content_.GetLine(row);
@@ -722,6 +555,10 @@ public:
 
 #if defined(KTE_TESTS)
 	// Test-only: return the raw buffer bytes (including newlines) as a string.
+
+	// Every line without its newline (tests only).
+	[[nodiscard]] std::vector<std::string> LinesForTests() const;
+
 	[[nodiscard]] std::string BytesForTests() const;
 #endif
 
@@ -742,15 +579,9 @@ private:
 
 	// State mirroring original C struct (without undo_tree)
 	std::size_t curx_    = 0, cury_ = 0; // cursor position in characters
-	std::size_t nrows_   = 0; // number of rows
 	std::size_t rowoffs_ = 0, coloffs_ = 0; // viewport offsets
-	mutable std::vector<Line> rows_; // materialized cache of rows (without trailing newlines)
 	// PieceTable is the source of truth.
 	PieceTable content_{};
-	mutable bool rows_cache_dirty_ = true; // invalidate on edits / I/O
-
-	// Helper to rebuild rows_ from content_
-	void ensure_rows_cache() const;
 
 	// Helper to query content_.LineCount() while keeping header minimal
 	std::size_t content_LineCount_() const;
@@ -798,6 +629,4 @@ private:
 	std::unique_ptr<kte::HighlighterEngine> highlighter_;
 	// Non-owning pointer to swap recorder managed by Editor/SwapManager
 	kte::SwapRecorder *swap_rec_ = nullptr;
-
-	mutable std::mutex buffer_mutex_;
 };
