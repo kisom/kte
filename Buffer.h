@@ -29,7 +29,7 @@
  *
  * 4. Content access:
  *    - Rows(): Materialized line cache (legacy, being phased out)
- *    - GetLineView(): Zero-copy line access via string_view (preferred)
+ *    - GetLineView(): line access via string_view (zero-copy within a piece)
  *    - Direct PieceTable access for new editing operations
  */
 #pragma once
@@ -311,9 +311,24 @@ public:
 	}
 
 
-	// Zero-copy view of a line. Points into the materialized backing store; becomes
-	// invalid after subsequent edits. Use immediately.
+	// View of a line's raw bytes, including its trailing '\n' if any. No copy
+	// when the line lies within one piece (an unedited stretch); a line that
+	// straddles an edit materializes the whole buffer, so per-row loops over
+	// an edited buffer should prefer GetLineString(). Invalid after the next
+	// edit; views of different lines need not be contiguous.
 	[[nodiscard]] std::string_view GetLineView(std::size_t row) const;
+
+	// The whole text as one contiguous view (materializes an edited buffer).
+	// Invalid after the next edit.
+	[[nodiscard]] std::string_view ContentView() const
+	{
+		return content_.ContentView();
+	}
+
+
+	// A copy of the whole text, assembled from the pieces (no materialized
+	// copy is kept).
+	[[nodiscard]] std::string Bytes() const;
 
 
 	[[nodiscard]] const std::string &Filename() const

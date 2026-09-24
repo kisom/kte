@@ -43,24 +43,6 @@ constexpr std::uint8_t MAGIC[8] = {'K', 'T', 'E', '_', 'S', 'W', 'P', '\0'};
 constexpr std::uint32_t VERSION = 2;
 
 
-static std::string
-snapshot_buffer_bytes(const Buffer &b)
-{
-	const std::size_t nrows = b.Nrows();
-	std::string out;
-	// Cheap lower bound: sum of row sizes.
-	std::size_t approx = 0;
-	for (std::size_t i = 0; i < nrows; i++)
-		approx += b.GetLineView(i).size();
-	out.reserve(approx);
-	for (std::size_t i = 0; i < nrows; i++) {
-		auto v = b.GetLineView(i);
-		out.append(v.data(), v.size());
-	}
-	return out;
-}
-
-
 static fs::path
 xdg_state_home()
 {
@@ -1313,7 +1295,7 @@ SwapManager::RecordCheckpoint(Buffer &buf, const bool urgent_flush)
 	p.buf          = &buf;
 	p.type         = SwapRecType::CHKPT;
 	p.urgent_flush = urgent_flush;
-	p.chkpt        = snapshot_buffer_bytes(buf);
+	p.chkpt        = buf.Bytes();
 	enqueue(std::move(p));
 }
 

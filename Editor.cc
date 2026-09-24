@@ -18,19 +18,6 @@ constexpr int kMaxUArgCount = 1000000;
 
 
 namespace {
-static std::string
-buffer_bytes_via_views(const Buffer &b)
-{
-	const std::size_t nrows = b.Nrows();
-	std::string out;
-	for (std::size_t i = 0; i < nrows; i++) {
-		auto v = b.GetLineView(i);
-		out.append(v.data(), v.size());
-	}
-	return out;
-}
-
-
 static void
 apply_pending_line(Editor &ed, const std::size_t line1)
 {
@@ -597,11 +584,11 @@ Editor::process_pending_opens_()
 			Buffer tmp;
 			std::string oerr;
 			if (tmp.OpenFromFile(req.path, oerr)) {
-				const std::string orig = buffer_bytes_via_views(tmp);
+				const std::string orig = tmp.Bytes();
 				std::string rerr;
 				std::uint64_t valid = 0;
 				if (kte::SwapManager::ReplayFile(tmp, swp, rerr, &valid)) {
-					std::string rec = buffer_bytes_via_views(tmp);
+					std::string rec = tmp.Bytes();
 					if (rec == orig) {
 						// Nothing to recover. Remove the journal rather than
 						// appending this session's records to it (it may end in a

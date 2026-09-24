@@ -99,19 +99,26 @@ Buffer::RefreshOnDiskIdentity()
 }
 
 
+// The bytes to save, as views of the piece table's storage in order (saving
+// never makes a contiguous copy of the buffer).
+using ByteChunks = std::vector<std::string_view>;
+
+
 static bool
-write_all_fd(int fd, const char *data, std::size_t len, std::string &err)
+write_all_fd(int fd, const ByteChunks &chunks, std::string &err)
 {
-	std::size_t off = 0;
-	while (off < len) {
-		ssize_t n = ::write(fd, data + off, len - off);
-		if (n < 0) {
-			if (errno == EINTR)
-				continue;
-			err = std::string("Write failed: ") + std::strerror(errno);
-			return false;
+	for (const std::string_view chunk: chunks) {
+		std::size_t off = 0;
+		while (off < chunk.size()) {
+			ssize_t n = ::write(fd, chunk.data() + off, chunk.size() - off);
+			if (n < 0) {
+				if (errno == EINTR)
+					continue;
+				err = std::string("Write failed: ") + std::strerror(errno);
+				return false;
+			}
+			off += static_cast<std::size_t>(n);
 		}
-		off += static_cast<std::size_t>(n);
 	}
 	return true;
 }
@@ -149,7 +156,7 @@ static const mode_t g_process_umask = [] {
 // Rewrite `path` in place (truncate, write, fsync). Used for files with
 // several hard links, which a temp-file-and-rename save would split.
 static bool
-write_in_place(const std::string &path, const char *data, std::size_t len, std::string &err)
+write_in_place(const std::string &path, const ByteChunks &data, std::string &err)
 {
 	int flags = O_WRONLY | O_TRUNC;
 #ifdef O_CLOEXEC
@@ -160,7 +167,7 @@ write_in_place(const std::string &path, const char *data, std::size_t len, std::
 		err = std::string("Failed to open file for writing: ") + std::strerror(errno);
 		return false;
 	}
-	bool ok = write_all_fd(fd, data, len, err);
+	bool ok = write_all_fd(fd, data, err);
 	if (ok && kte::syscall::Fsync(fd) != 0) {
 		err = std::string("fsync failed: ") + std::strerror(errno);
 		ok  = false;
@@ -173,7 +180,7 @@ write_in_place(const std::string &path, const char *data, std::size_t len, std::
 // Create a new file named from `tmpl` (a mkstemp template, which receives
 // the chosen name) holding the content, fsynced.
 static bool
-write_new_file(std::string &tmpl, const char *data, std::size_t len, std::string &err, int &create_errno)
+write_new_file(std::string &tmpl, const ByteChunks &data, std::string &err, int &create_errno)
 {
 	create_errno = 0;
 	std::vector<char> name(tmpl.begin(), tmpl.end());
@@ -186,7 +193,7 @@ write_new_file(std::string &tmpl, const char *data, std::size_t len, std::string
 	}
 	tmpl.assign(name.data());
 	const std::string &path = tmpl;
-	bool ok = write_all_fd(fd, data, len, err);
+	bool ok = write_all_fd(fd, data, err);
 	if (ok && kte::syscall::Fsync(fd) != 0) {
 		err = std::string("fsync failed: ") + std::strerror(errno);
 		ok  = false;
@@ -211,7 +218,7 @@ may_write_in_place_after(int create_errno)
 
 
 static bool
-atomic_write_file(const std::string &path_in, const char *data, std::size_t len, std::string &err)
+atomic_write_file(const std::string &path_in, const ByteChunks &data, std::string &err)
 {
 	// Write through a symlink to its target: renaming over the link itself
 	// would replace the link with a regular file.
@@ -242,12 +249,12 @@ atomic_write_file(const std::string &path_in, const char *data, std::size_t len,
 		std::string copy = path + ".kte-save.XXXXXX";
 		std::string copy_err;
 		int copy_errno       = 0;
-		const bool have_copy = write_new_file(copy, data, len, copy_err, copy_errno);
+		const bool have_copy = write_new_file(copy, data, copy_err, copy_errno);
 		if (!have_copy && !may_write_in_place_after(copy_errno)) {
 			err = "Save failed, file left unchanged: " + copy_err;
 			return false;
 		}
-		if (!write_in_place(path, data, len, err)) {
+		if (!write_in_place(path, data, err)) {
 			if (have_copy)
 				err += " (the new content is in " + copy + ")";
 			return false;
@@ -287,7 +294,7 @@ atomic_write_file(const std::string &path_in, const char *data, std::size_t len,
 		// the like: the in-place write would truncate the file and then fail.
 		if (fd < 0 && dst_exists && S_ISREG(dst_st.st_mode) && may_write_in_place_after(saved_errno)) {
 			err.clear();
-			return write_in_place(path, data, len, err);
+			return write_in_place(path, data, err);
 		}
 		if (fd < 0) {
 			err = std::string("Failed to create temp file for save: ") + std::strerror(saved_errno) + err;
@@ -309,7 +316,7 @@ atomic_write_file(const std::string &path_in, const char *data, std::size_t len,
 		(void) kte::syscall::Fchmod(fd, 0666 & ~g_process_umask);
 	}
 
-	bool ok = write_all_fd(fd, data, len, err);
+	bool ok = write_all_fd(fd, data, err);
 	// Never retry fsync: after a writeback error Linux may mark the pages
 	// clean, so a second fsync can succeed although the data was lost, and
 	// the rename below would then replace a good file with a bad one.
@@ -654,17 +661,8 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 	// Build the new content aside and swap it in only once complete: if the
 	// copy runs out of memory, the buffer keeps its old text (clearing first
 	// left an empty buffer that a later save wrote over the file).
-	PieceTable fresh;
-	try {
-		if (!data.empty())
-			fresh.Append(data.data(), data.size());
-		std::string().swap(data);
-	} catch (const std::bad_alloc &) {
-		err = "File too large to load: " + norm;
-		kte::ErrorHandler::Instance().Error("Buffer", err, norm);
-		return false;
-	}
-	content_ = std::move(fresh);
+	// The bytes become the piece table's original storage, uncopied.
+	content_.AdoptOriginal(std::move(data));
 	rows_cache_dirty_ = true;
 	nrows_            = 0; // not used under PieceTable
 	filename_         = norm;
@@ -699,13 +697,11 @@ Buffer::Save(std::string &err) const
 		err = "Buffer is not file-backed; use SaveAs()";
 		return false;
 	}
-	const std::size_t sz = content_.Size();
-	const char *data     = sz ? content_.Data() : nullptr;
-	if (sz && !data) {
-		err = "Internal error: buffer materialization failed";
-		return false;
-	}
-	if (!atomic_write_file(filename_, data ? data : "", sz, err)) {
+	ByteChunks chunks;
+	content_.ForEachChunk([&](const char *d, std::size_t n) {
+		chunks.emplace_back(d, n);
+	});
+	if (!atomic_write_file(filename_, chunks, err)) {
 		kte::ErrorHandler::Instance().Error("Buffer", err, filename_);
 		return false;
 	}
@@ -739,13 +735,11 @@ Buffer::SaveAs(const std::string &path, std::string &err)
 		out_path = path;
 	}
 
-	const std::size_t sz = content_.Size();
-	const char *data     = sz ? content_.Data() : nullptr;
-	if (sz && !data) {
-		err = "Internal error: buffer materialization failed";
-		return false;
-	}
-	if (!atomic_write_file(out_path, data ? data : "", sz, err)) {
+	ByteChunks chunks;
+	content_.ForEachChunk([&](const char *d, std::size_t n) {
+		chunks.emplace_back(d, n);
+	});
+	if (!atomic_write_file(out_path, chunks, err)) {
 		kte::ErrorHandler::Instance().Error("Buffer", err, out_path);
 		return false;
 	}
@@ -793,17 +787,23 @@ Buffer::insert_text(int row, int col, std::string_view text)
 
 
 // ===== Adapter helpers for PieceTable-backed Buffer =====
+std::string
+Buffer::Bytes() const
+{
+	std::string out;
+	out.reserve(content_.Size());
+	content_.ForEachChunk([&](const char *d, std::size_t n) {
+		out.append(d, n);
+	});
+	return out;
+}
+
+
 std::string_view
 Buffer::GetLineView(std::size_t row) const
 {
-	// Get byte range for the logical line and return a view into materialized data
-	auto range       = content_.GetLineRange(row); // [start,end) in bytes
-	const char *base = content_.Data(); // materializes if needed
-	if (!base)
-		return std::string_view();
-	const std::size_t start = range.first;
-	const std::size_t len   = (range.second > range.first) ? (range.second - range.first) : 0;
-	return std::string_view(base + start, len);
+	const auto [start, end] = content_.GetLineRange(row); // [start,end) in bytes
+	return end > start ? content_.View(start, end - start) : std::string_view();
 }
 
 
@@ -836,13 +836,7 @@ Buffer::content_LineCount_() const
 std::string
 Buffer::BytesForTests() const
 {
-	const std::size_t sz = content_.Size();
-	if (sz == 0)
-		return std::string();
-	const char *data = content_.Data();
-	if (!data)
-		return std::string();
-	return std::string(data, data + sz);
+	return Bytes();
 }
 #endif
 
