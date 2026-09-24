@@ -435,6 +435,10 @@ Editor::ResolveRecoveryPrompt(const bool yes)
 			} catch (...) {
 				// Best effort; the replay itself succeeded.
 			}
+			// Nothing in the undo history matches the file on disk now: keep
+			// the buffer dirty even after undoing back to the loaded state.
+			if (auto *u = b->Undo())
+				u->mark_base_unsaved();
 			b->SetDirty(true);
 			apply_pending_line(*this, req.line1);
 			SetStatus("Recovered " + req.path);

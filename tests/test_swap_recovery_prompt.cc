@@ -679,3 +679,29 @@ TEST(SwapRecoveryPrompt_TouchedFile_StillRecoverable)
 	answer(ed, "y");
 	ASSERT_EQ(buffer_bytes_via_views(*ed.CurrentBuffer()), expected);
 }
+
+
+// A recovered buffer stays modified even after an edit and its undo: its
+// content differs from the file on disk in every undo state.
+TEST(SwapRecoveryPrompt_Recovered_StaysDirtyAfterUndo)
+{
+	ktet::InstallDefaultCommandsOnce();
+	XdgSandbox sb("recovered_dirty");
+	const std::string file = (sb.root / "work" / "rd.txt").string();
+	write_file_bytes(file, "base\n");
+	std::string expected;
+	(void) make_journal(file, [](Buffer &b) {
+		b.insert_text(0, 0, std::string("IMPORTANT "));
+	}, expected);
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+	ed.AddBuffer(Buffer());
+	ed.RequestOpenFile(file);
+	(void) ed.ProcessPendingOpens();
+	answer(ed, "y");
+	ASSERT_TRUE(ed.CurrentBuffer()->Dirty());
+	ASSERT_TRUE(Execute(ed, CommandId::InsertText, "a"));
+	ASSERT_TRUE(Execute(ed, CommandId::Undo));
+	ASSERT_TRUE(ed.CurrentBuffer()->Dirty());
+}
