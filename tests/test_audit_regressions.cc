@@ -1291,6 +1291,12 @@ TEST(Audit_RegexSearch_LongLineFoundByNext)
 	ASSERT_TRUE(h.Exec(CommandId::MoveRight));
 	ASSERT_EQ(h.Buf().Cury(), (std::size_t) 1);
 	ASSERT_EQ(h.Buf().Curx(), (std::size_t) 25000);
+	ASSERT_TRUE(h.Exec(CommandId::Refresh));
+	ASSERT_TRUE(!ed.PromptActive());
+	// The replace prompt has no next/previous; its Enter searches all lines.
+	ASSERT_TRUE(h.Exec(CommandId::RegexpReplace));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "NEE+DLE"));
+	ASSERT_TRUE(ed.Status().find("Enter searches all") != std::string::npos);
 }
 
 

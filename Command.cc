@@ -2450,7 +2450,10 @@ cmd_insert_text(CommandContext &ctx)
 				search_apply_match_regex(ctx.editor, *buf, rmatches);
 				if (skipped > 0 && err.empty())
 					ctx.editor.SetStatus(ctx.editor.Status() + "  [" + std::to_string(skipped) +
-					                     " long line(s) skipped; Left/Right search all]");
+					                     " long line(s) skipped; " +
+					                     (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch
+						                      ? "Left/Right search all]"
+						                      : "Enter searches all]"));
 			} else {
 				auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
 				// Keep index stable unless out of range
@@ -3614,7 +3617,10 @@ cmd_backspace(CommandContext &ctx)
 					search_apply_match_regex(ctx.editor, *buf2, rm);
 					if (skipped > 0 && err.empty())
 						ctx.editor.SetStatus(ctx.editor.Status() + "  [" + std::to_string(skipped) +
-						                     " long line(s) skipped; Left/Right search all]");
+						                     " long line(s) skipped; " +
+					                     (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch
+						                      ? "Left/Right search all]"
+						                      : "Enter searches all]"));
 				} else {
 					auto matches = search_compute_matches(*buf2, ctx.editor.SearchQuery());
 					search_apply_match(ctx.editor, *buf2, matches);
