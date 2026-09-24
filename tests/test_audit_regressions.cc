@@ -1592,6 +1592,37 @@ TEST(Audit_Reflow_BlankishSeparatorAndCrlf)
 		ASSERT_TRUE(h.Undo());
 		ASSERT_EQ(h.Text(), std::string("one two\r\nthree four\r\nfive\r\n\r\nnext\r\n"));
 	}
+	{
+		// CRLF file without a final line ending: the last line has no CR.
+		TestHarness h;
+		h.Buf().insert_text(0, 0, "aaa bbb\r\nccc ddd\r\neee");
+		h.Buf().SetCursor(0, 0);
+		ASSERT_TRUE(h.Exec(CommandId::ReflowParagraph));
+		ASSERT_EQ(h.Text(), std::string("aaa bbb ccc ddd eee"));
+	}
+	{
+		TestHarness h;
+		h.Buf().insert_text(0, 0, "aaa bbb\r\nccc ddd\r\neee");
+		h.Buf().SetCursor(0, 0);
+		ASSERT_TRUE(h.Exec(CommandId::ReflowParagraph, "", 8));
+		ASSERT_EQ(h.Text(), std::string("aaa bbb\r\nccc ddd\r\neee"));
+	}
+}
+
+
+// Reflow does not wrap right before a word that would then read as a list
+// marker ("-", "1."), which turned the paragraph into a list next time.
+TEST(Audit_Reflow_NoWrapBeforeMarkerWord)
+{
+	TestHarness h;
+	h.Buf().insert_text(0, 0, "alpha beta - gamma delta\n");
+	h.Buf().SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::ReflowParagraph, "", 11));
+	const std::string once = h.Text();
+	ASSERT_EQ(once, std::string("alpha beta -\ngamma delta\n"));
+	h.Buf().SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::ReflowParagraph, "", 11));
+	ASSERT_EQ(h.Text(), once);
 }
 
 
