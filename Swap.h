@@ -111,7 +111,13 @@ public:
 	// On failure (corrupt/truncated/invalid), the buffer is left in whatever
 	// state results from applying records up to the failure point; callers should
 	// treat this as a recovery failure and surface `err`.
-	static bool ReplayFile(Buffer &buf, const std::string &swap_path, std::string &err);
+	//
+	// A record cut short at end of file (a crash mid-append) ends the replay
+	// successfully; err then describes the incomplete record. If valid_bytes
+	// is given, it receives the length of the journal's valid prefix, so a
+	// caller that keeps using the journal can truncate the torn tail first.
+	static bool ReplayFile(Buffer &buf, const std::string &swap_path, std::string &err,
+	                       std::uint64_t *valid_bytes = nullptr);
 
 	// Compute the swap path for a file-backed buffer by filename.
 	// Returns empty string if filename is empty.
@@ -197,6 +203,7 @@ private:
 		// drop them until a checkpoint re-establishes the full content.
 		bool gap{false};
 		std::uint64_t gap_chkpt_request_ns{0};
+		bool gap_unfixable_reported{false}; // gap on a buffer too large to checkpoint
 	};
 
 	struct Pending {

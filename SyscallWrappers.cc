@@ -22,10 +22,12 @@ Open(const char *path, int flags, mode_t mode)
 int
 Close(int fd)
 {
-	int ret;
-	do {
-		ret = ::close(fd);
-	} while (ret == -1 && errno == EINTR);
+	// Do not retry on EINTR: on Linux (and most systems) the descriptor is
+	// released even when close() is interrupted, so a retry could close an
+	// fd that another thread (e.g. the swap writer) has just opened.
+	const int ret = ::close(fd);
+	if (ret == -1 && errno == EINTR)
+		return 0;
 	return ret;
 }
 

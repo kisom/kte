@@ -610,7 +610,12 @@ public:
 	// Buffers hold recorders owned by the SwapManager that attached them, so
 	// editors sharing buffers must also share that manager (shared_swap);
 	// otherwise closing one window destroys recorders the other still uses.
-	void SetSharedBuffers(std::vector<Buffer> *shared, kte::SwapManager *shared_swap = nullptr)
+	// Index of the open buffer whose file is `path` (after the same
+	// normalization OpenFromFile applies), or size_t(-1) if none.
+	[[nodiscard]] std::size_t FindOpenBuffer(const std::string &path) const;
+
+
+		void SetSharedBuffers(std::vector<Buffer> *shared, kte::SwapManager *shared_swap = nullptr)
 	{
 		shared_buffers_ = shared;
 		shared_swap_    = shared ? shared_swap : nullptr;
