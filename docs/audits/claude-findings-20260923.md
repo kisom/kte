@@ -302,16 +302,30 @@ Updated as fixes land on `claude/funny-fermat-gj2vm5`.
 
 | ID | Status |
 |----|--------|
-| M1 | open |
-| M2 | open |
-| M4 | open |
-| M5 | open |
-| D1 | open |
-| D2 | open |
-| D6 | open |
-| D7 (torn tail) | open |
-| D8 | open |
-| D9 | open |
-| B1 | open |
-| B2 | open |
-| B12 | open |
+| M1 | fixed: assignment operators invalidate the line index |
+| M2 | open: needs a decision (drop the warm-up thread, or snapshot) |
+| M3 | open |
+| M4 | fixed: iterative free/search; `clear()` also freed only the first root branch (leak), now frees all |
+| M5 | fixed: jump-to-mark clamps the cursor |
+| D1 | fixed: `Begin` before the cursor moves; newline + indent grouped |
+| D2 | fixed for scroll up/down and replace-all restore |
+| D3 | open |
+| D4 | open |
+| D5 | replace-all fixed (one undo group); visual-line newline open |
+| D6 | fixed: reflow on a blank line is a no-op |
+| D7 | open: recovering a torn tail reverses `SwapReplay_TruncatedLog_FailsSafely`; needs a decision |
+| D8 | fixed: window checked before recording the failure |
+| D9 | fixed: `SetDirty` always bumps the version; reload and `replace_all_bytes` too; reload of a deleted file clears undo |
+| B1 | fixed: guard on `NCURSES_VERSION` |
+| B2 | fixed: `KEY_RESIZE` issues no command |
+| B3–B10, B13 | open |
+| B11 | fixed: SmartNewline with a prompt open delegates to Newline |
+| B12 | fixed: merged appends invalidate the line index |
+| P1 | partial: `ensure_cursor_visible` no longer calls `Rows()`; renderers still do |
+| P2 | partial: `ensure_cursor_visible` no longer materializes the buffer |
+| P3 | open |
+| P4 | replace-all fixed; other region commands open |
+| P5, P6 | open |
+
+Regression tests: `tests/test_audit_regressions.cc`. Each test fails on the
+unfixed code (M4 by crashing).
