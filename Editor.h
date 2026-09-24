@@ -607,9 +607,13 @@ public:
 
 	// Share another editor's buffer list. When set, this editor operates on
 	// the provided vector instead of its own. Pass nullptr to detach.
-	void SetSharedBuffers(std::vector<Buffer> *shared)
+	// Buffers hold recorders owned by the SwapManager that attached them, so
+	// editors sharing buffers must also share that manager (shared_swap);
+	// otherwise closing one window destroys recorders the other still uses.
+	void SetSharedBuffers(std::vector<Buffer> *shared, kte::SwapManager *shared_swap = nullptr)
 	{
 		shared_buffers_ = shared;
+		shared_swap_    = shared ? shared_swap : nullptr;
 		curbuf_         = 0;
 	}
 
@@ -617,7 +621,7 @@ public:
 	// Swap manager access (for advanced integrations/tests)
 	[[nodiscard]] kte::SwapManager *Swap()
 	{
-		return swap_.get();
+		return shared_swap_ ? shared_swap_ : swap_.get();
 	}
 
 
@@ -667,6 +671,7 @@ private:
 
 	// Swap journaling manager (lifetime = editor)
 	std::unique_ptr<kte::SwapManager> swap_;
+	kte::SwapManager *shared_swap_ = nullptr; // set with shared_buffers_; not owned
 
 	// Kill ring (Emacs-like)
 	std::vector<std::string> kill_ring_;

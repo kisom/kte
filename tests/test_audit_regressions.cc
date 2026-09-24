@@ -11,6 +11,7 @@
 #include "UndoTree.h"
 
 #include <chrono>
+#include <memory>
 #include <string>
 #include <thread>
 
@@ -224,4 +225,26 @@ TEST(Audit_D8_CircuitBreaker_WindowExpires)
 
 	ASSERT_TRUE(cb.GetState() == kte::CircuitBreaker::State::Closed);
 	ASSERT_EQ(cb.GetFailureCount(), (std::size_t) 1);
+}
+
+
+// M3: an editor that shares another's buffers must attach them through the
+// owner's SwapManager, so destroying it leaves no dangling recorders.
+TEST(Audit_M3_SharedBuffers_UseOwnersSwapManager)
+{
+	TestHarness h;
+	Editor &primary = h.EditorRef();
+
+	auto secondary = std::make_unique<Editor>();
+	secondary->SetSharedBuffers(&primary.Buffers(), primary.Swap());
+	ASSERT_TRUE(secondary->Swap() == primary.Swap());
+	secondary->AddBuffer(Buffer());
+	const std::size_t idx = primary.Buffers().size() - 1;
+	secondary.reset();
+
+	// Edits record through the buffer's swap recorder; before the fix it
+	// pointed into the destroyed secondary SwapManager.
+	Buffer &b = primary.Buffers()[idx];
+	b.insert_text(0, 0, "abc");
+	ASSERT_EQ(b.GetLineString(0), std::string("abc"));
 }

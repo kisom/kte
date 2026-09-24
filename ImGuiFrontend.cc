@@ -378,7 +378,7 @@ GUIFrontend::OpenNewWindow_(Editor &primary)
 	ws->height    = h;
 
 	// Secondary editor shares the primary's buffer list
-	ws->editor.SetSharedBuffers(&primary.Buffers());
+	ws->editor.SetSharedBuffers(&primary.Buffers(), primary.Swap());
 	ws->editor.SetDimensions(primary.Rows(), primary.Cols());
 
 	// Open a new untitled buffer and switch to it in the new window.

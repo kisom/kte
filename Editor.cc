@@ -169,21 +169,21 @@ Editor::AddBuffer(const Buffer &buf)
 	// Buffer to a new address. Drain any in-flight swap records first so the
 	// writer thread never dereferences an address that's about to move, then
 	// rehome each attached buffer that actually moved.
-	if (swap_ && !bufs.empty())
-		swap_->Flush();
+	if (Swap() && !bufs.empty())
+		Swap()->Flush();
 	std::vector<Buffer *> old_addrs;
 	old_addrs.reserve(bufs.size());
 	for (auto &b: bufs)
 		old_addrs.push_back(&b);
 	bufs.push_back(buf);
-	if (swap_) {
+	if (Swap()) {
 		for (std::size_t i = 0; i < old_addrs.size(); ++i) {
 			Buffer *new_addr = &bufs[i];
 			if (new_addr != old_addrs[i])
-				bufs[i].SetSwapRecorder(swap_->Rehome(old_addrs[i], new_addr));
+				bufs[i].SetSwapRecorder(Swap()->Rehome(old_addrs[i], new_addr));
 		}
-		swap_->Attach(&bufs.back());
-		bufs.back().SetSwapRecorder(swap_->RecorderFor(&bufs.back()));
+		Swap()->Attach(&bufs.back());
+		bufs.back().SetSwapRecorder(Swap()->RecorderFor(&bufs.back()));
 	}
 	if (bufs.size() == 1) {
 		curbuf_ = 0;
@@ -196,21 +196,21 @@ std::size_t
 Editor::AddBuffer(Buffer &&buf)
 {
 	auto &bufs = Buffers();
-	if (swap_ && !bufs.empty())
-		swap_->Flush();
+	if (Swap() && !bufs.empty())
+		Swap()->Flush();
 	std::vector<Buffer *> old_addrs;
 	old_addrs.reserve(bufs.size());
 	for (auto &b: bufs)
 		old_addrs.push_back(&b);
 	bufs.push_back(std::move(buf));
-	if (swap_) {
+	if (Swap()) {
 		for (std::size_t i = 0; i < old_addrs.size(); ++i) {
 			Buffer *new_addr = &bufs[i];
 			if (new_addr != old_addrs[i])
-				bufs[i].SetSwapRecorder(swap_->Rehome(old_addrs[i], new_addr));
+				bufs[i].SetSwapRecorder(Swap()->Rehome(old_addrs[i], new_addr));
 		}
-		swap_->Attach(&bufs.back());
-		bufs.back().SetSwapRecorder(swap_->RecorderFor(&bufs.back()));
+		Swap()->Attach(&bufs.back());
+		bufs.back().SetSwapRecorder(Swap()->RecorderFor(&bufs.back()));
 	}
 	if (bufs.size() == 1) {
 		curbuf_ = 0;
@@ -237,10 +237,10 @@ Editor::OpenFile(const std::string &path, std::string &err)
 			if (!ok)
 				return false;
 			// Ensure swap recorder is attached for this buffer
-			if (swap_) {
-				swap_->Attach(&cur);
-				cur.SetSwapRecorder(swap_->RecorderFor(&cur));
-				swap_->NotifyFilenameChanged(cur);
+			if (Swap()) {
+				Swap()->Attach(&cur);
+				cur.SetSwapRecorder(Swap()->RecorderFor(&cur));
+				Swap()->NotifyFilenameChanged(cur);
 			}
 			// Setup highlighting using registry (extension + shebang)
 			cur.EnsureHighlighter();
@@ -298,8 +298,8 @@ Editor::OpenFile(const std::string &path, std::string &err)
 	}
 	// Add as a new buffer and switch to it
 	std::size_t idx = AddBuffer(std::move(b));
-	if (swap_) {
-		swap_->NotifyFilenameChanged(Buffers()[idx]);
+	if (Swap()) {
+		Swap()->NotifyFilenameChanged(Buffers()[idx]);
 	}
 	SwitchTo(idx);
 	// Defensive: ensure any active prompt is closed after a successful open
@@ -514,26 +514,26 @@ Editor::CloseBuffer(std::size_t index)
 	if (index >= bufs.size()) {
 		return false;
 	}
-	if (swap_) {
+	if (Swap()) {
 		// Always remove swap file when closing a buffer on normal exit.
 		// Swap files are for crash recovery; on clean close, we don't need them.
 		// This prevents stale swap files from accumulating (e.g., when used as git editor).
-		swap_->Detach(&bufs[index], true);
+		Swap()->Detach(&bufs[index], true);
 		bufs[index].SetSwapRecorder(nullptr);
 		// Drain in-flight records before the erase-shift below moves other
 		// buffers to new addresses (vector::erase never reallocates, but it does
 		// move-assign each trailing buffer into the previous slot).
-		swap_->Flush();
+		Swap()->Flush();
 	}
 	bufs.erase(bufs.begin() + static_cast<std::ptrdiff_t>(index));
-	if (swap_) {
+	if (Swap()) {
 		// erase() shifts every buffer after `index` down by one slot in-place
 		// (no reallocation), so the buffer now at slot i used to live at slot
 		// i+1 (same underlying storage, since data() doesn't move on erase).
 		for (std::size_t i = index; i < bufs.size(); ++i) {
 			Buffer *new_addr = &bufs[i];
 			Buffer *old_addr = new_addr + 1;
-			bufs[i].SetSwapRecorder(swap_->Rehome(old_addr, new_addr));
+			bufs[i].SetSwapRecorder(Swap()->Rehome(old_addr, new_addr));
 		}
 	}
 	if (bufs.empty()) {
@@ -564,9 +564,9 @@ Editor::Reset()
 	close_confirm_pending_ = false;
 	close_after_save_      = false;
 	auto &bufs = Buffers();
-	if (swap_) {
+	if (Swap()) {
 		for (auto &buf : bufs)
-			swap_->Detach(&buf, true);
+			Swap()->Detach(&buf, true);
 	}
 	bufs.clear();
 	curbuf_ = 0;
