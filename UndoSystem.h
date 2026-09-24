@@ -114,6 +114,7 @@ private:
 	PendingAppendMode pending_mode_ = PendingAppendMode::Append;
 
 	std::uint64_t active_group_id_ = 0;
+	int group_depth_                = 0; // nesting depth of BeginGroup/EndGroup
 	std::uint64_t next_group_id_   = 1;
 
 	Buffer *buf_;

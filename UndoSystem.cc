@@ -16,6 +16,9 @@ UndoSystem::BeginGroup()
 	commit();
 	if (active_group_id_ == 0)
 		active_group_id_ = next_group_id_++;
+	// Groups nest (e.g. SmartNewline wraps Newline, which groups its own
+	// visual-line splits); only the outermost EndGroup closes the group.
+	++group_depth_;
 	return active_group_id_;
 }
 
@@ -24,7 +27,10 @@ void
 UndoSystem::EndGroup()
 {
 	commit();
-	active_group_id_ = 0;
+	if (group_depth_ > 0)
+		--group_depth_;
+	if (group_depth_ == 0)
+		active_group_id_ = 0;
 }
 
 
@@ -267,6 +273,7 @@ UndoSystem::clear()
 	tree_.current    = nullptr;
 	tree_.saved      = nullptr;
 	active_group_id_ = 0;
+	group_depth_     = 0;
 	next_group_id_   = 1;
 	update_dirty_flag();
 }

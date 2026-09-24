@@ -394,8 +394,11 @@ ImGuiInputHandler::ProcessSDLEvent(const SDL_Event &e)
 				// Turn line breaks (\n, \r\n, or bare \r) into Newline
 				// commands and the rest into InsertText; InsertText itself
 				// rejects any embedded '\r'/'\n'.
+				// Into a prompt, line breaks must not become Newline: that
+				// would accept the prompt and send the rest to the buffer.
+				const bool to_prompt = ed_ && ed_->PromptActive();
 				std::lock_guard<std::mutex> lk(mu_);
-				for (const auto &cmd : SplitPasteIntoCommands(text))
+				for (const auto &cmd: to_prompt ? SplitPasteForPrompt(text) : SplitPasteIntoCommands(text))
 					q_.push(cmd);
 				// Suppress the corresponding TEXTINPUT that may follow
 				suppress_text_input_once_ = true;

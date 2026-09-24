@@ -102,3 +102,15 @@ TEST(PasteSplit_MultilineCRLF)
 	ASSERT_TRUE(cmds[3].id == CommandId::Newline);
 	ASSERT_TRUE(cmds[4].arg == "line3");
 }
+
+
+// Pasting into a prompt must not produce Newline (which accepts the prompt):
+// line breaks become spaces in a single InsertText.
+TEST(PasteSplit_ForPrompt_FlattensLineBreaks)
+{
+	const auto cmds = SplitPasteForPrompt("foo\nbar\r\nbaz\rqux");
+	ASSERT_EQ(cmds.size(), (std::size_t) 1);
+	ASSERT_TRUE(cmds[0].id == CommandId::InsertText);
+	ASSERT_EQ(cmds[0].arg, std::string("foo bar baz qux"));
+	ASSERT_EQ(SplitPasteForPrompt("").size(), (std::size_t) 0);
+}

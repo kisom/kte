@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <map>
 #include <cwchar>
 #include <filesystem>
 #include <cstdlib>
@@ -111,6 +112,13 @@ line_view(const Buffer::Line &l)
 }
 
 
+static inline std::string_view
+line_view(const std::string &l)
+{
+	return std::string_view(l);
+}
+
+
 // Keep buffer viewport offsets so that the cursor stays within the visible
 // window based on the editor's current dimensions. The bottom row is reserved
 // for the status line.
@@ -155,26 +163,39 @@ compute_render_x(std::string_view line, const std::size_t curx, const std::size_
 }
 
 
-// Clamp the cursor to an existing row and to that row's length. Commands that
-// set the cursor from remembered or scrolled positions must call this: edits
-// at a column past end-of-line are misapplied (and mis-recorded for undo).
+// Clamp (x, y) to an existing row and to that row's length.
 static void
-clamp_cursor_to_buffer(Buffer &buf)
+clamp_position(const Buffer &buf, std::size_t &x, std::size_t &y)
 {
 	const std::size_t nrows = buf.Nrows();
-	std::size_t y           = buf.Cury();
 	if (nrows == 0) {
-		buf.SetCursor(0, 0);
+		x = y = 0;
 		return;
 	}
-	if (y >= nrows)
+	// A row past the end means a position past the end of the buffer: clamp
+	// it to the end of the last line, not to its column on that line.
+	const bool past_end = y >= nrows;
+	if (past_end)
 		y = nrows - 1;
 	const auto [start, end] = buf.GetLineRange(y);
 	std::size_t len         = end - start;
 	// GetLineRange includes the trailing newline, if any.
 	if (len > 0 && y + 1 < nrows)
 		--len;
-	buf.SetCursor(std::min(buf.Curx(), len), y);
+	x = past_end ? len : std::min(x, len);
+}
+
+
+// Clamp the cursor to an existing row and to that row's length. Commands that
+// set the cursor from remembered or scrolled positions must call this: edits
+// at a column past end-of-line are misapplied (and mis-recorded for undo).
+static void
+clamp_cursor_to_buffer(Buffer &buf)
+{
+	std::size_t x = buf.Curx();
+	std::size_t y = buf.Cury();
+	clamp_position(buf, x, y);
+	buf.SetCursor(x, y);
 }
 
 
@@ -320,6 +341,42 @@ is_mutating_command(CommandId id)
 }
 
 
+// Commands that may run while a prompt is open: prompt editing and
+// navigation (their handlers check PromptActive), cancel, and view-only
+// commands that do not touch buffer contents or buffer selection.
+static bool
+allowed_during_prompt(CommandId id)
+{
+	switch (id) {
+	case CommandId::Refresh:
+	case CommandId::InsertText:
+	case CommandId::Newline:
+	case CommandId::SmartNewline:
+	case CommandId::Backspace:
+	case CommandId::MoveLeft:
+	case CommandId::MoveRight:
+	case CommandId::MoveUp:
+	case CommandId::MoveDown:
+	case CommandId::UArgStatus:
+	case CommandId::KPrefix:
+	case CommandId::UnknownKCommand:
+	case CommandId::UnknownEscCommand:
+	case CommandId::ScrollUp:
+	case CommandId::ScrollDown:
+	case CommandId::ThemeNext:
+	case CommandId::ThemePrev:
+	case CommandId::FontZoomIn:
+	case CommandId::FontZoomOut:
+	case CommandId::FontZoomReset:
+	case CommandId::VisualFilePickerToggle:
+	case CommandId::VisualFontPickerToggle:
+		return true;
+	default:
+		return false;
+	}
+}
+
+
 // --- UI/status helpers ---
 static bool
 cmd_uarg_status(CommandContext &ctx)
@@ -340,6 +397,10 @@ compute_mark_region(Buffer &buf, std::size_t &sx, std::size_t &sy, std::size_t &
 	std::size_t cy = buf.Cury();
 	std::size_t mx = buf.MarkCurx();
 	std::size_t my = buf.MarkCury();
+	// Marks are not adjusted by edits, so either end may now lie past the end
+	// of its line or of the buffer; clamp both before ordering them.
+	clamp_position(buf, cx, cy);
+	clamp_position(buf, mx, my);
 	if (cy < my || (cy == my && cx < mx)) {
 		sy = cy;
 		sx = cx;
@@ -357,11 +418,63 @@ compute_mark_region(Buffer &buf, std::size_t &sx, std::size_t &sy, std::size_t &
 }
 
 
+// Row access for commands that touch a few rows. Buffer::Rows() rebuilds a
+// string for every line of the file on the first call after any edit, which
+// made every motion and delete O(file size). RowsView fetches rows on demand
+// and caches them for the current buffer version. Strings fetched for an
+// older version are retired, not freed, so a reference obtained before an
+// edit stays valid (if stale) for the lifetime of the view, as with Rows().
+class RowsView {
+public:
+	explicit RowsView(const Buffer &buf) : buf_(&buf) {}
+
+
+	[[nodiscard]] std::size_t size() const
+	{
+		return buf_->Nrows();
+	}
+
+
+	[[nodiscard]] bool empty() const
+	{
+		return size() == 0;
+	}
+
+
+	const std::string &operator[](std::size_t row) const
+	{
+		if (buf_->Version() != version_) {
+			if (!cache_.empty())
+				retired_.push_back(std::move(cache_));
+			cache_.clear();
+			version_ = buf_->Version();
+		}
+		auto it = cache_.find(row);
+		if (it == cache_.end())
+			it = cache_.emplace(row, buf_->GetLineString(row)).first;
+		return it->second;
+	}
+
+private:
+	const Buffer *buf_;
+	mutable std::uint64_t version_ = ~std::uint64_t{0};
+	mutable std::map<std::size_t, std::string> cache_;
+	mutable std::vector<std::map<std::size_t, std::string> > retired_;
+};
+
+
+static RowsView
+rows_of(const Buffer &buf)
+{
+	return RowsView(buf);
+}
+
+
 // Helper: extract text from [sx,sy) to [ex,ey) without modifying buffer. Newlines inserted between lines.
 static std::string
 extract_region_text(const Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::size_t ey)
 {
-	const auto &rows = buf.Rows();
+	const auto &rows = rows_of(buf);
 	if (sy >= rows.size())
 		return std::string();
 	if (ey >= rows.size())
@@ -414,7 +527,7 @@ delete_region(Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::
 		ey = nrows - 1;
 	if (sy == ey) {
 		// Single line: delete text from xs to xe
-		const auto &rows = buf.Rows();
+		const auto &rows = rows_of(buf);
 		const auto &line = rows[sy];
 		std::size_t xs   = std::min(sx, line.size());
 		std::size_t xe   = std::min(ex, line.size());
@@ -519,7 +632,7 @@ insert_text_at_cursor(Buffer &buf, const std::string &text)
 			if (cur_y >= nrows) {
 				buf.insert_row(static_cast<int>(nrows), "");
 			}
-			const auto &rows = buf.Rows();
+			const auto &rows = rows_of(buf);
 			if (cur_x > rows[cur_y].size())
 				cur_x = rows[cur_y].size();
 			buf.insert_text(static_cast<int>(cur_y), static_cast<int>(cur_x), remain);
@@ -529,7 +642,7 @@ insert_text_at_cursor(Buffer &buf, const std::string &text)
 		// insert segment before newline
 		std::string seg = remain.substr(0, pos);
 		{
-			const auto &rows = buf.Rows();
+			const auto &rows = rows_of(buf);
 			if (cur_x > rows[cur_y].size())
 				cur_x = rows[cur_y].size();
 		}
@@ -616,7 +729,7 @@ cmd_move_cursor_to(CommandContext &ctx)
 					std::size_t by  = bro + vy;
 					// Clamp by to existing lines later
 					ensure_at_least_one_line(*buf);
-					const auto &lines2 = buf->Rows();
+					const auto &lines2 = rows_of(*buf);
 					if (by >= lines2.size())
 						by = lines2.size() - 1;
 					std::string line2     = static_cast<std::string>(lines2[by]);
@@ -634,7 +747,7 @@ cmd_move_cursor_to(CommandContext &ctx)
 		}
 	}
 	ensure_at_least_one_line(*buf);
-	const auto &lines = buf->Rows();
+	const auto &lines = rows_of(*buf);
 	if (row >= lines.size())
 		row = lines.size() - 1;
 	std::string line = static_cast<std::string>(lines[row]);
@@ -2198,7 +2311,7 @@ cmd_insert_text(CommandContext &ctx)
 		ctx.editor.SetSearchQuery(q);
 
 		// Recompute matches and move cursor to current index
-		const auto &rows = buf->Rows();
+		const auto &rows = rows_of(*buf);
 		std::vector<std::pair<std::size_t, std::size_t> > matches;
 		if (!q.empty()) {
 			for (std::size_t y = 0; y < rows.size(); ++y) {
@@ -2250,7 +2363,7 @@ cmd_insert_text(CommandContext &ctx)
 	if (buf->VisualLineActive()) {
 		const std::size_t sy = buf->VisualLineStartY();
 		const std::size_t ey = buf->VisualLineEndY();
-		const auto &rows     = buf->Rows();
+		const auto &rows     = rows_of(*buf);
 		UndoSystem *u        = buf->Undo();
 		std::uint64_t gid    = 0;
 		if (u)
@@ -3344,7 +3457,7 @@ cmd_backspace(CommandContext &ctx)
 	if (buf->VisualLineActive()) {
 		const std::size_t sy = buf->VisualLineStartY();
 		const std::size_t ey = buf->VisualLineEndY();
-		const auto &rows     = buf->Rows();
+		const auto &rows     = rows_of(*buf);
 		std::uint64_t gid    = 0;
 		if (u)
 			gid = u->BeginGroup();
@@ -3360,7 +3473,7 @@ cmd_backspace(CommandContext &ctx)
 			for (int i = 0; i < repeat; ++i) {
 				if (xx == 0)
 					break;
-				const auto &rows_view = buf->Rows();
+				const auto &rows_view = rows_of(*buf);
 				if (yy >= rows_view.size())
 					break;
 				const std::string_view lv = line_view(rows_view[yy]);
@@ -3387,7 +3500,7 @@ cmd_backspace(CommandContext &ctx)
 	}
 	for (int i = 0; i < repeat; ++i) {
 		// Refresh a read-only view of lines for char capture/lengths
-		const auto &rows_view = buf->Rows();
+		const auto &rows_view = rows_of(*buf);
 		if (x > 0) {
 			std::string deleted;
 			std::size_t n = 1;
@@ -3455,7 +3568,7 @@ cmd_delete_char(CommandContext &ctx)
 	if (buf->VisualLineActive()) {
 		const std::size_t sy = buf->VisualLineStartY();
 		const std::size_t ey = buf->VisualLineEndY();
-		const auto &rows     = buf->Rows();
+		const auto &rows     = rows_of(*buf);
 		std::uint64_t gid    = 0;
 		if (u)
 			gid = u->BeginGroup();
@@ -3468,7 +3581,7 @@ cmd_delete_char(CommandContext &ctx)
 				xx = rows[yy].size();
 			std::string deleted;
 			for (int i = 0; i < repeat; ++i) {
-				const auto &rows_view = buf->Rows();
+				const auto &rows_view = rows_of(*buf);
 				if (yy >= rows_view.size() || xx >= rows_view[yy].size())
 					break;
 				const std::string_view lv = line_view(rows_view[yy]);
@@ -3490,7 +3603,7 @@ cmd_delete_char(CommandContext &ctx)
 		return true;
 	}
 	for (int i = 0; i < repeat; ++i) {
-		const auto &rows_view = buf->Rows();
+		const auto &rows_view = rows_of(*buf);
 		if (y >= rows_view.size())
 			break;
 		if (x < rows_view[y].size()) {
@@ -3583,7 +3696,7 @@ cmd_kill_to_eol(CommandContext &ctx)
 	UndoSystem *u = buf->Undo();
 	UndoGroupGuard guard(u);
 	for (int i = 0; i < repeat; ++i) {
-		const auto &rows_view = buf->Rows();
+		const auto &rows_view = rows_of(*buf);
 		if (y >= rows_view.size())
 			break;
 		if (x < rows_view[y].size()) {
@@ -3642,7 +3755,7 @@ cmd_kill_line(CommandContext &ctx)
 	UndoSystem *u = buf->Undo();
 	UndoGroupGuard guard(u);
 	for (int i = 0; i < repeat; ++i) {
-		const auto &rows_view = buf->Rows();
+		const auto &rows_view = rows_of(*buf);
 		if (rows_view.empty())
 			break;
 		if (rows_view.size() == 1) {
@@ -3677,7 +3790,9 @@ cmd_kill_line(CommandContext &ctx)
 				u->Append(std::string_view(deleted));
 				u->commit();
 			}
+			// End of buffer reached: a repeat count must not continue upward.
 			y -= 1;
+			break;
 		} else if (y < rows_view.size()) {
 			// erase current line; keep y pointing at the next line
 			std::string content = static_cast<std::string>(rows_view[y]);
@@ -3690,14 +3805,14 @@ cmd_kill_line(CommandContext &ctx)
 				u->commit();
 			}
 			buf->delete_row(static_cast<int>(y));
-			const auto &rows_after = buf->Rows();
+			const auto &rows_after = rows_of(*buf);
 			if (y >= rows_after.size()) {
 				// deleted last line; move to previous
 				y = rows_after.empty() ? 0 : rows_after.size() - 1;
 			}
 		} else {
 			// out of range
-			const auto &rows2 = buf->Rows();
+			const auto &rows2 = rows_of(*buf);
 			y                 = rows2.empty() ? 0 : rows2.size() - 1;
 		}
 	}
@@ -3826,7 +3941,7 @@ cmd_move_file_end(CommandContext &ctx)
 	if (auto *u = buf->Undo())
 		u->commit();
 	ensure_at_least_one_line(*buf);
-	const auto &rows = buf->Rows();
+	const auto &rows = rows_of(*buf);
 	std::size_t y    = rows.empty() ? 0 : rows.size() - 1;
 	std::size_t x    = rows.empty() ? 0 : rows[y].size();
 	buf->SetCursor(x, y);
@@ -4021,7 +4136,7 @@ cmd_move_left(CommandContext &ctx)
 		return true;
 	}
 	ensure_at_least_one_line(*buf);
-	auto &rows    = buf->Rows();
+	auto rows    = rows_of(*buf);
 	std::size_t y = buf->Cury();
 	std::size_t x = buf->Curx();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
@@ -4106,7 +4221,7 @@ cmd_move_right(CommandContext &ctx)
 		return true;
 	}
 	ensure_at_least_one_line(*buf);
-	auto &rows    = buf->Rows();
+	auto rows    = rows_of(*buf);
 	std::size_t y = buf->Cury();
 	std::size_t x = buf->Curx();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
@@ -4151,7 +4266,7 @@ cmd_move_up(CommandContext &ctx)
 		return true;
 	}
 	ensure_at_least_one_line(*buf);
-	auto &rows    = buf->Rows();
+	auto rows    = rows_of(*buf);
 	std::size_t y = buf->Cury();
 	std::size_t x = buf->Curx();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
@@ -4200,7 +4315,7 @@ cmd_move_down(CommandContext &ctx)
 		return true;
 	}
 	ensure_at_least_one_line(*buf);
-	auto &rows           = buf->Rows();
+	auto rows           = rows_of(*buf);
 	std::size_t y        = buf->Cury();
 	std::size_t x        = buf->Curx();
 	int repeat           = ctx.count > 0 ? ctx.count : 1;
@@ -4250,7 +4365,7 @@ cmd_move_end(CommandContext &ctx)
 	if (auto *u = buf->Undo())
 		u->commit();
 	ensure_at_least_one_line(*buf);
-	auto &rows    = buf->Rows();
+	auto rows    = rows_of(*buf);
 	std::size_t y = buf->Cury();
 	std::size_t x = (y < rows.size()) ? rows[y].size() : 0;
 	buf->SetCursor(x, y);
@@ -4268,7 +4383,7 @@ cmd_page_up(CommandContext &ctx)
 	if (auto *u = buf->Undo())
 		u->commit();
 	ensure_at_least_one_line(*buf);
-	auto &rows               = buf->Rows();
+	auto rows               = rows_of(*buf);
 	int repeat               = ctx.count > 0 ? ctx.count : 1;
 	std::size_t content_rows = std::max<std::size_t>(1, ctx.editor.ContentRows());
 
@@ -4307,7 +4422,7 @@ cmd_page_down(CommandContext &ctx)
 	if (auto *u = buf->Undo())
 		u->commit();
 	ensure_at_least_one_line(*buf);
-	auto &rows               = buf->Rows();
+	auto rows               = rows_of(*buf);
 	int repeat               = ctx.count > 0 ? ctx.count : 1;
 	std::size_t content_rows = std::max<std::size_t>(1, ctx.editor.ContentRows());
 
@@ -4343,7 +4458,7 @@ cmd_scroll_up(CommandContext &ctx)
 	if (auto *u = buf->Undo())
 		u->commit();
 	ensure_at_least_one_line(*buf);
-	const auto &rows         = buf->Rows();
+	const auto &rows         = rows_of(*buf);
 	std::size_t content_rows = std::max<std::size_t>(1, ctx.editor.ContentRows());
 	std::size_t rowoffs      = buf->Rowoffs();
 
@@ -4379,7 +4494,7 @@ cmd_scroll_down(CommandContext &ctx)
 	if (auto *u = buf->Undo())
 		u->commit();
 	ensure_at_least_one_line(*buf);
-	const auto &rows         = buf->Rows();
+	const auto &rows         = rows_of(*buf);
 	std::size_t content_rows = std::max<std::size_t>(1, ctx.editor.ContentRows());
 	std::size_t rowoffs      = buf->Rowoffs();
 
@@ -4411,7 +4526,10 @@ cmd_scroll_down(CommandContext &ctx)
 static inline bool
 is_word_char(unsigned char c)
 {
-	return std::isalnum(c) || c == '_';
+	// Bytes >= 0x80 belong to multibyte UTF-8 characters: count them as word
+	// characters, so word motion and deletion never stop inside a character
+	// (and letters outside ASCII are part of words).
+	return std::isalnum(c) || c == '_' || c >= 0x80;
 }
 
 
@@ -4424,7 +4542,7 @@ cmd_word_prev(CommandContext &ctx)
 	if (auto *u = buf->Undo())
 		u->commit();
 	ensure_at_least_one_line(*buf);
-	auto &rows    = buf->Rows();
+	auto rows    = rows_of(*buf);
 	std::size_t y = buf->Cury();
 	std::size_t x = buf->Curx();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
@@ -4481,7 +4599,7 @@ cmd_word_next(CommandContext &ctx)
 	if (auto *u = buf->Undo())
 		u->commit();
 	ensure_at_least_one_line(*buf);
-	auto &rows    = buf->Rows();
+	auto rows    = rows_of(*buf);
 	std::size_t y = buf->Cury();
 	std::size_t x = buf->Curx();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
@@ -4536,7 +4654,7 @@ cmd_delete_word_prev(CommandContext &ctx)
 	if (auto *u = buf->Undo())
 		u->commit();
 	ensure_at_least_one_line(*buf);
-	auto &rows    = buf->Rows();
+	auto rows    = rows_of(*buf);
 	std::size_t y = buf->Cury();
 	std::size_t x = buf->Curx();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
@@ -4610,7 +4728,7 @@ cmd_delete_word_next(CommandContext &ctx)
 	if (auto *u = buf->Undo())
 		u->commit();
 	ensure_at_least_one_line(*buf);
-	const auto &rows = buf->Rows();
+	const auto &rows = rows_of(*buf);
 	std::size_t y    = buf->Cury();
 	std::size_t x    = buf->Curx();
 	int repeat       = ctx.count > 0 ? ctx.count : 1;
@@ -4691,7 +4809,7 @@ cmd_indent_region(CommandContext &ctx)
 	}
 	UndoSystem *u = buf->Undo();
 	UndoGroupGuard guard(u);
-	for (std::size_t y = sy; y <= ey && y < buf->Rows().size(); ++y) {
+	for (std::size_t y = sy; y <= ey && y < rows_of(*buf).size(); ++y) {
 		buf->insert_text(static_cast<int>(y), 0, std::string_view("\t"));
 		if (u) {
 			buf->SetCursor(0, y);
@@ -4724,8 +4842,8 @@ cmd_unindent_region(CommandContext &ctx)
 	}
 	UndoSystem *u = buf->Undo();
 	UndoGroupGuard guard(u);
-	for (std::size_t y = sy; y <= ey && y < buf->Rows().size(); ++y) {
-		const auto &rows_view = buf->Rows();
+	for (std::size_t y = sy; y <= ey && y < rows_of(*buf).size(); ++y) {
+		const auto &rows_view = rows_of(*buf);
 		if (y >= rows_view.size())
 			break;
 		const std::string line = static_cast<std::string>(rows_view[y]);
@@ -4773,7 +4891,7 @@ cmd_reflow_paragraph(CommandContext &ctx)
 	if (auto *u = buf->Undo())
 		u->commit();
 	ensure_at_least_one_line(*buf);
-	auto &rows    = buf->Rows();
+	auto rows    = rows_of(*buf);
 	std::size_t y = buf->Cury();
 	// Treat a universal-argument count of 1 as "no width specified".
 	// Editor::UArgGet() returns 1 when no explicit count was provided.
@@ -5112,7 +5230,7 @@ cmd_reload_buffer(CommandContext &ctx)
 	}
 	// Try to restore the cursor to its previous position if still valid; otherwise clamp
 	{
-		auto &rows              = buf->Rows();
+		auto rows              = rows_of(*buf);
 		const std::size_t nrows = rows.size();
 		if (nrows == 0) {
 			buf->SetCursor(0, 0);
@@ -5137,7 +5255,7 @@ cmd_mark_all_and_jump_end(CommandContext &ctx)
 		return false;
 	ensure_at_least_one_line(*buf);
 	buf->SetMark(0, 0);
-	auto &rows         = buf->Rows();
+	auto rows         = rows_of(*buf);
 	std::size_t last_y = rows.empty() ? 0 : rows.size() - 1;
 	std::size_t last_x = last_y < rows.size() ? rows[last_y].size() : 0;
 	buf->SetCursor(last_x, last_y);
@@ -5412,6 +5530,15 @@ Execute(Editor &ed, CommandId id, const std::string &arg, int count)
 	    CommandId::CopyRegion && id != CommandId::DeleteWordPrev && id != CommandId::DeleteWordNext) {
 		ed.SetKillChain(false);
 	}
+	// While a prompt is open, keys edit the prompt; only commands that know
+	// about prompts (or only change the view) may run. Anything else would
+	// edit the buffer behind the prompt (skipping the read-only check below)
+	// or switch/close buffers under a pending confirmation, which then acts
+	// on the wrong buffer.
+	if (ed.PromptActive() && !allowed_during_prompt(id)) {
+		ed.SetStatus("Finish or cancel the prompt first (C-g)");
+		return true;
+	}
 	// If buffer is read-only, block mutating commands outside of prompts
 	if (!ed.PromptActive()) {
 		Buffer *b = ed.CurrentBuffer();
@@ -5447,6 +5574,13 @@ Execute(Editor &ed, const std::string &name, const std::string &arg, int count)
 	const Command *cmd = CommandRegistry::FindByName(name);
 	if (!cmd)
 		return false;
+	if (!ed.PromptActive()) {
+		Buffer *b = ed.CurrentBuffer();
+		if (b && b->IsReadOnly() && is_mutating_command(cmd->id)) {
+			ed.SetStatus("Read-only buffer");
+			return true;
+		}
+	}
 	CommandContext ctx{ed, arg, count};
 	return cmd->handler ? cmd->handler(ctx) : false;
 }
