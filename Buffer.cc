@@ -173,13 +173,15 @@ write_in_place(const std::string &path, const char *data, std::size_t len, std::
 // Create a new file named from `tmpl` (a mkstemp template, which receives
 // the chosen name) holding the content, fsynced.
 static bool
-write_new_file(std::string &tmpl, const char *data, std::size_t len, std::string &err)
+write_new_file(std::string &tmpl, const char *data, std::size_t len, std::string &err, int &create_errno)
 {
+	create_errno = 0;
 	std::vector<char> name(tmpl.begin(), tmpl.end());
 	name.push_back('\0');
 	const int fd = kte::syscall::Mkstemp(name.data());
 	if (fd < 0) {
-		err = "Failed to create " + tmpl + ": " + std::strerror(errno);
+		create_errno = errno;
+		err = "Failed to create " + tmpl + ": " + std::strerror(create_errno);
 		return false;
 	}
 	tmpl.assign(name.data());
@@ -193,6 +195,18 @@ write_new_file(std::string &tmpl, const char *data, std::size_t len, std::string
 	if (!ok)
 		(void) ::unlink(path.c_str());
 	return ok;
+}
+
+
+// Whether a failure to create a file beside the target means only that the
+// directory will not take a new name (not writable, name too long), so the
+// target itself may still be rewritten in place. Anything else (ENOSPC,
+// EDQUOT, EIO, ...) would most likely hit the in-place write too, after it
+// had already truncated the file.
+static bool
+may_write_in_place_after(int create_errno)
+{
+	return create_errno == EACCES || create_errno == EPERM || create_errno == ENAMETOOLONG;
 }
 
 
@@ -222,11 +236,17 @@ atomic_write_file(const std::string &path_in, const char *data, std::size_t len,
 	if (dst_exists && S_ISREG(dst_st.st_mode) && dst_st.st_nlink > 1) {
 		// Truncating in place risks the only copy if the write then fails
 		// (ENOSPC, EIO, crash), so first write and sync a copy beside it. If
-		// no copy can be made (directory not writable, name too long), write
-		// in place anyway rather than refuse to save.
+		// the directory will not take a new file (not writable, name too
+		// long), write in place anyway rather than refuse to save; any
+		// other failure (out of space, I/O error) refuses the save.
 		std::string copy = path + ".kte-save.XXXXXX";
 		std::string copy_err;
-		const bool have_copy = write_new_file(copy, data, len, copy_err);
+		int copy_errno       = 0;
+		const bool have_copy = write_new_file(copy, data, len, copy_err, copy_errno);
+		if (!have_copy && !may_write_in_place_after(copy_errno)) {
+			err = "Save failed, file left unchanged: " + copy_err;
+			return false;
+		}
 		if (!write_in_place(path, data, len, err)) {
 			if (have_copy)
 				err += " (the new content is in " + copy + ")";
@@ -261,10 +281,11 @@ atomic_write_file(const std::string &path_in, const char *data, std::size_t len,
 
 	if (!kte::RetryOnTransientError(mkstemp_fn, kte::RetryPolicy::Aggressive(), err)) {
 		const int saved_errno = errno;
-		// No temp file in the directory (e.g. the file is writable but its
-		// directory is not): an existing regular file can still be written in
-		// place, as editors traditionally do.
-		if (fd < 0 && dst_exists && S_ISREG(dst_st.st_mode)) {
+		// No temp file in the directory because the directory is not
+		// writable (the file is): an existing regular file can still be
+		// written in place, as editors traditionally do. Not on ENOSPC and
+		// the like: the in-place write would truncate the file and then fail.
+		if (fd < 0 && dst_exists && S_ISREG(dst_st.st_mode) && may_write_in_place_after(saved_errno)) {
 			err.clear();
 			return write_in_place(path, data, len, err);
 		}

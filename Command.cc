@@ -629,58 +629,78 @@ buffer_text(const Buffer &buf)
 }
 
 
-// Replace the whole buffer's text as one undo group (one delete, one insert).
+// Replace the text of rows [y, y + old_text lines) in place with new_text,
+// where old_text is those rows joined by '\n' (no trailing newline). Unlike
+// delete_row/insert_row this never adds or removes the newline after the
+// last replaced row, so a file without a trailing newline keeps that shape.
+//
+// Only the span between the texts' common prefix and suffix is deleted and
+// inserted: recording the whole text kept two more copies of it in the undo
+// tree (and the piece table and journal) for every replace, however small.
 static void
-replace_buffer_text(Buffer &buf, const std::string &old_text, const std::string &new_text, UndoSystem *u)
+replace_rows_text(Buffer &buf, std::size_t y, const std::string &old_text, const std::string &new_text,
+                  UndoSystem *u)
 {
-	UndoGroupGuard group(u);
-	if (!old_text.empty()) {
-		buf.delete_text(0, 0, old_text.size());
+	const std::size_t common = std::min(old_text.size(), new_text.size());
+	std::size_t pre          = 0;
+	while (pre < common && old_text[pre] == new_text[pre])
+		++pre;
+	std::size_t suf = 0;
+	while (suf < common - pre && old_text[old_text.size() - 1 - suf] == new_text[new_text.size() - 1 - suf])
+		++suf;
+	// Keep UTF-8 sequences whole on both sides of the edit.
+	auto is_cont = [](char c) {
+		return (static_cast<unsigned char>(c) & 0xC0) == 0x80;
+	};
+	while (pre > 0 && ((pre < old_text.size() && is_cont(old_text[pre])) ||
+	                   (pre < new_text.size() && is_cont(new_text[pre]))))
+		--pre;
+	while (suf > 0 && (is_cont(old_text[old_text.size() - suf]) || is_cont(new_text[new_text.size() - suf])))
+		--suf;
+	if (pre + suf > old_text.size() || pre + suf > new_text.size())
+		suf = std::min(old_text.size(), new_text.size()) - pre;
+	const std::size_t del_len = old_text.size() - pre - suf;
+	const std::size_t ins_len = new_text.size() - pre - suf;
+	if (del_len == 0 && ins_len == 0)
+		return;
+
+	// Row and column of the first changed byte.
+	std::size_t row = y, col = pre;
+	const std::size_t last_nl = pre == 0 ? std::string::npos : old_text.rfind('\n', pre - 1);
+	if (last_nl != std::string::npos) {
+		row += static_cast<std::size_t>(std::count(old_text.begin(),
+		                                           old_text.begin() + static_cast<std::ptrdiff_t>(pre), '\n'));
+		col = pre - last_nl - 1;
+	}
+
+	if (del_len > 0) {
+		buf.delete_text(static_cast<int>(row), static_cast<int>(col), del_len);
 		if (u) {
-			buf.SetCursor(0, 0);
+			buf.SetCursor(col, row);
 			u->Begin(UndoType::Delete);
-			u->Append(std::string_view(old_text));
+			u->Append(std::string_view(old_text).substr(pre, del_len));
 			u->commit();
 		}
 	}
-	if (!new_text.empty()) {
-		buf.insert_text(0, 0, new_text);
+	if (ins_len > 0) {
+		const std::string_view ins = std::string_view(new_text).substr(pre, ins_len);
+		buf.insert_text(static_cast<int>(row), static_cast<int>(col), ins);
 		if (u) {
-			buf.SetCursor(0, 0);
+			buf.SetCursor(col, row);
 			u->Begin(UndoType::Insert);
-			u->Append(std::string_view(new_text));
+			u->Append(ins);
 			u->commit();
 		}
 	}
 }
 
 
-// Replace the text of rows [y, y + old_text lines) in place with new_text,
-// where old_text is those rows joined by '\n' (no trailing newline). Unlike
-// delete_row/insert_row this never adds or removes the newline after the
-// last replaced row, so a file without a trailing newline keeps that shape.
+// Replace the whole buffer's text as one undo group.
 static void
-replace_rows_text(Buffer &buf, std::size_t y, const std::string &old_text, const std::string &new_text,
-                  UndoSystem *u)
+replace_buffer_text(Buffer &buf, const std::string &old_text, const std::string &new_text, UndoSystem *u)
 {
-	if (!old_text.empty()) {
-		buf.delete_text(static_cast<int>(y), 0, old_text.size());
-		if (u) {
-			buf.SetCursor(0, y);
-			u->Begin(UndoType::Delete);
-			u->Append(std::string_view(old_text));
-			u->commit();
-		}
-	}
-	if (!new_text.empty()) {
-		buf.insert_text(static_cast<int>(y), 0, new_text);
-		if (u) {
-			buf.SetCursor(0, y);
-			u->Begin(UndoType::Insert);
-			u->Append(std::string_view(new_text));
-			u->commit();
-		}
-	}
+	UndoGroupGuard group(u);
+	replace_rows_text(buf, 0, old_text, new_text, u);
 }
 
 
@@ -848,8 +868,11 @@ struct RegexMatch {
 
 
 static std::vector<RegexMatch>
-search_compute_matches_regex(const Buffer &buf, const std::string &pattern, std::string &err_out)
+search_compute_matches_regex(const Buffer &buf, const std::string &pattern, std::string &err_out,
+                             std::size_t line_limit = static_cast<std::size_t>(-1), std::size_t *skipped = nullptr)
 {
+	if (skipped)
+		*skipped = 0;
 	std::vector<RegexMatch> out;
 	err_out.clear();
 	if (pattern.empty())
@@ -860,13 +883,16 @@ search_compute_matches_regex(const Buffer &buf, const std::string &pattern, std:
 		// std::regex recurses per matched character; see RegexGuard.h.
 		kte::RunWithLargeStack([&] {
 			for (std::size_t y = 0; y < rows.size(); ++y) {
-				// This runs on every prompt keystroke, and std::regex can be
-				// quadratic in line length for ordinary patterns (".*q" on a
-				// 40 KB minified line took over a minute, uninterruptibly), so
-				// incremental search skips very long lines. Regex replace, an
-				// explicit one-shot command, still processes every line.
-				if (rows[y].size() > kte::kRegexIncrementalLineLimit)
+				// std::regex can be quadratic in line length for ordinary
+				// patterns (".*q" on a 40 KB minified line took over a
+				// minute, uninterruptibly), so the per-keystroke caller
+				// passes a limit; moving to the next/previous match
+				// (Left/Right in the prompt) searches every line.
+				if (rows[y].size() > line_limit) {
+					if (skipped)
+						++*skipped;
 					continue;
+				}
 				std::string line = static_cast<std::string>(rows[y]);
 				for (auto it = std::sregex_iterator(line.begin(), line.end(), rx);
 				     it != std::sregex_iterator(); ++it) {
@@ -2411,7 +2437,9 @@ cmd_insert_text(CommandContext &ctx)
 			if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
 			    ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind) {
 				std::string err;
-				auto rmatches = search_compute_matches_regex(*buf, ctx.editor.SearchQuery(), err);
+				std::size_t skipped = 0;
+				auto rmatches       = search_compute_matches_regex(*buf, ctx.editor.SearchQuery(), err,
+				                                                   kte::kRegexIncrementalLineLimit, &skipped);
 				if (!err.empty()) {
 					ctx.editor.SetStatus(
 						std::string("Regex: ") + ctx.editor.PromptText() + "  [error: " + err +
@@ -2420,6 +2448,9 @@ cmd_insert_text(CommandContext &ctx)
 				if (ctx.editor.SearchIndex() >= static_cast<int>(rmatches.size()))
 					ctx.editor.SetSearchIndex(rmatches.empty() ? -1 : 0);
 				search_apply_match_regex(ctx.editor, *buf, rmatches);
+				if (skipped > 0 && err.empty())
+					ctx.editor.SetStatus(ctx.editor.Status() + "  [" + std::to_string(skipped) +
+					                     " long line(s) skipped; Left/Right search all]");
 			} else {
 				auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
 				// Keep index stable unless out of range
@@ -3571,13 +3602,19 @@ cmd_backspace(CommandContext &ctx)
 				if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
 				    ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind) {
 					std::string err;
-					auto rm = search_compute_matches_regex(*buf2, ctx.editor.SearchQuery(), err);
+					std::size_t skipped = 0;
+					auto rm             = search_compute_matches_regex(
+						*buf2, ctx.editor.SearchQuery(), err, kte::kRegexIncrementalLineLimit,
+						&skipped);
 					if (!err.empty()) {
 						ctx.editor.SetStatus(
 							std::string("Regex: ") + ctx.editor.PromptText() + "  [error: "
 							+ err + "]");
 					}
 					search_apply_match_regex(ctx.editor, *buf2, rm);
+					if (skipped > 0 && err.empty())
+						ctx.editor.SetStatus(ctx.editor.Status() + "  [" + std::to_string(skipped) +
+						                     " long line(s) skipped; Left/Right search all]");
 				} else {
 					auto matches = search_compute_matches(*buf2, ctx.editor.SearchQuery());
 					search_apply_match(ctx.editor, *buf2, matches);

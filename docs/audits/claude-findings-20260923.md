@@ -410,6 +410,21 @@ before the fix (unless noted).
   after a close; a reload confirmation survived other commands; a swap
   recovery prompt from a deferred open was not drawn until a key.
 
+**Fifth round (review of the fourth round's changes)**
+- The save fallbacks added in round four (write in place when no temp
+  file or hard-link copy can be made) also fired on ENOSPC/EDQUOT/EIO,
+  truncating the file and then failing: the file on disk was left
+  corrupt. They now apply only when the directory refuses a new name
+  (EACCES, EPERM, ENAMETOOLONG); otherwise the save fails and the file
+  is untouched.
+- Whole-buffer replace recorded the entire old and new text for undo on
+  every run (about 150 MB more per replace-all on a 50 MB file); only
+  the span between the common prefix and suffix is now recorded.
+- Regex search silently never found matches on lines over 20,000 bytes;
+  the skip now applies only to search-as-you-type (at 2,000 bytes, where
+  the worst case is well under a second), says so in the status line,
+  and moving to the next/previous match searches every line.
+
 **Known limitations (not fixed)**
 - Catastrophic regex backtracking (e.g. `(a*)*b`) can still take very
   long; std::regex has no time limit.

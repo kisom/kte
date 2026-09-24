@@ -13,11 +13,12 @@
 
 namespace kte {
 // Renderers highlight regex matches only on lines up to this many bytes, and
-// incremental regex search skips longer lines: std::regex can take time
-// quadratic in line length even for ordinary patterns, with no way to
-// interrupt it, and these run on every frame or keystroke.
-constexpr std::size_t kRegexRenderLineLimit      = 10000;
-constexpr std::size_t kRegexIncrementalLineLimit = 20000;
+// search-as-you-type skips longer lines (an explicit search does not):
+// std::regex can take time quadratic in line length even for ordinary
+// patterns (".*q" on a 20 KB line: 12 s), with no way to interrupt it, and
+// these run on every frame or keystroke.
+constexpr std::size_t kRegexRenderLineLimit      = 2000;
+constexpr std::size_t kRegexIncrementalLineLimit = 2000;
 
 // Run fn to completion on a thread with a large stack (address space is
 // reserved, pages are committed only as used), so regex work over long lines
