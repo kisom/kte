@@ -1441,3 +1441,80 @@ TEST(Audit_VisualLine_EditsKeepUtf8Whole)
 		ASSERT_EQ(h.Text(), std::string("a\nbcdef\n\xE4\xB8\x96\n\xE7\x95\x8C\n"));
 	}
 }
+
+
+// A session that cannot journal its buffer (another kte holds the journal,
+// or writes fail) now says so in the status line; it used to go only to
+// the error log, leaving crash recovery silently off.
+TEST(Audit_Swap_FailuresReachTheUser)
+{
+	TempDir d("swap_notice");
+	const std::string path = (d.path / "f.txt").string();
+	std::ofstream(path) << "base\n";
+	const std::string swp = kte::SwapManager::ComputeSwapPathForFilename(path);
+	std::filesystem::remove_all(swp);
+
+	// Session A holds the journal; session B is locked out.
+	Buffer a, b;
+	std::string err;
+	ASSERT_TRUE(a.OpenFromFile(path, err));
+	ASSERT_TRUE(b.OpenFromFile(path, err));
+	kte::SwapManager sa, sb;
+	sa.Attach(&a);
+	a.SetSwapRecorder(sa.RecorderFor(&a));
+	a.insert_text(0, 0, "A");
+	sa.Flush(&a);
+	ASSERT_EQ(sa.TakeUserNotice(), std::string());
+	sb.Attach(&b);
+	b.SetSwapRecorder(sb.RecorderFor(&b));
+	b.insert_text(0, 0, "B");
+	sb.Flush(&b);
+	ASSERT_TRUE(sb.TakeUserNotice().find("another kte") != std::string::npos);
+	ASSERT_EQ(sb.TakeUserNotice(), std::string());
+	b.SetSwapRecorder(nullptr);
+	sb.Detach(&b, false);
+	a.SetSwapRecorder(nullptr);
+	sa.Detach(&a, true);
+
+	// Writes fail: told once, not per keystroke.
+	std::filesystem::remove_all(swp);
+	std::filesystem::create_directories(swp);
+	Buffer c;
+	ASSERT_TRUE(c.OpenFromFile(path, err));
+	kte::SwapManager sc;
+	sc.Attach(&c);
+	c.SetSwapRecorder(sc.RecorderFor(&c));
+	c.insert_text(0, 0, "C");
+	c.insert_text(0, 1, "D");
+	sc.Flush(&c);
+	ASSERT_TRUE(sc.TakeUserNotice().find("journal write failed") != std::string::npos);
+	ASSERT_EQ(sc.TakeUserNotice(), std::string());
+	c.SetSwapRecorder(nullptr);
+	sc.Detach(&c, false);
+	std::filesystem::remove_all(swp);
+}
+
+
+// A file whose basename is too long for the encoded swap name fell back to
+// "<basename>.<hash>.swp", which exceeded NAME_MAX: no journal at all.
+TEST(Audit_Swap_LongBasenameStillJournaled)
+{
+	TempDir d("swap_longname");
+	const std::string path = (d.path / (std::string(240, 'n') + ".txt")).string();
+	std::ofstream(path) << "base\n";
+	const std::string swp = kte::SwapManager::ComputeSwapPathForFilename(path);
+	ASSERT_TRUE(std::filesystem::path(swp).filename().string().size() <= 255);
+	std::filesystem::remove(swp);
+	Buffer a;
+	std::string err;
+	ASSERT_TRUE(a.OpenFromFile(path, err));
+	kte::SwapManager sm;
+	sm.Attach(&a);
+	a.SetSwapRecorder(sm.RecorderFor(&a));
+	a.insert_text(0, 0, "X");
+	sm.Flush(&a);
+	ASSERT_TRUE(std::filesystem::exists(swp));
+	a.SetSwapRecorder(nullptr);
+	sm.Detach(&a, true);
+	ASSERT_TRUE(!std::filesystem::exists(swp));
+}

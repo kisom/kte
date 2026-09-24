@@ -87,6 +87,12 @@ public:
 	// before the user stopped typing would stay behind indefinitely.
 	void RetryGapCheckpoints();
 
+	// Main thread: the oldest pending message for the user (a journal that
+	// another kte holds, or that fell behind because writes failed), or ""
+	// when there is none. Such failures otherwise went only to the error
+	// log, leaving crash recovery silently off or incomplete.
+	std::string TakeUserNotice();
+
 
 	void SetConfig(const SwapConfig &cfg)
 	{
@@ -219,6 +225,7 @@ private:
 		// position-based, so later ones no longer apply to the journal's state:
 		// drop them until a checkpoint re-establishes the full content.
 		bool gap{false};
+		bool gap_notified{false}; // the user was told about the current gap
 		std::uint64_t gap_chkpt_request_ns{0};
 		bool gap_unfixable_reported{false}; // gap on a buffer too large to checkpoint
 		// Another kte process holds this journal's lock: do not write to it.
@@ -316,6 +323,10 @@ private:
 
 	// Error tracking (protected by mtx_)
 	std::deque<SwapError> errors_; // bounded to max 100 entries
+	std::deque<std::string> user_notices_; // see TakeUserNotice(); guarded by mtx_
+
+	// Queue a message for the user (mtx_ must be held).
+	void notify_user_locked_(std::string msg);
 	std::size_t total_error_count_{0};
 
 	// Circuit breaker for swap operations (protected by mtx_)
