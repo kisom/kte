@@ -1110,3 +1110,19 @@ TEST(Audit_VisualLine_StaysInsideBuffer)
 		(void) h.Undo();
 	ASSERT_EQ(h.Text(), orig);
 }
+
+
+// A leftover copy from an interrupted hard-link save does not block saving.
+TEST(Audit_Save_HardLink_LeftoverCopyDoesNotBlock)
+{
+	TempDir d("save_leftover");
+	std::ofstream(d.path / "h.txt") << "old\n";
+	std::filesystem::create_hard_link(d.path / "h.txt", d.path / "h2.txt");
+	std::ofstream(d.path / "h.txt.kte-save") << "stale\n";
+	Buffer b;
+	std::string err;
+	ASSERT_TRUE(b.OpenFromFile((d.path / "h.txt").string(), err));
+	b.insert_text(0, 0, "new ");
+	ASSERT_TRUE(b.Save(err));
+	ASSERT_EQ(slurp(d.path / "h2.txt"), std::string("new old\n"));
+}

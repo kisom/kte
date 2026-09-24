@@ -135,7 +135,11 @@ TerminalFrontend::Step(Editor &ed, bool &running)
 	// busy on large or long-line files while idle.
 	const auto now = std::chrono::steady_clock::now();
 	if (changed || now - last_draw_ >= std::chrono::milliseconds(1000)) {
-		renderer_.Draw(ed);
+		try {
+			renderer_.Draw(ed);
+		} catch (const std::exception &e) {
+			ed.SetStatus(std::string("Display error: ") + e.what());
+		}
 		last_draw_   = now;
 		first_frame_ = false;
 	}

@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "Editor.h"
+#include "ErrorHandler.h"
 #include "syntax/HighlighterRegistry.h"
 #include "syntax/CppHighlighter.h"
 #include "syntax/NullHighlighter.h"
@@ -487,6 +488,24 @@ Editor::ResolveRecoveryPrompt(const bool yes)
 
 bool
 Editor::ProcessPendingOpens()
+{
+	// Opening can throw (bad_alloc on a huge file, filesystem errors). This
+	// runs from every frontend's loop, outside command dispatch: report the
+	// failure instead of letting it end the editor.
+	try {
+		return process_pending_opens_();
+	} catch (const std::exception &e) {
+		kte::ErrorHandler::Instance().Error("Editor", std::string("open failed: ") + e.what(), "");
+		SetStatus(std::string("Open failed: ") + e.what());
+	} catch (...) {
+		SetStatus("Open failed");
+	}
+	return false;
+}
+
+
+bool
+Editor::process_pending_opens_()
 {
 	if (PromptActive())
 		return false;
