@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <ncurses.h>
 #include <termios.h>
 #include <unistd.h>
@@ -12,6 +13,12 @@ TerminalFrontend::Init(int &argc, char **argv, Editor &ed)
 {
 	(void) argc;
 	(void) argv;
+	// Keys are read from stdin. Piped input would be executed as editor
+	// commands (and after EOF the loop spun at full CPU with no way to quit).
+	if (!isatty(STDIN_FILENO)) {
+		std::fprintf(stderr, "kte: standard input is not a terminal\n");
+		return false;
+	}
 	// Ensure Control keys reach the app: disable XON/XOFF and dsusp/susp bindings (e.g., ^S/^Q, ^Y on macOS)
 	{
 		struct termios tio{};
@@ -88,29 +95,50 @@ TerminalFrontend::Step(Editor &ed, bool &running)
 	// Handle resize and keep editor dimensions synced
 	int r, c;
 	getmaxyx(stdscr, r, c);
+	bool changed = first_frame_;
 	if (r != prev_r_ || c != prev_c_) {
 		resizeterm(r, c);
 		clear();
 		prev_r_ = r;
 		prev_c_ = c;
+		changed = true;
 	}
 	ed.SetDimensions(static_cast<std::size_t>(r), static_cast<std::size_t>(c));
 
 	// Allow deferred opens (including swap recovery prompts) to run.
-	ed.ProcessPendingOpens();
+	if (ed.ProcessPendingOpens())
+		changed = true;
 
+	// Handle all pending input before drawing: one key per frame made a
+	// pasted block take a frame (and a full redraw) per character. The first
+	// read waits up to the configured timeout; the rest do not wait.
 	MappedInput mi;
-	if (input_.Poll(mi)) {
-		if (mi.hasCommand) {
+	int handled = 0;
+	while (handled < 4096 && input_.PollKey(mi)) {
+		changed = true;
+		if (mi.hasCommand)
 			Execute(ed, mi.id, mi.arg, mi.count);
-		}
+		if (ed.QuitRequested())
+			break;
+		if (++handled == 1)
+			timeout(0);
 	}
+	if (handled > 0)
+		timeout(16);
 
 	if (ed.QuitRequested()) {
 		running = false;
 	}
 
-	renderer_.Draw(ed);
+	// Redraw after input or a resize, and otherwise about once a second
+	// (status messages, deferred work): redrawing every 16 ms kept a core
+	// busy on large or long-line files while idle.
+	const auto now = std::chrono::steady_clock::now();
+	if (changed || now - last_draw_ >= std::chrono::milliseconds(1000)) {
+		renderer_.Draw(ed);
+		last_draw_   = now;
+		first_frame_ = false;
+	}
 }
 
 

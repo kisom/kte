@@ -322,6 +322,7 @@ Buffer::Buffer(const Buffer &other)
 	rows_cache_dirty_ = other.rows_cache_dirty_;
 	filename_         = other.filename_;
 	is_file_backed_   = other.is_file_backed_;
+	is_virtual_       = other.is_virtual_;
 	dirty_            = other.dirty_;
 	read_only_        = other.read_only_;
 	mark_set_         = other.mark_set_;
@@ -375,6 +376,7 @@ Buffer::operator=(const Buffer &other)
 	rows_cache_dirty_ = other.rows_cache_dirty_;
 	filename_         = other.filename_;
 	is_file_backed_   = other.is_file_backed_;
+	is_virtual_       = other.is_virtual_;
 	dirty_            = other.dirty_;
 	read_only_        = other.read_only_;
 	mark_set_         = other.mark_set_;
@@ -420,6 +422,7 @@ Buffer::Buffer(Buffer &&other) noexcept
 	  rows_(std::move(other.rows_)),
 	  filename_(std::move(other.filename_)),
 	  is_file_backed_(other.is_file_backed_),
+	  is_virtual_(other.is_virtual_),
 	  dirty_(other.dirty_),
 	  read_only_(other.read_only_),
 	  mark_set_(other.mark_set_),
@@ -470,6 +473,7 @@ Buffer::operator=(Buffer &&other) noexcept
 	rows_                 = std::move(other.rows_);
 	filename_             = std::move(other.filename_);
 	is_file_backed_       = other.is_file_backed_;
+	is_virtual_           = other.is_virtual_;
 	dirty_                = other.dirty_;
 	read_only_            = other.read_only_;
 	mark_set_             = other.mark_set_;
@@ -548,6 +552,7 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		nrows_          = 0;
 		filename_       = norm;
 		is_file_backed_ = false;
+		is_virtual_     = false;
 		dirty_          = false;
 
 		// Reset cursor/viewport state
@@ -620,6 +625,7 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 	nrows_            = 0; // not used under PieceTable
 	filename_         = norm;
 	is_file_backed_   = true;
+	is_virtual_       = false;
 	dirty_            = false;
 	RefreshOnDiskIdentity();
 
@@ -702,6 +708,7 @@ Buffer::SaveAs(const std::string &path, std::string &err)
 
 	filename_       = out_path;
 	is_file_backed_ = true;
+	is_virtual_     = false;
 	dirty_          = false;
 	RefreshOnDiskIdentity();
 	return true;

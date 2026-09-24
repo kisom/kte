@@ -334,12 +334,21 @@ public:
 	{
 		filename_       = name;
 		is_file_backed_ = false;
+		is_virtual_     = true;
 	}
 
 
 	[[nodiscard]] bool IsFileBacked() const
 	{
 		return is_file_backed_;
+	}
+
+
+	// A virtual buffer (e.g. "+HELP+") has a display name that is not a path:
+	// it is never journaled, and saving it asks for a file name.
+	[[nodiscard]] bool IsVirtual() const
+	{
+		return is_virtual_;
 	}
 
 
@@ -677,6 +686,7 @@ private:
 
 	std::string filename_;
 	bool is_file_backed_              = false;
+	bool is_virtual_                  = false;
 	bool dirty_                       = false;
 	bool read_only_                   = false;
 	bool mark_set_                    = false;

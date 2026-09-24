@@ -9,6 +9,7 @@
 #include "ErrorRecovery.h"
 #include "PieceTable.h"
 #include "RegexGuard.h"
+#include "Swap.h"
 #include "UndoTree.h"
 #include "syntax/HighlighterEngine.h"
 #include "syntax/HighlighterRegistry.h"
@@ -991,4 +992,37 @@ TEST(Audit_Save_KeepsSpecialModeBits)
 	struct stat st{};
 	ASSERT_EQ(::stat(f.c_str(), &st), 0);
 	ASSERT_EQ(st.st_mode & 07777, (mode_t) 06755);
+}
+
+
+// The help buffer's name is not a path: it is not journaled, and saving it
+// asks for a file name instead of writing ./+HELP+.
+TEST(Audit_HelpBuffer_NotJournaledOrSavedByName)
+{
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	ASSERT_TRUE(h.Exec(CommandId::ShowHelp));
+	Buffer *help = ed.CurrentBuffer();
+	ASSERT_TRUE(help->IsVirtual());
+	ASSERT_TRUE(h.Exec(CommandId::ToggleReadOnly));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "x"));
+	ed.Swap()->Flush(help);
+	ASSERT_TRUE(!std::filesystem::exists(kte::SwapManager::ComputeSwapPathForTests(*help)));
+	ASSERT_TRUE(h.Exec(CommandId::Save));
+	ASSERT_TRUE(ed.PromptActive());
+	ASSERT_TRUE(ed.CurrentPromptKind() == Editor::PromptKind::SaveAs);
+	ASSERT_TRUE(!std::filesystem::exists("+HELP+"));
+	ASSERT_TRUE(h.Exec(CommandId::Refresh));
+}
+
+
+// A huge repeated yank is refused rather than allocating without bound.
+TEST(Audit_Yank_HugeRepeatRefused)
+{
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	ed.KillRingPush(std::string(1 << 20, 'k'));
+	ASSERT_TRUE(!h.Exec(CommandId::Yank, std::string(), 1000000));
+	ASSERT_EQ(h.Buf().Nrows(), (std::size_t) 1);
+	ASSERT_EQ(h.Line(0), std::string());
 }
