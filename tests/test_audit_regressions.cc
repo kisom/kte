@@ -1146,3 +1146,55 @@ TEST(Audit_VirtualBuffer_SavedAs_GetsJournal)
 	ASSERT_TRUE(std::filesystem::exists(swp));
 	std::filesystem::remove(swp);
 }
+
+
+// Replace-all is applied as one edit; results and undo are unchanged.
+TEST(Audit_ReplaceAll_WholeBuffer_ResultAndUndo)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	const std::string orig = "cat cat\ndog\ncatcat\n";
+	b.insert_text(0, 0, orig);
+	b.SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::SearchReplace));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "cat"));
+	ASSERT_TRUE(h.Exec(CommandId::Newline));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "ox"));
+	ASSERT_TRUE(h.Exec(CommandId::Newline));
+	ASSERT_EQ(h.Text(), std::string("ox ox\ndog\noxox\n"));
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), orig);
+	ASSERT_TRUE(h.Redo());
+	ASSERT_EQ(h.Text(), std::string("ox ox\ndog\noxox\n"));
+}
+
+
+// Yanking a multi-line kill inserts it in one edit and leaves the cursor
+// after it.
+TEST(Audit_Yank_MultiLine_SingleInsert)
+{
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	Buffer &b  = h.Buf();
+	b.insert_text(0, 0, "AB");
+	b.SetCursor(1, 0);
+	ed.KillRingPush("x\ny\nz");
+	ASSERT_TRUE(h.Exec(CommandId::Yank));
+	ASSERT_EQ(h.Text(), std::string("Ax\ny\nzB"));
+	ASSERT_EQ(b.Cury(), (std::size_t) 2);
+	ASSERT_EQ(b.Curx(), (std::size_t) 1);
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), std::string("AB"));
+}
+
+
+// A repeat count inserts the repeated text once; undo removes all of it.
+TEST(Audit_InsertText_RepeatCount)
+{
+	TestHarness h;
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "ab", 3));
+	ASSERT_EQ(h.Text(), std::string("ababab"));
+	ASSERT_EQ(h.Buf().Curx(), (std::size_t) 6);
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), std::string(""));
+}
