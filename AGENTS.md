@@ -23,7 +23,7 @@ Docker (cross-platform Linux testing): `docker build -t kte-linux . && docker ru
 ## Rules (do not re-litigate)
 - Release: bump CMakeLists version, checkpoint, `./make-release.sh`, report the SHA256 it prints; a GitHub push failure at the same commit is fine; then update `/opt/homebrew/Library/Taps/kisom/homebrew-tap`.
 - All text mutations must go through the PieceTable API (`insert_text`, `delete_text`) so undo and swap recording work.
-- Prefer `GetLineView()` (zero-copy) or `GetLineString()` over `Rows()` (legacy, materializes all lines); `GetLineView()` is valid only until the next buffer modification.
+- Read lines with `Nrows()` and `GetLineString()` (a copy, cheap on any buffer) or `GetLineView()` (zero-copy when the line lies within one piece; a line straddling an edit materializes the whole buffer); `GetLineView()` and `ContentView()` are valid only until the next buffer modification.
 - C++20, compiled with `-Wall -Wextra -Werror -pedantic`; Clang uses `-stdlib=libc++`.
 - Naming: PascalCase for classes/methods, snake_case for variables, trailing underscore for private members (e.g. `pieces_`); indentation is tabs.
 - Fallible ops use `bool func(args..., std::string &err)`: clear `err` at start, capture `errno` immediately after syscall failure, use EINTR-safe wrappers from `SyscallWrappers.h` instead of raw syscalls.
@@ -82,16 +82,17 @@ Each frontend implements three interfaces (`Frontend.h`, `InputHandler.h`, `Rend
 | `ENABLE_ASAN` | OFF | AddressSanitizer |
 | `KTE_STATIC_LINK` | OFF | Static linking (Linux only) |
 | `KTE_ENABLE_TREESITTER` | OFF | Tree-sitter syntax highlighting |
+| `KTE_USE_PCRE2` | ON | Regex search/replace via PCRE2 when `libpcre2-8` is found (std::regex otherwise; see `RegexEngine.h`) |
 
 ## Testing
 
-Tests live in `tests/test_*.cc`, run by the single `kte_tests` binary (also registered with ctest as `add_test(NAME kte_tests COMMAND kte_tests)`); there is no single-test runner. Tests use a minimal custom framework in `tests/Test.h` with `TEST()`, `ASSERT_EQ()`, `ASSERT_TRUE()`, `EXPECT_TRUE()` macros. Use `TestFrontend`/`TestInputHandler`/`TestRenderer` for integration tests that exercise the full Editor+Buffer+Command stack without UI dependencies.
+Tests live in `tests/test_*.cc`, run by the single `kte_tests` binary (also registered with ctest as `add_test(NAME kte_tests COMMAND kte_tests)`); `./build/kte_tests Swap_ Undo_` runs only the tests whose names contain one of the arguments. Tests use a minimal custom framework in `tests/Test.h` with `TEST()`, `ASSERT_EQ()`, `ASSERT_TRUE()`, `EXPECT_TRUE()` macros. Use `TestFrontend`/`TestInputHandler`/`TestRenderer` for integration tests that exercise the full Editor+Buffer+Command stack without UI dependencies.
 
 Key test files by area:
 - PieceTable: `test_piece_table.cc`
 - Buffer I/O: `test_buffer_io.cc`
 - Commands: `test_command_semantics.cc`
-- Search/replace: `test_search.cc`, `test_search_replace_flow.cc`
+- Search/replace: `test_search_replace_flow.cc`
 - Undo: `test_undo.cc`
 - Swap (crash recovery): `test_swap_*.cc` (7 files)
 - Reflow: `test_reflow_paragraph.cc`, `test_reflow_indented_bullets.cc`
@@ -99,8 +100,8 @@ Key test files by area:
 
 ## Important Caveats
 
-- `Buffer::Rows()` is legacy; use `GetLineView()` / `GetLineString()` in new code.
-- `GetLineView()` returns a `string_view` valid only until the next buffer modification.
+- `GetLineView()` and `ContentView()` return a `string_view` valid only until the next buffer modification; views of different lines need not be contiguous.
+- Buffers, PieceTable and HighlighterEngine are used from the main thread only (the swap writer thread receives copies of the bytes).
 - All source files are in the project root (no `src/` directory); tests are in `tests/`; syntax highlighters in `syntax/`; themes in `themes/`; embedded fonts in `fonts/`.
 - External deps: `ext/imgui/` (Dear ImGui), `ext/tomlplusplus/` (TOML parser).
 - GUI config: `~/.config/kte/kge.toml` (TOML preferred over legacy INI).
