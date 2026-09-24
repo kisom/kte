@@ -358,16 +358,78 @@ map_key_to_command(const int ch,
 }
 
 
+// Read one key: an ncurses KEY_* code, or a character decoded from UTF-8
+// here rather than by get_wch(). With a zero timeout (the frontend reads the
+// rest of a batch without waiting), get_wch() gave up on a character whose
+// bytes had not all arrived yet, and ncurses then discarded the remaining
+// bytes as an invalid sequence: text pasted over a slow link lost
+// characters, and whatever followed them in the same read.
+// Returns false when there is no input.
+static bool
+read_key(int &ch, bool &is_keycode)
+{
+	const int c = getch();
+	if (c == ERR)
+		return false;
+	is_keycode = c > 0xFF;
+	ch         = c;
+	if (is_keycode || c < 0x80)
+		return true;
+
+	// Lead byte of a multibyte character: how many continuation bytes follow.
+	int need;
+	char32_t cp;
+	if (c >= 0xC2 && c <= 0xDF) {
+		need = 1;
+		cp   = static_cast<char32_t>(c & 0x1F);
+	} else if (c >= 0xE0 && c <= 0xEF) {
+		need = 2;
+		cp   = static_cast<char32_t>(c & 0x0F);
+	} else if (c >= 0xF0 && c <= 0xF4) {
+		need = 3;
+		cp   = static_cast<char32_t>(c & 0x07);
+	} else {
+		ch = -1; // stray continuation or invalid byte: ignore it
+		return true;
+	}
+	// The rest of the character is on its way; wait for it (restoring the
+	// caller's timeout), but not forever if it never comes.
+	const int saved_delay = wgetdelay(stdscr);
+	timeout(1000);
+	for (int i = 0; i < need; ++i) {
+		const int b = getch();
+		if (b == ERR || b > 0xFF || (b & 0xC0) != 0x80) {
+			if (b != ERR)
+				ungetch(b); // not part of this character; read it next
+			ch = -1;
+			timeout(saved_delay);
+			return true;
+		}
+		cp = (cp << 6) | static_cast<char32_t>(b & 0x3F);
+	}
+	timeout(saved_delay);
+	// Reject overlong forms and surrogates.
+	if ((need == 2 && cp < 0x800) || (need == 3 && cp < 0x10000) || (cp >= 0xD800 && cp <= 0xDFFF) ||
+	    cp > 0x10FFFF) {
+		ch = -1;
+		return true;
+	}
+	ch = static_cast<int>(cp);
+	return true;
+}
+
+
 bool
 TerminalInputHandler::decode_(MappedInput &out)
 {
-	wint_t wch;
-	int ret = get_wch(&wch);
-	if (ret == ERR) {
+	int ch          = 0;
+	bool is_keycode = false;
+	if (!read_key(ch, is_keycode))
 		return false; // no input
+	if (ch < 0) {
+		out.hasCommand = false; // invalid byte sequence, dropped
+		return true;
 	}
-	const bool is_keycode = (ret == KEY_CODE_YES);
-	const int ch          = static_cast<int>(wch);
 	bool consumed = map_key_to_command(
 		ch, is_keycode,
 		k_prefix_, esc_meta_,
