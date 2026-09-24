@@ -53,6 +53,17 @@ Fstat(int fd, struct stat *buf)
 
 
 int
+Ftruncate(int fd, off_t length)
+{
+	int ret;
+	do {
+		ret = ::ftruncate(fd, length);
+	} while (ret == -1 && errno == EINTR);
+	return ret;
+}
+
+
+int
 Fchmod(int fd, mode_t mode)
 {
 	int ret;

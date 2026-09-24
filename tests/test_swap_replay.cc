@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -103,7 +104,10 @@ TEST(SwapReplay_RecordFlushReopenReplay_ExactBytesMatch)
 }
 
 
-TEST(SwapReplay_TruncatedLog_FailsSafely)
+// A crash mid-append leaves a torn final record. Replay keeps every complete
+// record before it (that tail is exactly what the journal exists to save),
+// succeeds, and reports the incomplete record through err.
+TEST(SwapReplay_TruncatedLog_RecoversPrefix)
 {
 	const std::string path = "./.kte_ut_swap_replay_2.txt";
 	std::remove(path.c_str());
@@ -113,10 +117,13 @@ TEST(SwapReplay_TruncatedLog_FailsSafely)
 	std::string err;
 	ASSERT_TRUE(b.OpenFromFile(path, err));
 
+	// Start from a fresh journal even if an earlier failed run left one.
+	std::remove(kte::SwapManager::ComputeSwapPathForTests(b).c_str());
 	kte::SwapManager sm;
 	sm.Attach(&b);
 	b.SetSwapRecorder(sm.RecorderFor(&b));
 	b.insert_text(0, 0, std::string("X"));
+	b.insert_text(0, 1, std::string("Y"));
 	sm.Flush(&b);
 	const std::string swap_path = kte::SwapManager::ComputeSwapPathForTests(b);
 	b.SetSwapRecorder(nullptr);
@@ -131,8 +138,11 @@ TEST(SwapReplay_TruncatedLog_FailsSafely)
 	Buffer b2;
 	ASSERT_TRUE(b2.OpenFromFile(path, err));
 	std::string rerr;
-	ASSERT_EQ(kte::SwapManager::ReplayFile(b2, trunc_path, rerr), false);
-	ASSERT_EQ(rerr.empty(), false);
+	ASSERT_TRUE(kte::SwapManager::ReplayFile(b2, trunc_path, rerr));
+	ASSERT_TRUE(rerr.find("incomplete record") != std::string::npos);
+	// Detach appended a final checkpoint; that is the torn record, so both
+	// inserts before it are recovered.
+	ASSERT_EQ(b2.GetLineString(0), std::string("XYhello"));
 
 	std::remove(path.c_str());
 	std::remove(swap_path.c_str());
@@ -224,4 +234,100 @@ TEST(SwapCompaction_RewritesToSingleCheckpoint)
 
 	std::remove(path.c_str());
 	std::remove(swap_path.c_str());
+}
+
+
+// Inserts larger than one record's 24-bit payload are split into several INS
+// records; each must be positioned after the previous chunk, including when a
+// chunk boundary falls mid-line.
+TEST(SwapReplay_LargeInsert_SplitAcrossRecords)
+{
+	const std::string path = "./.kte_ut_swap_replay_large.txt";
+	std::remove(path.c_str());
+	write_file_bytes(path, "tail\n");
+
+	Buffer b;
+	std::string err;
+	ASSERT_TRUE(b.OpenFromFile(path, err));
+	std::remove(kte::SwapManager::ComputeSwapPathForTests(b).c_str());
+
+	// ~17 MiB of 1000-byte lines, so the 16 MiB chunk boundary splits a line.
+	std::string big;
+	const std::string line = std::string(999, 'a') + "\n";
+	while (big.size() < (17u << 20))
+		big += line;
+	big += "mid";
+
+	kte::SwapManager sm;
+	sm.Attach(&b);
+	b.SetSwapRecorder(sm.RecorderFor(&b));
+	b.insert_text(0, 0, big);
+	sm.Flush(&b);
+	const std::string swap_path = kte::SwapManager::ComputeSwapPathForTests(b);
+	const std::string expected  = buffer_bytes_via_views(b);
+	b.SetSwapRecorder(nullptr);
+	sm.Detach(&b, false);
+
+	Buffer b2;
+	ASSERT_TRUE(b2.OpenFromFile(path, err));
+	std::string rerr;
+	ASSERT_TRUE(kte::SwapManager::ReplayFile(b2, swap_path, rerr));
+	ASSERT_TRUE(buffer_bytes_via_views(b2) == expected);
+
+	std::remove(path.c_str());
+	std::remove(swap_path.c_str());
+}
+
+
+// When a record cannot be written, later position-based records no longer
+// apply to the journal's state. The journal must drop them until a full
+// checkpoint re-establishes the content, so replay still matches the buffer.
+TEST(SwapReplay_LostRecord_ResyncsWithCheckpoint)
+{
+	const std::string path = "./.kte_ut_swap_replay_gap.txt";
+	std::remove(path.c_str());
+	write_file_bytes(path, "base\n");
+
+	Buffer b;
+	std::string err;
+	ASSERT_TRUE(b.OpenFromFile(path, err));
+	const std::string swap_path = kte::SwapManager::ComputeSwapPathForTests(b);
+	std::remove(swap_path.c_str());
+
+	kte::SwapManager sm;
+	sm.Attach(&b);
+	b.SetSwapRecorder(sm.RecorderFor(&b));
+
+	b.insert_text(0, 0, std::string("A"));
+	sm.Flush(&b);
+
+	// Make the journal unopenable so the next record is lost.
+	sm.ResetJournal(b); // closes and removes the file; base is now the disk file
+	ASSERT_TRUE(b.SaveAs(path, err)); // disk = "Abase"
+	std::filesystem::create_directory(swap_path);
+	b.insert_text(0, 1, std::string("B"));
+	sm.Flush(&b);
+	std::filesystem::remove(swap_path);
+
+	b.insert_text(0, 2, std::string("C")); // dropped; triggers a resync checkpoint
+	sm.Flush(&b);
+	b.insert_text(0, 3, std::string("D"));
+	sm.Flush(&b);
+	const std::string expected = buffer_bytes_via_views(b);
+	ASSERT_EQ(expected, std::string("ABCDbase\n"));
+	// Replay the journal as it stands mid-session (as after a crash); Detach
+	// would append a final checkpoint that hides the problem.
+	const std::string crash_copy = swap_path + ".crash";
+	write_file_bytes(crash_copy, read_file_bytes(swap_path));
+	b.SetSwapRecorder(nullptr);
+	sm.Detach(&b, true);
+
+	Buffer b2;
+	ASSERT_TRUE(b2.OpenFromFile(path, err));
+	std::string rerr;
+	ASSERT_TRUE(kte::SwapManager::ReplayFile(b2, crash_copy, rerr));
+	ASSERT_EQ(buffer_bytes_via_views(b2), expected);
+
+	std::remove(path.c_str());
+	std::remove(crash_copy.c_str());
 }

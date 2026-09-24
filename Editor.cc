@@ -386,8 +386,16 @@ Editor::ResolveRecoveryPrompt(const bool yes)
 		return true;
 	}
 	if (kind == RecoveryPromptKind::DeleteCorruptSwap) {
+		std::string kept_as;
 		if (yes) {
 			(void) std::remove(swp.c_str());
+		} else {
+			// Keep the unreadable journal for inspection, but out of the way:
+			// left in place, the new session's records would be appended
+			// behind the corrupt data and could never be replayed.
+			kept_as = swp + ".corrupt";
+			if (std::rename(swp.c_str(), kept_as.c_str()) != 0)
+				kept_as.clear();
 		}
 		if (!OpenFile(req.path, err)) {
 			SetStatus(err);
@@ -395,7 +403,9 @@ Editor::ResolveRecoveryPrompt(const bool yes)
 		}
 		apply_pending_line(*this, req.line1);
 		// Include a short hint that the swap was corrupt.
-		if (!rerr_s.empty()) {
+		if (!kept_as.empty()) {
+			SetStatus("Opened " + req.path + " (unreadable swap kept as " + kept_as + ")");
+		} else if (!rerr_s.empty()) {
 			SetStatus("Opened " + req.path + " (swap unreadable)");
 		} else {
 			SetStatus("Opened " + req.path);

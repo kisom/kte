@@ -278,3 +278,57 @@ TEST(SwapRecoveryPrompt_CorruptSwap_OffersDelete)
 	std::remove(file_path.c_str());
 	std::filesystem::remove_all(xdg_root);
 }
+
+
+// Declining to delete an unreadable swap keeps it aside as ".corrupt" so the
+// new session journals into a fresh file instead of behind the bad data.
+TEST(SwapRecoveryPrompt_CorruptSwap_Decline_KeepsAsideAndStartsFresh)
+{
+	ktet::InstallDefaultCommandsOnce();
+
+	const std::filesystem::path xdg_root = std::filesystem::temp_directory_path() /
+	                                       (std::string("kte_ut_xdg_state_corrupt_keep_") +
+	                                        std::to_string((int) ::getpid()));
+	std::filesystem::remove_all(xdg_root);
+	std::filesystem::create_directories(xdg_root);
+	const ScopedXdgStateHome scoped(xdg_root.string());
+
+	const std::filesystem::path work = xdg_root / "work";
+	std::filesystem::create_directories(work);
+	const std::string file_path = (work / "corrupt_keep.txt").string();
+	write_file_bytes(file_path, "base\n");
+
+	Buffer b;
+	std::string err;
+	ASSERT_TRUE(b.OpenFromFile(file_path, err));
+	const std::string swap_path = kte::SwapManager::ComputeSwapPathForTests(b);
+	std::filesystem::create_directories(std::filesystem::path(swap_path).parent_path());
+	write_file_bytes(swap_path, std::string(80, 'z')); // long enough to be "trusted", bad magic
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+	ed.AddBuffer(Buffer());
+	ed.RequestOpenFile(b.Filename());
+	ASSERT_EQ(ed.ProcessPendingOpens(), false);
+	ASSERT_EQ(ed.PendingRecoveryPrompt(), Editor::RecoveryPromptKind::DeleteCorruptSwap);
+
+	ASSERT_TRUE(Execute(ed, CommandId::InsertText, "n"));
+	ASSERT_TRUE(Execute(ed, CommandId::Newline));
+	ASSERT_EQ(ed.PendingRecoveryPrompt(), Editor::RecoveryPromptKind::None);
+	ASSERT_TRUE(std::filesystem::exists(swap_path + ".corrupt"));
+
+	// New edits journal into a fresh, replayable file.
+	Buffer *cur = ed.CurrentBuffer();
+	ASSERT_TRUE(cur != nullptr);
+	cur->insert_text(0, 0, std::string("X"));
+	ed.Swap()->Flush(cur);
+
+	Buffer check;
+	ASSERT_TRUE(check.OpenFromFile(file_path, err));
+	std::string rerr;
+	ASSERT_TRUE(kte::SwapManager::ReplayFile(check, swap_path, rerr));
+	ASSERT_EQ(check.GetLineString(0), std::string("Xbase"));
+
+	std::remove(file_path.c_str());
+	std::filesystem::remove_all(xdg_root);
+}

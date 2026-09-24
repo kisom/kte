@@ -21,6 +21,13 @@ namespace fs = std::filesystem;
 
 namespace kte {
 namespace {
+// Records store their payload length in 24 bits.
+constexpr std::size_t kMaxRecordPayload = 0xFFFFFFu;
+// While a journal has a gap, request a recovery checkpoint at most this often.
+constexpr std::uint64_t kGapCheckpointIntervalNs = 1000000000ULL;
+} // namespace
+
+namespace {
 constexpr std::uint8_t MAGIC[8] = {'K', 'T', 'E', '_', 'S', 'W', 'P', '\0'};
 constexpr std::uint32_t VERSION = 1;
 
@@ -489,8 +496,9 @@ SwapManager::PruneSwapDir()
 void
 SwapManager::NotifyFilenameChanged(Buffer &buf)
 {
-	// Best-effort: checkpoint the old journal before switching paths.
-	RecordCheckpoint(buf, true);
+	// No checkpoint here: the old journal is deleted below, and every caller
+	// has just loaded or saved the file, so the new journal's base is the
+	// file's content.
 	std::string old_path;
 	{
 		std::lock_guard<std::mutex> lg(mtx_);
@@ -709,6 +717,11 @@ SwapManager::open_ctx(JournalCtx &ctx, const std::string &path, std::string &err
 		ctx.approx_size_bytes = ctx.header_ok ? 64 : 0;
 		if (!ctx.header_ok) {
 			err = "Failed to write swap file header: " + path;
+			// Drop any partial header and close, so the next attempt starts a
+			// fresh file instead of appending records behind a torn header.
+			(void) kte::syscall::Ftruncate(fd, 0);
+			kte::syscall::Close(fd);
+			ctx.fd = -1;
 		}
 	} else {
 		ctx.header_ok         = true; // stage 1: trust existing header
@@ -910,19 +923,37 @@ SwapManager::RecordInsert(Buffer &buf, int row, int col, std::string_view text)
 		if (it == journals_.end() || it->second.suspended)
 			return;
 	}
-	Pending p;
-	p.buf  = &buf;
-	p.type = SwapRecType::INS;
 	// payload v1: [encver u8=1][row u32][col u32][nbytes u32][bytes]
-	if (text.size() > 0xFFFFFFFFu)
-		return;
-	p.payload.push_back(1);
-	put_le32(p.payload, static_cast<std::uint32_t>(std::max(0, row)));
-	put_le32(p.payload, static_cast<std::uint32_t>(std::max(0, col)));
-	put_le32(p.payload, static_cast<std::uint32_t>(text.size()));
-	p.payload.insert(p.payload.end(), reinterpret_cast<const std::uint8_t *>(text.data()),
-	                 reinterpret_cast<const std::uint8_t *>(text.data()) + text.size());
-	enqueue(std::move(p));
+	// A record holds at most kMaxRecordPayload bytes, so large inserts are
+	// split into consecutive INS records, each positioned after the last.
+	constexpr std::size_t kInsHeader = 13;
+	constexpr std::size_t kChunk     = kMaxRecordPayload - kInsHeader;
+	std::size_t r                    = static_cast<std::size_t>(std::max(0, row));
+	std::size_t c                    = static_cast<std::size_t>(std::max(0, col));
+	std::size_t off                  = 0;
+	do {
+		const std::string_view chunk = text.substr(off, kChunk);
+		Pending p;
+		p.buf  = &buf;
+		p.type = SwapRecType::INS;
+		p.payload.reserve(kInsHeader + chunk.size());
+		p.payload.push_back(1);
+		put_le32(p.payload, static_cast<std::uint32_t>(r));
+		put_le32(p.payload, static_cast<std::uint32_t>(c));
+		put_le32(p.payload, static_cast<std::uint32_t>(chunk.size()));
+		p.payload.insert(p.payload.end(), reinterpret_cast<const std::uint8_t *>(chunk.data()),
+		                 reinterpret_cast<const std::uint8_t *>(chunk.data()) + chunk.size());
+		enqueue(std::move(p));
+		// Advance (r, c) past the chunk for the next record.
+		const std::size_t last_nl = chunk.rfind('\n');
+		if (last_nl == std::string_view::npos) {
+			c += chunk.size();
+		} else {
+			r += static_cast<std::size_t>(std::count(chunk.begin(), chunk.end(), '\n'));
+			c = chunk.size() - last_nl - 1;
+		}
+		off += chunk.size();
+	} while (off < text.size());
 	maybe_request_checkpoint(buf, text.size());
 }
 
@@ -1000,10 +1031,10 @@ SwapManager::maybe_request_checkpoint(Buffer &buf, const std::size_t approx_edit
 	{
 		std::lock_guard<std::mutex> lg(mtx_);
 		cfg = cfg_;
-		if (cfg.checkpoint_bytes == 0 && cfg.checkpoint_interval_ms == 0)
-			return;
 		auto it = journals_.find(&buf);
 		if (it == journals_.end() || it->second.suspended)
+			return;
+		if (cfg.checkpoint_bytes == 0 && cfg.checkpoint_interval_ms == 0 && !it->second.gap)
 			return;
 		JournalCtx &ctx            = it->second;
 		ctx.edit_bytes_since_chkpt += approx_edit_bytes;
@@ -1014,7 +1045,10 @@ SwapManager::maybe_request_checkpoint(Buffer &buf, const std::size_t approx_edit
 			                       ctx.edit_bytes_since_chkpt >= cfg.checkpoint_bytes);
 		const bool time_hit = (cfg.checkpoint_interval_ms > 0) &&
 		                      (((now - ctx.last_chkpt_ns) / 1000000ULL) >= cfg.checkpoint_interval_ms);
-		if (bytes_hit || time_hit) {
+		const bool gap_hit = ctx.gap && (now - ctx.gap_chkpt_request_ns) >= kGapCheckpointIntervalNs;
+		if (gap_hit)
+			ctx.gap_chkpt_request_ns = now;
+		if (bytes_hit || time_hit || gap_hit) {
 			ctx.edit_bytes_since_chkpt = 0;
 			ctx.last_chkpt_ns          = now;
 			do_chkpt                   = true;
@@ -1036,8 +1070,15 @@ SwapManager::RecordCheckpoint(Buffer &buf, const bool urgent_flush)
 			return;
 	}
 
+	// payload = encver(1) + nbytes(4) + bytes; larger buffers cannot be
+	// checkpointed in this record format (the writer would reject them), so
+	// check the size before paying for a snapshot.
+	const std::size_t nrows      = buf.Nrows();
+	const std::size_t total_size = nrows ? buf.GetLineRange(nrows - 1).second : 0;
+	if (total_size > kMaxRecordPayload - 5)
+		return;
 	const std::string bytes = snapshot_buffer_bytes(buf);
-	if (bytes.size() > 0xFFFFFFFFu)
+	if (bytes.size() > kMaxRecordPayload - 5)
 		return;
 
 	Pending p;
@@ -1128,6 +1169,14 @@ SwapManager::process_one(const Pending &p)
 	if (!p.buf)
 		return;
 
+	// Any record that is not written leaves a gap in the journal.
+	auto mark_gap = [&]() {
+		std::lock_guard<std::mutex> lg(mtx_);
+		auto it = journals_.find(p.buf);
+		if (it != journals_.end())
+			it->second.gap = true;
+	};
+
 	// Check circuit breaker before processing
 	bool circuit_open = false;
 	{
@@ -1153,6 +1202,7 @@ SwapManager::process_one(const Pending &p)
 				                                 ? p.buf->Filename()
 				                                 : "<unnamed>");
 		}
+		mark_gap();
 		return;
 	}
 
@@ -1166,6 +1216,9 @@ SwapManager::process_one(const Pending &p)
 			std::lock_guard<std::mutex> lg(mtx_);
 			auto it = journals_.find(p.buf);
 			if (it == journals_.end())
+				return;
+			// After a gap only a checkpoint can bring the journal back in step.
+			if (it->second.gap && p.type != SwapRecType::CHKPT)
 				return;
 			if (it->second.path.empty())
 				it->second.path = ComputeSidecarPath(buf);
@@ -1182,14 +1235,14 @@ SwapManager::process_one(const Pending &p)
 				std::lock_guard<std::mutex> lg(mtx_);
 				circuit_breaker_.RecordFailure();
 			}
+			mark_gap();
 			return;
 		}
-		if (p.payload.size() > 0xFFFFFFu) {
+		if (p.payload.size() > kMaxRecordPayload) {
+			// Recorders keep payloads within the limit, so this is a bug, not an
+			// I/O failure: do not count it against the circuit breaker.
 			report_error("Payload too large: " + std::to_string(p.payload.size()) + " bytes", p.buf);
-			{
-				std::lock_guard<std::mutex> lg(mtx_);
-				circuit_breaker_.RecordFailure();
-			}
+			mark_gap();
 			return;
 		}
 
@@ -1220,16 +1273,28 @@ SwapManager::process_one(const Pending &p)
 			rec.insert(rec.end(), p.payload.begin(), p.payload.end());
 		rec.insert(rec.end(), crcbytes, crcbytes + sizeof(crcbytes));
 
+		// Remember where this record starts so a partial write can be undone;
+		// otherwise later records would be appended behind the torn bytes.
+		struct stat before{};
+		const bool have_size = kte::syscall::Fstat(ctxp->fd, &before) == 0;
+
 		// Write (handle partial writes and check results)
 		bool ok = write_full(ctxp->fd, rec.data(), rec.size());
 		if (!ok) {
 			int err = errno;
 			report_error("Failed to write swap record to '" + path + "': " + std::strerror(err), p.buf);
+			if (have_size)
+				(void) kte::syscall::Ftruncate(ctxp->fd, before.st_size);
 			{
 				std::lock_guard<std::mutex> lg(mtx_);
 				circuit_breaker_.RecordFailure();
 			}
+			mark_gap();
 			return;
+		}
+		if (p.type == SwapRecType::CHKPT) {
+			std::lock_guard<std::mutex> lg(mtx_);
+			ctxp->gap = false;
 		}
 		ctxp->approx_size_bytes += static_cast<std::uint64_t>(rec.size());
 		if (p.urgent_flush) {
@@ -1259,12 +1324,14 @@ SwapManager::process_one(const Pending &p)
 			std::lock_guard<std::mutex> lg(mtx_);
 			circuit_breaker_.RecordFailure();
 		}
+		mark_gap();
 	} catch (...) {
 		report_error("Unknown exception in process_one", p.buf);
 		{
 			std::lock_guard<std::mutex> lg(mtx_);
 			circuit_breaker_.RecordFailure();
 		}
+		mark_gap();
 	}
 }
 
@@ -1343,25 +1410,32 @@ SwapManager::ReplayFile(Buffer &buf, const std::string &swap_path, std::string &
 		if (got_head == 0 && in.eof()) {
 			return true; // clean EOF
 		}
-		if (got_head != sizeof(head)) {
-			err = "Swap file truncated (record header): " + swap_path;
-			return false;
-		}
+		// A record cut short by end-of-file is the expected result of a crash or
+		// power loss mid-append. Keep everything replayed so far and stop; the
+		// caller still sees err (with a true result) and can report it.
+		auto torn_tail = [&](const char *what) {
+			if (in.bad()) {
+				err = std::string("Failed to read swap file (") + what + "): " + swap_path;
+				return false;
+			}
+			err = std::string("Swap file ends with an incomplete record (") + what + "); recovered the records before it: " +
+			      swap_path;
+			kte::ErrorHandler::Instance().Warning("SwapManager", err, swap_path);
+			return true;
+		};
+		if (got_head != sizeof(head))
+			return torn_tail("record header");
 
 		const SwapRecType type = static_cast<SwapRecType>(head[0]);
 		const std::size_t len  = (std::size_t) head[1] | ((std::size_t) head[2] << 8) | (
 			                         (std::size_t) head[3] << 16);
 		std::vector<std::uint8_t> payload;
 		payload.resize(len);
-		if (len > 0 && !read_exact(in, payload.data(), len)) {
-			err = "Swap file truncated (payload): " + swap_path;
-			return false;
-		}
+		if (len > 0 && !read_exact(in, payload.data(), len))
+			return torn_tail("payload");
 		std::uint8_t crcbytes[4];
-		if (!read_exact(in, crcbytes, sizeof(crcbytes))) {
-			err = "Swap file truncated (crc): " + swap_path;
-			return false;
-		}
+		if (!read_exact(in, crcbytes, sizeof(crcbytes)))
+			return torn_tail("crc");
 		const std::uint32_t want_crc = read_le32(crcbytes);
 		std::uint32_t got_crc        = 0;
 		got_crc                      = crc32(head, sizeof(head), got_crc);
