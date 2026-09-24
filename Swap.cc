@@ -354,7 +354,7 @@ SwapManager::Attach(Buffer *buf)
 	if (ctx.path.empty())
 		ctx.path = ComputeSidecarPath(*buf);
 	if (fresh)
-		ctx.has_base = stat_base(buf->Filename(), ctx.base_size, ctx.base_mtime_ns);
+		capture_base(buf->Filename(), ctx);
 	// Ensure a recorder exists as well.
 	if (recorders_.find(buf) == recorders_.end()) {
 		recorders_[buf] = std::make_unique<BufferRecorder>(*this, *buf);
@@ -433,7 +433,7 @@ SwapManager::ResetJournal(Buffer &buf)
 		ctx.gap_chkpt_request_ns   = 0;
 		ctx.gap_unfixable_reported = false;
 		ctx.locked_out             = false;
-		ctx.has_base               = stat_base(buf.Filename(), ctx.base_size, ctx.base_mtime_ns);
+		capture_base(buf.Filename(), ctx);
 		ctx.last_flush_ns          = 0;
 		ctx.last_fsync_ns          = 0;
 		ctx.last_chkpt_ns          = 0;
@@ -566,7 +566,7 @@ SwapManager::NotifyFilenameChanged(Buffer &buf)
 	ctx.gap_chkpt_request_ns    = 0;
 	ctx.gap_unfixable_reported  = false;
 	ctx.locked_out              = false;
-	ctx.has_base                = stat_base(buf.Filename(), ctx.base_size, ctx.base_mtime_ns);
+	capture_base(buf.Filename(), ctx);
 	ctx.path                    = new_path;
 	ctx.suspended              = false;
 	ctx.header_ok              = false;
@@ -693,10 +693,18 @@ SwapManager::write_header(int fd, const JournalCtx &ctx)
 	hdr[10] = static_cast<std::uint8_t>((VERSION >> 16) & 0xFFu);
 	hdr[11] = static_cast<std::uint8_t>((VERSION >> 24) & 0xFFu);
 	// flags: bit 0 = base file identity present
+	// flags: bit 1 = base content CRC-32 present (bytes 40..43)
 	if (ctx.has_base) {
 		hdr[12] = 1;
 		put_le64(hdr + 24, ctx.base_size);
 		put_le64(hdr + 32, static_cast<std::uint64_t>(ctx.base_mtime_ns));
+		if (ctx.has_base_crc) {
+			hdr[12] |= 2;
+			hdr[40] = static_cast<std::uint8_t>(ctx.base_crc & 0xFFu);
+			hdr[41] = static_cast<std::uint8_t>((ctx.base_crc >> 8) & 0xFFu);
+			hdr[42] = static_cast<std::uint8_t>((ctx.base_crc >> 16) & 0xFFu);
+			hdr[43] = static_cast<std::uint8_t>((ctx.base_crc >> 24) & 0xFFu);
+		}
 	}
 	// created_time (unix seconds; little-endian)
 	std::uint64_t ts = static_cast<std::uint64_t>(std::time(nullptr));
@@ -1515,7 +1523,48 @@ SwapManager::JournalMatchesFile(const std::string &swap_path, const std::string 
 	std::int64_t mtime = 0;
 	if (!stat_base(file_path, size, mtime))
 		return false; // the file the journal was based on is gone
-	return size == want_size && static_cast<std::uint64_t>(mtime) == want_mtime;
+	if (size != want_size)
+		return false;
+	if (static_cast<std::uint64_t>(mtime) == want_mtime)
+		return true;
+	// Timestamp changed (touch, checkout back and forth, sync tools): the
+	// content may still be the same, which is what matters.
+	if ((hdr[12] & 2u) == 0)
+		return false;
+	const std::uint32_t want_crc = static_cast<std::uint32_t>(hdr[40]) | (static_cast<std::uint32_t>(hdr[41]) << 8) |
+	                               (static_cast<std::uint32_t>(hdr[42]) << 16) |
+	                               (static_cast<std::uint32_t>(hdr[43]) << 24);
+	std::uint32_t crc = 0;
+	return file_crc32(file_path, crc) && crc == want_crc;
+}
+
+
+bool
+SwapManager::file_crc32(const std::string &path, std::uint32_t &out)
+{
+	std::ifstream in(path, std::ios::binary);
+	if (!in)
+		return false;
+	std::uint32_t c = 0;
+	std::uint8_t chunk[1 << 16];
+	while (in) {
+		in.read(reinterpret_cast<char *>(chunk), sizeof(chunk));
+		const auto n = in.gcount();
+		if (n > 0)
+			c = crc32(chunk, static_cast<std::size_t>(n), c);
+	}
+	if (in.bad())
+		return false;
+	out = c;
+	return true;
+}
+
+
+void
+SwapManager::capture_base(const std::string &file, JournalCtx &ctx)
+{
+	ctx.has_base     = stat_base(file, ctx.base_size, ctx.base_mtime_ns);
+	ctx.has_base_crc = ctx.has_base && file_crc32(file, ctx.base_crc);
 }
 
 

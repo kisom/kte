@@ -222,6 +222,8 @@ private:
 		bool has_base{false};
 		std::uint64_t base_size{0};
 		std::int64_t base_mtime_ns{0};
+		bool has_base_crc{false}; // CRC-32 of the base file's content
+		std::uint32_t base_crc{0};
 	};
 
 	struct Pending {
@@ -253,6 +255,13 @@ private:
 	                                  std::string &err);
 
 	static std::uint32_t crc32(const std::uint8_t *data, std::size_t len, std::uint32_t seed = 0);
+
+	// CRC-32 of a file's content; false if it cannot be read.
+	static bool file_crc32(const std::string &path, std::uint32_t &out);
+
+	// Record the identity (size, mtime, content CRC) of the file a journal's
+	// records will apply to.
+	static void capture_base(const std::string &file, JournalCtx &ctx);
 
 	static void put_le32(std::vector<std::uint8_t> &out, std::uint32_t v);
 
