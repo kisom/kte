@@ -1400,3 +1400,44 @@ TEST(Audit_VisualYank_CursorStaysInBuffer)
 		(void) h.Exec(CommandId::Undo);
 	ASSERT_EQ(h.Text(), std::string("abc def\n"));
 }
+
+
+// Visual-line edits apply at the cursor's column on every selected line; a
+// byte column taken from an ASCII line fell inside the CJK characters of
+// the next line and split them. The column is now carried in characters.
+TEST(Audit_VisualLine_EditsKeepUtf8Whole)
+{
+	const std::string cjk = "\xE4\xB8\x96\xE7\x95\x8C"; // two 3-byte characters
+	{
+		TestHarness h;
+		h.Buf().insert_text(0, 0, "abcdef\n" + cjk + "\n");
+		h.Buf().SetCursor(0, 1);
+		ASSERT_TRUE(h.Exec(CommandId::VisualLineModeToggle));
+		ASSERT_TRUE(h.Exec(CommandId::MoveUp));
+		ASSERT_TRUE(h.Exec(CommandId::MoveRight));
+		ASSERT_TRUE(h.Exec(CommandId::InsertText, "X"));
+		ASSERT_EQ(h.Text(), std::string("aXbcdef\n\xE4\xB8\x96X\xE7\x95\x8C\n"));
+	}
+	{
+		TestHarness h;
+		h.Buf().insert_text(0, 0, "abcdef\n" + cjk + "\n");
+		h.Buf().SetCursor(0, 1);
+		ASSERT_TRUE(h.Exec(CommandId::VisualLineModeToggle));
+		ASSERT_TRUE(h.Exec(CommandId::MoveUp));
+		ASSERT_TRUE(h.Exec(CommandId::DeleteChar));
+		ASSERT_EQ(h.Text(), std::string("bcdef\n\xE7\x95\x8C\n"));
+		ASSERT_TRUE(h.Exec(CommandId::MoveRight));
+		ASSERT_TRUE(h.Exec(CommandId::Backspace));
+		ASSERT_EQ(h.Text(), std::string("cdef\n\n"));
+	}
+	{
+		TestHarness h;
+		h.Buf().insert_text(0, 0, "abcdef\n" + cjk + "\n");
+		h.Buf().SetCursor(0, 1);
+		ASSERT_TRUE(h.Exec(CommandId::VisualLineModeToggle));
+		ASSERT_TRUE(h.Exec(CommandId::MoveUp));
+		ASSERT_TRUE(h.Exec(CommandId::MoveRight));
+		ASSERT_TRUE(h.Exec(CommandId::Newline));
+		ASSERT_EQ(h.Text(), std::string("a\nbcdef\n\xE4\xB8\x96\n\xE7\x95\x8C\n"));
+	}
+}

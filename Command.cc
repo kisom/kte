@@ -108,6 +108,31 @@ utf8_next_len(std::string_view line, std::size_t x)
 }
 
 
+// Visual-line mode applies an edit at "the cursor's column" on every
+// selected line. Columns are byte offsets, so the same number on a line with
+// different characters can fall inside a multibyte one: carry the column as
+// a character count instead.
+static std::size_t
+utf8_char_count(std::string_view line, std::size_t x)
+{
+	x = std::min(x, line.size());
+	std::size_t n = 0;
+	for (std::size_t i = 0; i < x; i += utf8_next_len(line, i))
+		++n;
+	return n;
+}
+
+
+static std::size_t
+utf8_byte_of_char(std::string_view line, std::size_t nchars)
+{
+	std::size_t i = 0;
+	for (; nchars > 0 && i < line.size(); --nchars)
+		i += utf8_next_len(line, i);
+	return i;
+}
+
+
 static inline std::string_view
 line_view(const std::string &l)
 {
@@ -2549,12 +2574,11 @@ cmd_insert_text(CommandContext &ctx)
 			for (int i = 0; i < repeat; ++i)
 				ins += ctx.arg;
 		}
+		const std::size_t xchars = y < rows.size() ? utf8_char_count(line_view(rows[y]), x) : x;
 		for (std::size_t yy = sy; yy <= ey; ++yy) {
 			if (yy >= rows.size())
 				break;
-			std::size_t xx = x;
-			if (xx > rows[yy].size())
-				xx = rows[yy].size();
+			std::size_t xx = utf8_byte_of_char(line_view(rows[yy]), xchars);
 			if (!ins.empty()) {
 				buf->SetCursor(xx, yy);
 				if (u)
@@ -3476,11 +3500,12 @@ cmd_newline(CommandContext &ctx)
 		};
 
 		// Iterate bottom-up to keep row indices stable while splitting.
-		const std::size_t nrows = buf->Nrows();
+		const std::size_t nrows  = buf->Nrows();
+		const std::size_t xchars = y < nrows ? utf8_char_count(buf->GetLineString(y), x) : x;
 		for (std::size_t yy = ey + 1; yy-- > sy;) {
 			if (yy >= nrows)
 				continue;
-			const std::size_t xx = std::min(x, buf->GetLineString(yy).size());
+			const std::size_t xx = utf8_byte_of_char(buf->GetLineString(yy), xchars);
 			// First split at the cursor column; subsequent splits create blank lines.
 			split_at(yy, xx);
 			for (int i = 1; i < repeat; ++i)
@@ -3667,12 +3692,11 @@ cmd_backspace(CommandContext &ctx)
 			gid = u->BeginGroup();
 		(void) gid;
 		std::size_t cx = x;
+		const std::size_t xchars = y < rows.size() ? utf8_char_count(line_view(rows[y]), x) : x;
 		for (std::size_t yy = sy; yy <= ey; ++yy) {
 			if (yy >= rows.size())
 				break;
-			std::size_t xx = x;
-			if (xx > rows[yy].size())
-				xx = rows[yy].size();
+			std::size_t xx = utf8_byte_of_char(line_view(rows_of(*buf)[yy]), xchars);
 			std::string deleted;
 			for (int i = 0; i < repeat; ++i) {
 				if (xx == 0)
@@ -3777,12 +3801,11 @@ cmd_delete_char(CommandContext &ctx)
 		if (u)
 			gid = u->BeginGroup();
 		(void) gid;
+		const std::size_t xchars = y < rows.size() ? utf8_char_count(line_view(rows[y]), x) : x;
 		for (std::size_t yy = sy; yy <= ey; ++yy) {
 			if (yy >= rows.size())
 				break;
-			std::size_t xx = x;
-			if (xx > rows[yy].size())
-				xx = rows[yy].size();
+			std::size_t xx = utf8_byte_of_char(line_view(rows_of(*buf)[yy]), xchars);
 			std::string deleted;
 			for (int i = 0; i < repeat; ++i) {
 				const auto &rows_view = rows_of(*buf);
@@ -3802,6 +3825,9 @@ cmd_delete_char(CommandContext &ctx)
 		}
 		if (u)
 			u->EndGroup();
+		// Recording each line's undo moved the cursor; deleting forward
+		// leaves it where it was.
+		buf->SetCursor(x, y);
 		buf->SetDirty(true);
 		ensure_cursor_visible(ctx.editor, *buf);
 		return true;
