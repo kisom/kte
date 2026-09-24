@@ -136,9 +136,51 @@ best_effort_fsync_dir(const std::string &path)
 }
 
 
+// Rewrite `path` in place (truncate, write, fsync). Used for files with
+// several hard links, which a temp-file-and-rename save would split.
 static bool
-atomic_write_file(const std::string &path, const char *data, std::size_t len, std::string &err)
+write_in_place(const std::string &path, const char *data, std::size_t len, std::string &err)
 {
+	int flags = O_WRONLY | O_TRUNC;
+#ifdef O_CLOEXEC
+	flags |= O_CLOEXEC;
+#endif
+	const int fd = kte::syscall::Open(path.c_str(), flags);
+	if (fd < 0) {
+		err = std::string("Failed to open file for writing: ") + std::strerror(errno);
+		return false;
+	}
+	bool ok = write_all_fd(fd, data, len, err);
+	if (ok && kte::syscall::Fsync(fd) != 0) {
+		err = std::string("fsync failed: ") + std::strerror(errno);
+		ok  = false;
+	}
+	(void) kte::syscall::Close(fd);
+	return ok;
+}
+
+
+static bool
+atomic_write_file(const std::string &path_in, const char *data, std::size_t len, std::string &err)
+{
+	// Write through a symlink to its target: renaming over the link itself
+	// would replace the link with a regular file.
+	std::string path = path_in;
+	try {
+		if (std::filesystem::is_symlink(path_in))
+			path = std::filesystem::weakly_canonical(path_in).string();
+	} catch (...) {
+		// Fall back to the given path.
+	}
+
+	struct stat dst_st{};
+	const bool dst_exists = ::stat(path.c_str(), &dst_st) == 0;
+
+	// A file with other hard links must be rewritten in place, or those
+	// names would keep the old content.
+	if (dst_exists && S_ISREG(dst_st.st_mode) && dst_st.st_nlink > 1)
+		return write_in_place(path, data, len, err);
+
 	// Create a temp file in the same directory so rename() is atomic.
 	std::filesystem::path p(path);
 	std::filesystem::path dir  = p.parent_path();
@@ -168,24 +210,25 @@ atomic_write_file(const std::string &path, const char *data, std::size_t len, st
 	}
 	std::string tmp_path(buf.data());
 
-	// If the destination exists, carry over its permissions.
-	struct stat dst_st{};
-	if (::stat(path.c_str(), &dst_st) == 0) {
-		(void) kte::syscall::Fchmod(fd, dst_st.st_mode);
+	if (dst_exists) {
+		// Carry over permissions and (best effort; needs privilege to give a
+		// file away) ownership of the file being replaced.
+		(void) kte::syscall::Fchmod(fd, dst_st.st_mode & 07777);
+		(void) ::fchown(fd, dst_st.st_uid, dst_st.st_gid);
+	} else {
+		// mkstemp creates 0600; a new file gets the usual 0666 & ~umask.
+		const mode_t mask = ::umask(0);
+		(void) ::umask(mask);
+		(void) kte::syscall::Fchmod(fd, 0666 & ~mask);
 	}
 
 	bool ok = write_all_fd(fd, data, len, err);
-	if (ok) {
-		// Retry fsync on transient errors
-		auto fsync_fn = [&]() -> bool {
-			return kte::syscall::Fsync(fd) == 0;
-		};
-
-		std::string fsync_err;
-		if (!kte::RetryOnTransientError(fsync_fn, kte::RetryPolicy::Aggressive(), fsync_err)) {
-			err = std::string("fsync failed: ") + std::strerror(errno) + fsync_err;
-			ok  = false;
-		}
+	// Never retry fsync: after a writeback error Linux may mark the pages
+	// clean, so a second fsync can succeed although the data was lost, and
+	// the rename below would then replace a good file with a bad one.
+	if (ok && kte::syscall::Fsync(fd) != 0) {
+		err = std::string("fsync failed: ") + std::strerror(errno);
+		ok  = false;
 	}
 	(void) kte::syscall::Close(fd);
 
