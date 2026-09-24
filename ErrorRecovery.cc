@@ -73,13 +73,15 @@ CircuitBreaker::RecordFailure()
 {
 	std::lock_guard<std::mutex> lg(mtx_);
 
-	const auto now     = std::chrono::steady_clock::now();
-	last_failure_time_ = now;
+	// The window is measured from the previous failure, so check it before
+	// recording this one.
+	const bool window_expired = IsWindowExpired();
+	last_failure_time_        = std::chrono::steady_clock::now();
 
 	switch (state_) {
 	case State::Closed:
 		// Check if we need to reset the failure count (window expired)
-		if (IsWindowExpired()) {
+		if (window_expired) {
 			failure_count_ = 0;
 		}
 
