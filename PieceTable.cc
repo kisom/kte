@@ -58,6 +58,7 @@ PieceTable::operator=(const PieceTable &other)
 	version_      = other.version_;
 	range_cache_  = {};
 	find_cache_   = {};
+	InvalidateLineIndex();
 	return *this;
 }
 
@@ -94,6 +95,7 @@ PieceTable::operator=(PieceTable &&other) noexcept
 	version_          = other.version_;
 	range_cache_      = {};
 	find_cache_       = {};
+	InvalidateLineIndex();
 	return *this;
 }
 
@@ -221,6 +223,7 @@ PieceTable::addPieceBack(const Source src, const std::size_t start, const std::s
 				last.len    += len;
 				total_size_ += len;
 				dirty_      = true;
+				InvalidateLineIndex();
 				version_++;
 				range_cache_ = {};
 				find_cache_  = {};
@@ -254,6 +257,7 @@ PieceTable::addPieceFront(Source src, std::size_t start, std::size_t len)
 			first.len   += len;
 			total_size_ += len;
 			dirty_      = true;
+			InvalidateLineIndex();
 			version_++;
 			range_cache_ = {};
 			find_cache_  = {};
