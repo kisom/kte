@@ -526,6 +526,24 @@ before the fix (unless noted).
   through matches in the regex replace prompt; Up/Down in a regex prompt
   use the regex.
 
+**Follow-up: journals for large buffers**
+- Buffers over 16 MiB are checkpointed as CHKPT_BEGIN (size, CRC-32),
+  data chunks and CHKPT_END; replay applies the checkpoint only when it
+  is complete and its CRC matches, and treats an unfinished one as a
+  torn tail. Such buffers could not be checkpointed at all: a lost
+  record left the journal permanently behind and it was never
+  compacted. The journal header is now version 2 (version 1 journals
+  are still read; older kte builds will not read version 2).
+- Checkpoint thresholds scale with the buffer: after edits amounting to
+  half its size, on the timer only after a sixteenth, compaction at
+  twice its size, gap retries spaced by size. A checkpoint that would
+  compact is written straight into the compacted journal.
+- The recovery prompt keeps the content it replayed for the preview;
+  answering y installs it instead of replaying the journal again.
+- The CRC of a base file over 64 MiB is computed by the journal writer
+  thread (it was skipped), so a touched but unchanged large file no
+  longer makes its journal unusable for recovery.
+
 **Known limitations (not fixed)**
 - Catastrophic regex backtracking (e.g. `(a*)*b`) can still take very
   long; std::regex has no time limit.
@@ -539,6 +557,3 @@ before the fix (unless noted).
   session that is locked out is told at its first edit instead.
 - A regex that matches rarely or not at all still scans the whole
   buffer with std::regex (1.6 s on 105 MB).
-- A journal whose buffer exceeds 16 MiB cannot be checkpointed; after a
-  lost record such a journal stays incomplete until the file is saved
-  (reported to the user).

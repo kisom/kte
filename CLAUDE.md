@@ -24,7 +24,7 @@ cmake --build build --target kte_tests  # test suite
 cmake --build build --target kte_tests && ./build/kte_tests
 ```
 
-There is no single-test runner; the test binary runs all tests. Tests use a minimal custom framework in `tests/Test.h` with `TEST()`, `ASSERT_EQ()`, `ASSERT_TRUE()`, `EXPECT_TRUE()` macros.
+The test binary runs all tests, or only those whose names contain one of its arguments (`./build/kte_tests Swap_ Undo_`). Tests use a minimal custom framework in `tests/Test.h` with `TEST()`, `ASSERT_EQ()`, `ASSERT_TRUE()`, `EXPECT_TRUE()` macros.
 
 ### Key CMake Options
 

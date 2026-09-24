@@ -717,6 +717,11 @@ private:
 	PendingOpen pending_recovery_open_{};
 	std::string pending_recovery_swap_path_;
 	std::string pending_recovery_replay_err_;
+	// The recovered content the prompt offers, and how much of the journal
+	// produced it: "y" installs it instead of replaying the journal again.
+	std::string pending_recovery_content_;
+	std::uint64_t pending_recovery_valid_bytes_ = 0;
+	bool pending_recovery_have_content_         = false;
 
 	// GUI-only state (safe no-op in terminal builds)
 	bool file_picker_visible_ = false;

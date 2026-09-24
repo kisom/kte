@@ -1,17 +1,32 @@
 #include "Test.h"
 #include <iostream>
 #include <chrono>
+#include <string>
+#include <vector>
 
 
+// Usage: kte_tests [substring...] runs the tests whose names contain any of
+// the substrings (all tests when none are given).
 int
-main()
+main(int argc, char **argv)
 {
 	using namespace std::chrono;
 	auto &reg = ktet::registry();
+	std::vector<std::string> filters(argv + 1, argv + argc);
+	auto selected = [&filters](const std::string &name) {
+		if (filters.empty())
+			return true;
+		for (const auto &f: filters)
+			if (name.find(f) != std::string::npos)
+				return true;
+		return false;
+	};
 	std::cout << "kte unit tests: " << reg.size() << " test(s)\n";
 	int failed = 0;
 	auto t0    = steady_clock::now();
 	for (const auto &tc: reg) {
+		if (!selected(tc.name))
+			continue;
 		auto ts = steady_clock::now();
 		try {
 			tc.fn();
