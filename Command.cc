@@ -3726,6 +3726,8 @@ cmd_backspace(CommandContext &ctx)
 		ensure_cursor_visible(ctx.editor, *buf);
 		return true;
 	}
+	// A count is one undo step, including any line joins among its deletions.
+	UndoGroupGuard count_group(repeat > 1 ? u : nullptr);
 	for (int i = 0; i < repeat; ++i) {
 		// Refresh a read-only view of lines for char capture/lengths
 		const auto &rows_view = rows_of(*buf);
@@ -3832,6 +3834,8 @@ cmd_delete_char(CommandContext &ctx)
 		ensure_cursor_visible(ctx.editor, *buf);
 		return true;
 	}
+	// A count is one undo step, including any line joins among its deletions.
+	UndoGroupGuard count_group(repeat > 1 ? u : nullptr);
 	for (int i = 0; i < repeat; ++i) {
 		const auto &rows_view = rows_of(*buf);
 		if (y >= rows_view.size())
@@ -5056,7 +5060,12 @@ cmd_indent_region(CommandContext &ctx)
 	}
 	UndoSystem *u = buf->Undo();
 	UndoGroupGuard guard(u);
+	// Empty lines are left alone: indenting them only added trailing
+	// whitespace, and the empty row after a final newline became a tab-only
+	// last line.
 	for (std::size_t y = sy; y <= ey && y < rows_of(*buf).size(); ++y) {
+		if (rows_of(*buf)[y].empty())
+			continue;
 		buf->insert_text(static_cast<int>(y), 0, std::string_view("\t"));
 		if (u) {
 			buf->SetCursor(0, y);
@@ -5143,18 +5152,38 @@ cmd_reflow_paragraph(CommandContext &ctx)
 	// Treat a universal-argument count of 1 as "no width specified".
 	// Editor::UArgGet() returns 1 when no explicit count was provided.
 	int width              = ctx.count > 1 ? ctx.count : 72;
-	// A blank line separates paragraphs; expanding from it would merge the
-	// paragraphs above and below.
-	if (y >= rows.size() || rows[y].empty())
+	// A blank line (empty, or only spaces, tabs or a CR) separates
+	// paragraphs; expanding from it would merge the paragraphs above and
+	// below.
+	auto is_blank_row = [&](std::size_t i) {
+		for (const char c: line_view(rows[i]))
+			if (c != ' ' && c != '\t' && c != '\r')
+				return false;
+		return true;
+	};
+	if (y >= rows.size() || is_blank_row(y))
 		return true;
 	std::size_t para_start = y;
-	while (para_start > 0 && !rows[para_start - 1].empty())
+	while (para_start > 0 && !is_blank_row(para_start - 1))
 		--para_start;
 	std::size_t para_end = y;
-	while (para_end + 1 < rows.size() && !rows[para_end + 1].empty())
+	while (para_end + 1 < rows.size() && !is_blank_row(para_end + 1))
 		++para_end;
 	if (para_start > para_end)
 		return false;
+	// CRLF text: reflow the lines without their CR (it would otherwise be
+	// joined into the middle of lines) and end every new line with one.
+	bool crlf = true;
+	for (std::size_t i = para_start; i <= para_end && crlf; ++i) {
+		const std::string_view lv = line_view(rows[i]);
+		crlf = !lv.empty() && lv.back() == '\r';
+	}
+	auto row_text = [&](std::size_t i) {
+		std::string t = static_cast<std::string>(rows[i]);
+		if (crlf)
+			t.pop_back();
+		return t;
+	};
 
 	auto is_space = [](char c) {
 		return c == ' ' || c == '\t';
@@ -5272,8 +5301,11 @@ cmd_reflow_paragraph(CommandContext &ctx)
 		for (std::size_t i = 0; i < words.size(); ++i) {
 			const std::string &wrd = words[i];
 			std::size_t needed     = wrd.size() + (first_word_on_line ? 0 : 1);
-			if (static_cast<int>(cur_len + needed) > w) {
-				// wrap
+			// Wrap before a word that does not fit, but never before the
+			// first word on a line: that emitted a line holding only the
+			// prefix (a blank line, or a bullet marker split from its text)
+			// ahead of a word longer than the width, again on every reflow.
+			if (!first_word_on_line && static_cast<int>(cur_len + needed) > w) {
 				flush_line();
 			}
 			if (!first_word_on_line) {
@@ -5293,7 +5325,7 @@ cmd_reflow_paragraph(CommandContext &ctx)
 	// Determine if this region looks like a list: any line starting with bullet or number
 	bool region_has_list = false;
 	for (std::size_t i = para_start; i <= para_end; ++i) {
-		std::string s = static_cast<std::string>(rows[i]);
+		std::string s = row_text(i);
 		std::string indent;
 		char marker;
 		std::size_t idx;
@@ -5311,7 +5343,7 @@ cmd_reflow_paragraph(CommandContext &ctx)
 	if (region_has_list) {
 		// Parse as list items; support hanging indent continuations
 		for (std::size_t i = para_start; i <= para_end; ++i) {
-			std::string s = static_cast<std::string>(rows[i]);
+			std::string s = row_text(i);
 			std::string indent;
 			char marker           = 0;
 			std::size_t after_idx = 0;
@@ -5322,7 +5354,7 @@ cmd_reflow_paragraph(CommandContext &ctx)
 				// consume continuation lines that are part of this bullet item
 				std::size_t j = i + 1;
 				while (j <= para_end) {
-					std::string ns = static_cast<std::string>(rows[j]);
+					std::string ns = row_text(j);
 					// stop if next bullet at same indentation or different structure
 					std::string nindent;
 					char nmarker;
@@ -5356,7 +5388,7 @@ cmd_reflow_paragraph(CommandContext &ctx)
 					// consume continuation lines that are part of this numbered item
 					std::size_t j = i + 1;
 					while (j <= para_end) {
-						std::string ns = static_cast<std::string>(rows[j]);
+						std::string ns = row_text(j);
 						if (starts_with(ns, cont_prefix)) {
 							content += ' ';
 							content += ns.substr(cont_prefix.size());
@@ -5383,7 +5415,7 @@ cmd_reflow_paragraph(CommandContext &ctx)
 					std::string content     = s.substr(base_indent.size());
 					std::size_t j           = i + 1;
 					while (j <= para_end) {
-						std::string ns      = static_cast<std::string>(rows[j]);
+						std::string ns      = row_text(j);
 						std::string nindent = leading_ws(ns);
 						std::string tmp_indent;
 						char tmp_marker;
@@ -5411,11 +5443,11 @@ cmd_reflow_paragraph(CommandContext &ctx)
 		}
 	} else {
 		// Normal paragraph: preserve indentation of first line
-		std::string s0  = static_cast<std::string>(rows[para_start]);
+		std::string s0  = row_text(para_start);
 		std::string pfx = leading_ws(s0);
 		std::string content;
 		for (std::size_t i = para_start; i <= para_end; ++i) {
-			std::string si = static_cast<std::string>(rows[i]);
+			std::string si = row_text(i);
 			// strip the same prefix length if present
 			if (si.size() >= pfx.size() && starts_with(si, pfx))
 				si.erase(0, pfx.size());
@@ -5442,6 +5474,8 @@ cmd_reflow_paragraph(CommandContext &ctx)
 		if (i > 0)
 			new_text.push_back('\n');
 		new_text += new_lines[i];
+		if (crlf)
+			new_text.push_back('\r');
 	}
 	if (new_text != old_text)
 		replace_rows_text(*buf, para_start, old_text, new_text, buf->Undo());

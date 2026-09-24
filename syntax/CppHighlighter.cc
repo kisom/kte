@@ -163,11 +163,14 @@ CppHighlighter::HighlightLineStateful(const Buffer &buf,
 		if (c == 'R' && i + 1 < n && s[i + 1] == '"') {
 			int k = i + 2;
 			std::string delim;
-			while (k < n && s[k] != '(') {
+			// A raw-string delimiter is at most 16 characters (and has no
+			// spaces, backslashes or parentheses); scanning the rest of the
+			// line for '(' at every R" made long lines quadratic.
+			while (k < n && s[k] != '(' && delim.size() <= 16) {
 				delim.push_back(s[k]);
 				++k;
 			}
-			if (k < n && s[k] == '(') {
+			if (k < n && s[k] == '(' && delim.size() <= 16) {
 				int body_start     = k + 1;
 				std::string needle = ")" + delim + "\"";
 				auto pos           = s.find(needle, static_cast<std::size_t>(body_start));
