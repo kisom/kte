@@ -86,6 +86,7 @@ public:
 
 	// Replace the content with `bytes`, taken over without copying (a loaded
 	// file). Undo spans into the old storage are invalidated, as by Clear().
+	// If it throws (std::bad_alloc), the content is unchanged.
 	void AdoptOriginal(std::string &&bytes);
 
 	// Accessors
