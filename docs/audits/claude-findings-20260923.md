@@ -303,29 +303,34 @@ Updated as fixes land on `claude/funny-fermat-gj2vm5`.
 | ID | Status |
 |----|--------|
 | M1 | fixed: assignment operators invalidate the line index |
-| M2 | open: needs a decision (drop the warm-up thread, or snapshot) |
-| M3 | open |
-| M4 | fixed: iterative free/search; `clear()` also freed only the first root branch (leak), now frees all |
-| M5 | fixed: jump-to-mark clamps the cursor |
+| M2 | fixed: background warm-up thread removed; visible rows highlighted synchronously |
+| M3 | fixed: editors sharing buffers share the owner's SwapManager |
+| M4 | fixed: iterative free/search; `clear()` also leaked root siblings, now frees all |
+| M5 | fixed: jump-to-mark clamps; move up/down clamp the row (move-down also underflowed) |
 | D1 | fixed: `Begin` before the cursor moves; newline + indent grouped |
 | D2 | fixed for scroll up/down and replace-all restore |
-| D3 | open |
-| D4 | open |
-| D5 | replace-all fixed (one undo group); visual-line newline open |
+| D3 | fixed: kill-region, regex replace, reflow and kill-line edit byte ranges in place |
+| D4 | fixed: regex replace skips the row after a final newline (a zero-width pattern used to hang the editor); kill-line there is a no-op |
+| D5 | fixed: replace-all one undo group; visual-line newline recorded as one group |
 | D6 | fixed: reflow on a blank line is a no-op |
-| D7 | open: recovering a torn tail reverses `SwapReplay_TruncatedLog_FailsSafely`; needs a decision |
+| D7 | fixed: torn tail replays the valid prefix; lost records mark a gap resynced by checkpoint; partial writes truncated; header failure closes; large inserts split; oversize checkpoints skipped; declined corrupt swap moved to `.corrupt` |
 | D8 | fixed: window checked before recording the failure |
-| D9 | fixed: `SetDirty` always bumps the version; reload and `replace_all_bytes` too; reload of a deleted file clears undo |
+| D9 | fixed: every text mutation bumps the version (including undo to the saved state); reload and replace also clear undo/highlighting |
 | B1 | fixed: guard on `NCURSES_VERSION` |
 | B2 | fixed: `KEY_RESIZE` issues no command |
-| B3–B10, B13 | open |
+| B3 | fixed: ESC-meta flag consumed on every key; ESC ^H and ESC Enter reach their bindings |
+| B4 | not changed: C-h is a deliberate binding (search & replace); terminals whose terminfo `kbs` is ^H are translated to KEY_BACKSPACE by ncurses |
+| B5 | fixed: backspace/delete/left/right step over whole UTF-8 characters; up/down snap to a boundary |
+| B6 | fixed: horizontal scroll and mouse column use display cells (mbrtowc/wcwidth) |
+| B7–B10, B13 | open (GUI-only or highlighter edge cases) |
 | B11 | fixed: SmartNewline with a prompt open delegates to Newline |
 | B12 | fixed: merged appends invalidate the line index |
-| P1 | partial: `ensure_cursor_visible` no longer calls `Rows()`; renderers still do |
-| P2 | partial: `ensure_cursor_visible` no longer materializes the buffer |
-| P3 | open |
-| P4 | replace-all fixed; other region commands open |
-| P5, P6 | open |
+| P1 | fixed: `ensure_cursor_visible` and the terminal/ImGui renderers no longer call `Rows()` |
+| P2 | fixed: line index updated in place on insert/delete (14.7 ms -> 0.28 ms per keystroke on a 38 MB buffer) |
+| P3 | fixed: highlighting invalidated from the edited row (46 ms -> 0.14 ms per keystroke near the end of a 100k-line C++ file) |
+| P4 | replace-all and delete-region fixed; indent/unindent loops unchanged |
+| P5 | fixed: no throwaway checkpoint on filename change |
+| P6 | open (test-only code) |
 
 Regression tests: `tests/test_audit_regressions.cc`. Each test fails on the
 unfixed code (M4 by crashing).
