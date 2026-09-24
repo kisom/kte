@@ -372,6 +372,7 @@ if (BUILD_TESTS)
             tests/test_reflow_undo.cc
             tests/test_syntax_highlighting.cc
             tests/test_paste_split.cc
+            tests/test_audit_regressions.cc
 
             # minimal engine sources required by Buffer
             PieceTable.cc
