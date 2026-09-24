@@ -165,9 +165,10 @@ map_key_to_command(const int ch,
 		out            = {true, CommandId::DeleteChar, "", 0};
 		return true;
 	case KEY_RESIZE:
-		k_prefix = false;
-		k_ctrl_pending = false;
-		out            = {true, CommandId::Refresh, "", 0};
+		// TerminalFrontend::Step picks up the new size before the next draw.
+		// Refresh is the C-g cancel handler, so issuing it here would clear the
+		// mark and cancel open prompts on every window resize.
+		out.hasCommand = false;
 		return true;
 	default:
 		break;

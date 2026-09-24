@@ -43,7 +43,9 @@ TerminalFrontend::Init(int &argc, char **argv, Editor &ed)
 	// Enable 8-bit meta key sequences (Alt/ESC-prefix handling in terminals)
 	meta(stdscr, TRUE);
 	// Make ESC key sequences resolve quickly so ESC+<key> works as meta
-#ifdef set_escdelay
+	// set_escdelay is an ncurses extension function (not a macro), so test for
+	// ncurses itself rather than `#ifdef set_escdelay`, which is always false.
+#if defined(NCURSES_VERSION)
 	set_escdelay(TerminalFrontend::kEscDelayMs);
 #endif
 	// Make getch() block briefly instead of busy-looping; reduces CPU when idle
