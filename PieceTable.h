@@ -4,7 +4,7 @@
  * PieceTable is kte's core text storage data structure. It provides efficient
  * insert/delete operations without copying the entire buffer by maintaining a
  * sequence of "pieces" that reference ranges in two underlying buffers:
- * - original_: Initial file content (currently unused, reserved for future)
+ * - original_: A loaded file's content (AdoptOriginal), never modified
  * - add_: All text added during editing
  *
  * Key advantages:
@@ -15,7 +15,8 @@
  *
  * Performance characteristics:
  * - Piece count grows with edit operations; automatic consolidation prevents unbounded growth
- * - Materialization (Data() call) is O(total_size) but cached until next edit
+ * - Materialization (Data() call) is O(total_size) but cached until next edit;
+ *   a single-piece table (an unedited file) is viewed in place, not copied
  * - Line index is lazily rebuilt on first line-based query after edits
  * - Range and Find operations use lightweight caches for repeated queries
  *
@@ -83,18 +84,39 @@ public:
 	// Content management
 	void Clear();
 
+	// Replace the content with `bytes`, taken over without copying (a loaded
+	// file). Undo spans into the old storage are invalidated, as by Clear().
+	void AdoptOriginal(std::string &&bytes);
+
 	// Accessors
-	char *Data()
+	// The whole text, contiguous; nullptr when empty. Valid until the next
+	// modification.
+	[[nodiscard]] const char *Data() const
 	{
-		materialize();
-		return materialized_.empty() ? nullptr : materialized_.data();
+		const std::string_view v = ContentView();
+		return v.empty() ? nullptr : v.data();
 	}
 
 
-	[[nodiscard]] const char *Data() const
+	// The whole text as one view: in place for a single piece, else the
+	// materialized copy (built once per modification). Valid until the next
+	// modification.
+	[[nodiscard]] std::string_view ContentView() const;
+
+	// A view of [byte_offset, byte_offset + len), clamped to the content: in
+	// place when the range lies within one piece (no copy), else into the
+	// materialized text. Valid until the next modification.
+	[[nodiscard]] std::string_view View(std::size_t byte_offset, std::size_t len) const;
+
+	// Call fn(const char *data, std::size_t len) for each piece, in order:
+	// the content without materializing it.
+	template<typename Fn>
+	void ForEachChunk(Fn &&fn) const
 	{
-		const_cast<PieceTable *>(this)->materialize();
-		return materialized_.empty() ? nullptr : materialized_.data();
+		for (const Piece &p: pieces_) {
+			if (p.len > 0)
+				fn((p.src == Source::Original ? original_ : add_).data() + p.start, p.len);
+		}
 	}
 
 
@@ -205,7 +227,7 @@ private:
 	void RebuildLineIndex() const;
 
 	// Underlying storages
-	std::string original_; // unused for builder use-case, but kept for API symmetry
+	std::string original_; // a loaded file's bytes (AdoptOriginal)
 	std::string add_;
 	std::vector<Piece> pieces_;
 

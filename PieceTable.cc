@@ -185,6 +185,7 @@ void
 PieceTable::Clear()
 {
 	pieces_.clear();
+	std::string().swap(original_);
 	add_.clear();
 	materialized_.clear();
 	total_size_ = 0;
@@ -195,6 +196,52 @@ PieceTable::Clear()
 	range_cache_  = {};
 	find_cache_   = {};
 	last_deleted_ = {};
+}
+
+
+void
+PieceTable::AdoptOriginal(std::string &&bytes)
+{
+	Clear();
+	std::string().swap(add_); // release a previous content's capacity
+	std::string().swap(materialized_);
+	original_   = std::move(bytes);
+	total_size_ = original_.size();
+	if (total_size_ > 0)
+		pieces_.push_back(Piece{Source::Original, 0, total_size_});
+}
+
+
+std::string_view
+PieceTable::ContentView() const
+{
+	if (total_size_ == 0)
+		return {};
+	if (pieces_.size() == 1) {
+		const Piece &p = pieces_.front();
+		return {(p.src == Source::Original ? original_ : add_).data() + p.start, p.len};
+	}
+	materialize();
+	return {materialized_.data(), materialized_.size()};
+}
+
+
+std::string_view
+PieceTable::View(std::size_t byte_offset, std::size_t len) const
+{
+	if (byte_offset >= total_size_ || len == 0)
+		return {};
+	len = std::min(len, total_size_ - byte_offset);
+	if (dirty_) {
+		// Materialized text is stale: serve the range from its piece when it
+		// fits in one, rather than copying the whole buffer.
+		auto [idx, inner] = locate(byte_offset);
+		if (idx < pieces_.size() && inner + len <= pieces_[idx].len) {
+			const Piece &p = pieces_[idx];
+			return {(p.src == Source::Original ? original_ : add_).data() + p.start + inner, len};
+		}
+	}
+	return ContentView().substr(byte_offset, len);
 }
 
 

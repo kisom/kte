@@ -638,21 +638,6 @@ delete_region(Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::
 }
 
 
-// The buffer's full text (rows joined by '\n', which reproduces the bytes).
-static std::string
-buffer_text(const Buffer &buf)
-{
-	std::string out;
-	const std::size_t nrows = buf.Nrows();
-	for (std::size_t y = 0; y < nrows; ++y) {
-		if (y > 0)
-			out.push_back('\n');
-		out += buf.GetLineString(y);
-	}
-	return out;
-}
-
-
 // Replace the text of rows [y, y + old_text lines) in place with new_text,
 // where old_text is those rows joined by '\n' (no trailing newline). Unlike
 // delete_row/insert_row this never adds or removes the newline after the
@@ -929,16 +914,11 @@ static constexpr std::size_t kSearchCountBytesRegex = std::size_t{4} << 20;
 static std::string_view line_text_view(const Buffer &buf, std::size_t y);
 
 
-// The whole text as one view into the materialized buffer.
+// The whole text as one view.
 static std::string_view
 buffer_text_view(const Buffer &buf)
 {
-	const std::size_t nrows = buf.Nrows();
-	if (nrows == 0)
-		return {};
-	const char *base = buf.GetLineView(0).data();
-	const auto last  = buf.GetLineView(nrows - 1);
-	return {base, static_cast<std::size_t>(last.data() + last.size() - base)};
+	return buf.ContentView();
 }
 
 
@@ -3187,7 +3167,7 @@ cmd_newline(CommandContext &ctx)
 				// Build the replaced text in one pass and apply it as a single
 				// edit: one piece-table edit per match cost O(file) each, so
 				// replace-all was quadratic (298 s for 249k matches in 12 MB).
-				const std::string before = buffer_text(*buf);
+				const std::string before = buf->Bytes();
 				std::string after;
 				after.reserve(before.size());
 				std::size_t pos = 0;
@@ -3653,7 +3633,7 @@ cmd_newline(CommandContext &ctx)
 				}
 			});
 			if (changed > 0)
-				replace_buffer_text(*buf, buffer_text(*buf), after, ru);
+				replace_buffer_text(*buf, buf->Bytes(), after, ru);
 			clamp_cursor_to_buffer(*buf);
 			buf->SetDirty(true);
 			ctx.editor.SetStatus("Regex replaced in " + std::to_string(changed) + " line(s)" +
