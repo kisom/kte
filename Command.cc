@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cwchar>
 #include <filesystem>
 #include <cstdlib>
 #include <regex>
@@ -45,19 +46,110 @@ bool gFontDialogRequested = false;
 }
 
 
+// UTF-8 aware stepping. Cursor columns are byte offsets; these keep motion
+// and deletion on code point boundaries so a multibyte character is never
+// split. Malformed bytes are treated as single-byte characters.
+static inline bool
+utf8_is_cont(const char c)
+{
+	return (static_cast<unsigned char>(c) & 0xC0) == 0x80;
+}
+
+
+// Byte length of the character ending at x (x > 0, x <= line.size()).
+static std::size_t
+utf8_prev_len(std::string_view line, std::size_t x)
+{
+	if (x == 0)
+		return 0;
+	if (x > line.size())
+		return 1;
+	std::size_t n = 1;
+	while (n < 4 && n < x && utf8_is_cont(line[x - n]))
+		++n;
+	// Accept only if a lead byte starts the run and declares this length.
+	const auto lead = static_cast<unsigned char>(line[x - n]);
+	std::size_t want = 1;
+	if (lead >= 0xF0)
+		want = 4;
+	else if (lead >= 0xE0)
+		want = 3;
+	else if (lead >= 0xC0)
+		want = 2;
+	return (n > 1 && want == n) ? n : 1;
+}
+
+
+// Byte length of the character starting at x (x < line.size()).
+static std::size_t
+utf8_next_len(std::string_view line, std::size_t x)
+{
+	if (x >= line.size())
+		return 0;
+	const auto lead = static_cast<unsigned char>(line[x]);
+	std::size_t want = 1;
+	if (lead >= 0xF0 && lead < 0xF8)
+		want = 4;
+	else if (lead >= 0xE0)
+		want = 3;
+	else if (lead >= 0xC0)
+		want = 2;
+	if (want == 1 || x + want > line.size())
+		return 1;
+	for (std::size_t i = 1; i < want; ++i) {
+		if (!utf8_is_cont(line[x + i]))
+			return 1;
+	}
+	return want;
+}
+
+
+static inline std::string_view
+line_view(const Buffer::Line &l)
+{
+	return std::string_view(l.Data(), l.Size());
+}
+
+
 // Keep buffer viewport offsets so that the cursor stays within the visible
 // window based on the editor's current dimensions. The bottom row is reserved
 // for the status line.
+// Decode the character at line[i]: its byte length and display width in cells
+// (tabs expand to the next multiple of tabw from column rx). Measures the way
+// TerminalRenderer draws: invalid bytes are one cell each.
+static void
+measure_char(std::string_view line, std::size_t i, std::size_t rx, std::size_t tabw, std::size_t &len,
+             std::size_t &width)
+{
+	std::mbstate_t state{};
+	wchar_t wch   = 0;
+	const auto rc = std::mbrtowc(&wch, line.data() + i, line.size() - i, &state);
+	if (rc == static_cast<std::size_t>(-1) || rc == static_cast<std::size_t>(-2) || rc == 0) {
+		len   = 1;
+		width = (rc == 0) ? 0 : 1;
+		return;
+	}
+	len = rc;
+	if (wch == L'\t') {
+		width = tabw - (rx % tabw);
+	} else {
+		const int w = wcwidth(wch);
+		width       = (w < 0) ? 1 : static_cast<std::size_t>(w);
+	}
+}
+
+
+// Display column of byte offset curx, in terminal cells.
 static std::size_t
 compute_render_x(std::string_view line, const std::size_t curx, const std::size_t tabw)
 {
 	std::size_t rx = 0;
-	for (std::size_t i = 0; i < curx && i < line.size(); ++i) {
-		if (line[i] == '\t') {
-			rx += tabw - (rx % tabw);
-		} else {
-			rx += 1;
-		}
+	std::size_t i  = 0;
+	while (i < curx && i < line.size()) {
+		std::size_t len = 1, width = 1;
+		measure_char(line, i, rx, tabw, len, width);
+		rx += width;
+		i += len;
 	}
 	return rx;
 }
@@ -457,34 +549,30 @@ insert_text_at_cursor(Buffer &buf, const std::string &text)
 }
 
 
+// Byte offset (on a character boundary) whose display column is closest to
+// rx_target; the inverse of compute_render_x.
 static std::size_t
 inverse_render_to_source_col(const std::string &line, std::size_t rx_target, std::size_t tabw)
 {
-	// Find source column that best matches given rendered x (with tabs expanded)
-	std::size_t rx = 0;
 	if (rx_target == 0)
 		return 0;
+	std::size_t rx        = 0;
+	std::size_t i         = 0;
 	std::size_t best_col  = 0;
-	std::size_t best_dist = rx_target; // max
-	for (std::size_t i = 0; i <= line.size(); ++i) {
-		std::size_t dist = (rx > rx_target) ? (rx - rx_target) : (rx_target - rx);
+	std::size_t best_dist = rx_target;
+	while (true) {
+		const std::size_t dist = (rx > rx_target) ? (rx - rx_target) : (rx_target - rx);
 		if (dist <= best_dist) {
 			best_dist = dist;
 			best_col  = i;
 		}
-		if (i == line.size())
+		if (i >= line.size() || rx >= rx_target)
 			break;
-		if (line[i] == '\t') {
-			rx += tabw - (rx % tabw);
-		} else {
-			rx += 1;
-		}
-		if (rx >= rx_target && i + 1 <= line.size()) {
-			// next iteration will evaluate i+1 with updated rx
-		}
+		std::size_t len = 1, width = 1;
+		measure_char(line, i, rx, tabw, len, width);
+		rx += width;
+		i += len;
 	}
-	if (best_col > line.size())
-		best_col = line.size();
 	return best_col;
 }
 
@@ -3273,10 +3361,13 @@ cmd_backspace(CommandContext &ctx)
 				if (xx == 0)
 					break;
 				const auto &rows_view = buf->Rows();
-				if (yy < rows_view.size() && (xx - 1) < rows_view[yy].size())
-					deleted.insert(deleted.begin(), rows_view[yy][xx - 1]);
-				buf->delete_text(static_cast<int>(yy), static_cast<int>(xx - 1), 1);
-				--xx;
+				if (yy >= rows_view.size())
+					break;
+				const std::string_view lv = line_view(rows_view[yy]);
+				const std::size_t n       = utf8_prev_len(lv, xx);
+				deleted.insert(0, std::string(lv.substr(xx - n, n)));
+				buf->delete_text(static_cast<int>(yy), static_cast<int>(xx - n), n);
+				xx -= n;
 			}
 			if (u && !deleted.empty()) {
 				buf->SetCursor(xx, yy);
@@ -3298,16 +3389,26 @@ cmd_backspace(CommandContext &ctx)
 		// Refresh a read-only view of lines for char capture/lengths
 		const auto &rows_view = buf->Rows();
 		if (x > 0) {
-			char deleted = '\0';
-			if (y < rows_view.size() && x - 1 < rows_view[y].size())
-				deleted = rows_view[y][x - 1];
-			buf->delete_text(static_cast<int>(y), static_cast<int>(x - 1), 1);
-			x -= 1;
+			std::string deleted;
+			std::size_t n = 1;
+			if (y < rows_view.size()) {
+				const std::string_view lv = line_view(rows_view[y]);
+				if (x > lv.size())
+					x = lv.size(); // never delete past end-of-line
+				n = utf8_prev_len(lv, x);
+				if (x > 0)
+					deleted.assign(lv.substr(x - n, n));
+			}
+			if (deleted.empty()) {
+				buf->SetCursor(x, y);
+				continue;
+			}
+			buf->delete_text(static_cast<int>(y), static_cast<int>(x - n), n);
+			x -= n;
 			buf->SetCursor(x, y);
 			if (u) {
 				u->Begin(UndoType::Delete);
-				if (deleted != '\0')
-					u->Append(deleted);
+				u->Append(std::string_view(deleted));
 			}
 		} else if (y > 0) {
 			// Compute previous line length before join
@@ -3370,8 +3471,10 @@ cmd_delete_char(CommandContext &ctx)
 				const auto &rows_view = buf->Rows();
 				if (yy >= rows_view.size() || xx >= rows_view[yy].size())
 					break;
-				deleted.push_back(rows_view[yy][xx]);
-				buf->delete_text(static_cast<int>(yy), static_cast<int>(xx), 1);
+				const std::string_view lv = line_view(rows_view[yy]);
+				const std::size_t n       = utf8_next_len(lv, xx);
+				deleted.append(lv.substr(xx, n));
+				buf->delete_text(static_cast<int>(yy), static_cast<int>(xx), n);
 			}
 			if (u && !deleted.empty()) {
 				buf->SetCursor(xx, yy);
@@ -3391,11 +3494,13 @@ cmd_delete_char(CommandContext &ctx)
 		if (y >= rows_view.size())
 			break;
 		if (x < rows_view[y].size()) {
-			char deleted = rows_view[y][x];
-			buf->delete_text(static_cast<int>(y), static_cast<int>(x), 1);
+			const std::string_view lv = line_view(rows_view[y]);
+			const std::size_t n       = utf8_next_len(lv, x);
+			const std::string deleted(lv.substr(x, n));
+			buf->delete_text(static_cast<int>(y), static_cast<int>(x), n);
 			if (u) {
 				u->Begin(UndoType::Delete);
-				u->Append(deleted);
+				u->Append(std::string_view(deleted));
 			}
 		} else if (y + 1 < rows_view.size()) {
 			buf->join_lines(static_cast<int>(y));
@@ -3920,9 +4025,15 @@ cmd_move_left(CommandContext &ctx)
 	std::size_t y = buf->Cury();
 	std::size_t x = buf->Curx();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
+	if (rows.empty())
+		return true;
+	if (y >= rows.size())
+		y = rows.size() - 1;
+	if (x > rows[y].size())
+		x = rows[y].size();
 	while (repeat-- > 0) {
 		if (x > 0) {
-			--x;
+			x -= utf8_prev_len(line_view(rows[y]), x);
 		} else if (y > 0) {
 			--y;
 			x = rows[y].size();
@@ -4001,7 +4112,7 @@ cmd_move_right(CommandContext &ctx)
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
 	while (repeat-- > 0) {
 		if (y < rows.size() && x < rows[y].size()) {
-			++x;
+			x += utf8_next_len(line_view(rows[y]), x);
 		} else if (y + 1 < rows.size()) {
 			++y;
 			x = 0;
@@ -4044,11 +4155,18 @@ cmd_move_up(CommandContext &ctx)
 	std::size_t y = buf->Cury();
 	std::size_t x = buf->Curx();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
+	if (rows.empty())
+		return true;
+	if (y >= rows.size())
+		y = rows.size() - 1;
 	if (repeat > static_cast<int>(y))
 		repeat = static_cast<int>(y);
 	y -= static_cast<std::size_t>(repeat);
 	if (x > rows[y].size())
 		x = rows[y].size();
+	// Keep the column on a character boundary of the new line.
+	while (x > 0 && x < rows[y].size() && utf8_is_cont(rows[y][x]))
+		--x;
 	buf->SetCursor(x, y);
 	if (buf->VisualLineActive())
 		buf->VisualLineSetActiveY(buf->Cury());
@@ -4086,12 +4204,19 @@ cmd_move_down(CommandContext &ctx)
 	std::size_t y        = buf->Cury();
 	std::size_t x        = buf->Curx();
 	int repeat           = ctx.count > 0 ? ctx.count : 1;
+	if (rows.empty())
+		return true;
+	if (y >= rows.size())
+		y = rows.size() - 1;
 	std::size_t max_down = rows.size() - 1 - y;
 	if (repeat > static_cast<int>(max_down))
 		repeat = static_cast<int>(max_down);
 	y += static_cast<std::size_t>(repeat);
 	if (x > rows[y].size())
 		x = rows[y].size();
+	// Keep the column on a character boundary of the new line.
+	while (x > 0 && x < rows[y].size() && utf8_is_cont(rows[y][x]))
+		--x;
 	buf->SetCursor(x, y);
 	if (buf->VisualLineActive())
 		buf->VisualLineSetActiveY(buf->Cury());

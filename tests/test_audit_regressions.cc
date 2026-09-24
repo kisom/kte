@@ -11,6 +11,7 @@
 #include "UndoTree.h"
 
 #include <chrono>
+#include <clocale>
 #include <memory>
 #include <string>
 #include <thread>
@@ -370,4 +371,72 @@ TEST(Audit_D5_VisualLineNewline_Undo)
 
 	ASSERT_TRUE(h.Undo());
 	ASSERT_EQ(h.Text(), std::string("ab\ncd\nef"));
+}
+
+
+// B5: backspace and delete remove a whole UTF-8 character; undo restores it.
+TEST(Audit_B5_Backspace_DeletesWholeUtf8Char)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "caf\xC3\xA9!");
+	b.SetCursor(5, 0); // after the two-byte e-acute
+
+	ASSERT_TRUE(h.Exec(CommandId::Backspace));
+	ASSERT_EQ(h.Text(), std::string("caf!"));
+	ASSERT_EQ(b.Curx(), (std::size_t) 3);
+
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), std::string("caf\xC3\xA9!"));
+}
+
+
+TEST(Audit_B5_DeleteChar_DeletesWholeUtf8Char)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "a\xE4\xB8\xAD" "b"); // a, U+4E2D (3 bytes), b
+	b.SetCursor(1, 0);
+
+	ASSERT_TRUE(h.Exec(CommandId::DeleteChar));
+	ASSERT_EQ(h.Text(), std::string("ab"));
+}
+
+
+TEST(Audit_B5_Motion_StepsOverUtf8Chars)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "x\xF0\x9F\x98\x80y"); // x, U+1F600 (4 bytes), y
+	b.SetCursor(1, 0);
+
+	ASSERT_TRUE(h.Exec(CommandId::MoveRight));
+	ASSERT_EQ(b.Curx(), (std::size_t) 5);
+	ASSERT_TRUE(h.Exec(CommandId::MoveLeft));
+	ASSERT_EQ(b.Curx(), (std::size_t) 1);
+}
+
+
+// B6: horizontal scrolling counts display cells, not bytes, so the cursor
+// at the end of a long CJK line stays on screen.
+TEST(Audit_B6_HorizontalScroll_CountsCells)
+{
+	const char *prev = std::setlocale(LC_CTYPE, nullptr);
+	const std::string saved = prev ? prev : "C";
+	if (!std::setlocale(LC_CTYPE, "C.UTF-8") && !std::setlocale(LC_CTYPE, "C.utf8"))
+		return; // no UTF-8 locale available
+
+	TestHarness h;
+	Buffer &b = h.Buf();
+	std::string line;
+	for (int i = 0; i < 100; ++i)
+		line += "\xE4\xB8\xAD"; // U+4E2D, two cells wide
+	b.insert_text(0, 0, line);
+	b.SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::MoveEnd));
+
+	const std::size_t coloffs = b.Coloffs();
+	std::setlocale(LC_CTYPE, saved.c_str());
+	// 200 cells wide on an 80-column screen: the cursor cell is 200.
+	ASSERT_EQ(coloffs, (std::size_t) (200 - 80 + 1));
 }
