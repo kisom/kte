@@ -339,7 +339,7 @@ unfixed code (M4 by crashing).
 
 ## Follow-up review rounds
 
-After the first batch of fixes, three more review rounds (an adversarial
+After the first batch of fixes, further review rounds (an adversarial
 review of each batch of changes, plus fresh reviews of areas the first
 audit covered lightly) found further defects. All of the following are
 fixed on this branch, each with a regression test that fails on the code
@@ -387,6 +387,28 @@ before the fix (unless noted).
 - Line index invalidated by consolidation; incremental index added.
 - Idle redraw every 16 ms rescanned long lines (one core busy); paste
   handled one key per frame; RowsView retained unbounded copies.
+
+**Fourth round (stress testing)**
+- Undo/redo of multi-line text left the cursor past the end of the
+  line; later edits and their undo records went astray and
+  delete-word-prev read out of bounds (ASan).
+- A recovered buffer looked clean after one edit and its undo; closing
+  it discarded the recovered text and journal. Save-and-quit did not
+  record the saved state; stale visual-line selections pointed past the
+  end of the buffer; open undo groups survived an exception.
+- A reload that ran out of memory emptied the buffer, and the next save
+  truncated the file. Exceptions from deferred opens ended the editor.
+  A leftover hard-link copy blocked every later save; a file in a
+  read-only directory could not be saved.
+- The journal writer's periodic fsync held the lock every keystroke
+  needs (typing froze on slow disks); every open and save re-read the
+  whole file under that lock; two ThreadSanitizer races.
+- Replace-all, yank and repeat counts issued one edit per match, line
+  or repetition (quadratic: minutes for 229k matches, now 0.14 s).
+- With LANG unset, multibyte input was dropped. Renderer caches and the
+  reload confirmation were keyed on buffer addresses, which are reused
+  after a close; a reload confirmation survived other commands; a swap
+  recovery prompt from a deferred open was not drawn until a key.
 
 **Known limitations (not fixed)**
 - Catastrophic regex backtracking (e.g. `(a*)*b`) can still take very
