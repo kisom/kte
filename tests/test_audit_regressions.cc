@@ -1239,3 +1239,101 @@ TEST(Audit_BufferId_StableAcrossMovesUniqueForCopies)
 	f = e;
 	ASSERT_TRUE(f.Id() != id);
 }
+
+
+// Replace-all records only the changed span in the undo tree (it recorded
+// the whole buffer twice per run), and undo/redo still restore the text,
+// including when the change sits next to multibyte characters.
+TEST(Audit_ReplaceAll_RecordsOnlyChangedSpan)
+{
+	TestHarness h;
+	const std::string big(100000, 'x');
+	const std::string before = big + "\nh\xC3\xA9llo w\xC3\xB8rld\n" + big + "\n";
+	h.Buf().insert_text(0, 0, before);
+	h.Buf().SetCursor(0, 0);
+	regex_replace_all(h, "\xC3\xB8", "\xC3\xA5");
+	const std::string after = big + "\nh\xC3\xA9llo w\xC3\xA5rld\n" + big + "\n";
+	ASSERT_EQ(h.Text(), after);
+	const UndoNode *cur = h.Buf().Undo()->TreeForTests().current;
+	ASSERT_TRUE(cur != nullptr);
+	ASSERT_TRUE(cur->text.size() < 16);
+	ASSERT_TRUE(cur->parent != nullptr && cur->parent->text.size() < 16);
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), before);
+	ASSERT_TRUE(h.Redo());
+	ASSERT_EQ(h.Text(), after);
+
+	// Growing, and splitting lines.
+	regex_replace_all(h, "rld", "rld!\n");
+	regex_replace_all(h, "o w", "o\nw");
+	const std::string after2 = big + "\nh\xC3\xA9llo\nw\xC3\xA5rld!\n\n" + big + "\n";
+	ASSERT_EQ(h.Text(), after2);
+	ASSERT_TRUE(h.Undo());
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), after);
+	ASSERT_TRUE(h.Redo());
+	ASSERT_TRUE(h.Redo());
+	ASSERT_EQ(h.Text(), after2);
+}
+
+
+// Search-as-you-type skips very long lines (std::regex can be quadratic in
+// line length) but says so, and moving to the next match searches them.
+TEST(Audit_RegexSearch_LongLineFoundByNext)
+{
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	h.Buf().insert_text(0, 0, "short\n" + std::string(25000, 'a') + "NEEDLE\nend\n");
+	h.Buf().SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::RegexFindStart));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "NEE+DLE"));
+	ASSERT_TRUE(ed.Status().find("long line") != std::string::npos);
+	ASSERT_TRUE(h.Exec(CommandId::MoveRight));
+	ASSERT_EQ(h.Buf().Cury(), (std::size_t) 1);
+	ASSERT_EQ(h.Buf().Curx(), (std::size_t) 25000);
+}
+
+
+// Replace-all against a per-line std::regex_replace model, with overlapping
+// common prefixes and suffixes; undo restores the original each time.
+TEST(Audit_ReplaceAll_TrimmedEditMatchesModel)
+{
+	const char *texts[] = {"aaa\nbab\n", "abc", "\xC3\xA9\xC3\xA9x\xC3\xA9\n\n", "aXa\naa\n", "\n\n"};
+	const std::pair<const char *, const char *> reps[] = {
+		{"a", ""}, {"a", "aa"}, {"b", "a"}, {"^", "a"}, {"X", "aXa"}, {"a$", ""}, {"x", "\xC3\xA9"},
+		{"\xC3\xA9", "e"}, {"aa", "a"}, {"^$", "a"}
+	};
+	for (const char *t: texts) {
+		for (const auto &[find, with]: reps) {
+			TestHarness h;
+			h.Buf().insert_text(0, 0, t);
+			h.Buf().SetCursor(0, 0);
+			std::string expect;
+			const std::regex rx(find);
+			std::string src(t);
+			std::size_t start = 0;
+			while (true) {
+				const std::size_t nl = src.find('\n', start);
+				if (start == src.size() && start > 0)
+					break; // no line after a trailing newline
+				const std::string line = src.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
+				expect += std::regex_replace(line, rx, with);
+				if (nl == std::string::npos)
+					break;
+				expect += '\n';
+				start = nl + 1;
+			}
+			regex_replace_all(h, find, with);
+			if (h.Text() != expect)
+				fprintf(stderr, "text=[%s] find=[%s] with=[%s] got=[%s] want=[%s]\n", t, find, with,
+				        h.Text().c_str(), expect.c_str());
+			ASSERT_EQ(h.Text(), expect);
+			if (expect != t) {
+				ASSERT_TRUE(h.Undo());
+				ASSERT_EQ(h.Text(), std::string(t));
+				ASSERT_TRUE(h.Redo());
+				ASSERT_EQ(h.Text(), expect);
+			}
+		}
+	}
+}
