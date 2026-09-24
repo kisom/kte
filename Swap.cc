@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <cerrno>
 
@@ -147,6 +148,23 @@ encode_path_key(std::string s)
 			out.push_back(ch);
 	}
 	return out;
+}
+
+
+// stat() a file for journal base identity. False if it is not a regular file.
+static bool
+stat_base(const std::string &file, std::uint64_t &size, std::int64_t &mtime_ns)
+{
+	struct stat st{};
+	if (file.empty() || ::stat(file.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
+		return false;
+	size = static_cast<std::uint64_t>(st.st_size);
+#if defined(__APPLE__)
+	mtime_ns = static_cast<std::int64_t>(st.st_mtimespec.tv_sec) * 1000000000LL + st.st_mtimespec.tv_nsec;
+#else
+	mtime_ns = static_cast<std::int64_t>(st.st_mtim.tv_sec) * 1000000000LL + st.st_mtim.tv_nsec;
+#endif
+	return true;
 }
 
 
@@ -329,9 +347,12 @@ SwapManager::Attach(Buffer *buf)
 	if (!buf)
 		return;
 	std::lock_guard<std::mutex> lg(mtx_);
-	JournalCtx &ctx = journals_[buf];
+	const bool fresh = journals_.find(buf) == journals_.end();
+	JournalCtx &ctx  = journals_[buf];
 	if (ctx.path.empty())
 		ctx.path = ComputeSidecarPath(*buf);
+	if (fresh)
+		ctx.has_base = stat_base(buf->Filename(), ctx.base_size, ctx.base_mtime_ns);
 	// Ensure a recorder exists as well.
 	if (recorders_.find(buf) == recorders_.end()) {
 		recorders_[buf] = std::make_unique<BufferRecorder>(*this, *buf);
@@ -406,6 +427,8 @@ SwapManager::ResetJournal(Buffer &buf)
 		ctx.gap                    = false; // the journal restarts from the saved file
 		ctx.gap_chkpt_request_ns   = 0;
 		ctx.gap_unfixable_reported = false;
+		ctx.locked_out             = false;
+		ctx.has_base               = stat_base(buf.Filename(), ctx.base_size, ctx.base_mtime_ns);
 		ctx.last_flush_ns          = 0;
 		ctx.last_fsync_ns          = 0;
 		ctx.last_chkpt_ns          = 0;
@@ -538,6 +561,8 @@ SwapManager::NotifyFilenameChanged(Buffer &buf)
 	ctx.gap                     = false;
 	ctx.gap_chkpt_request_ns    = 0;
 	ctx.gap_unfixable_reported  = false;
+	ctx.locked_out              = false;
+	ctx.has_base                = stat_base(buf.Filename(), ctx.base_size, ctx.base_mtime_ns);
 	ctx.path                    = new_path;
 	ctx.suspended              = false;
 	ctx.header_ok              = false;
@@ -644,12 +669,14 @@ SwapManager::ensure_parent_dir(const std::string &path)
 
 
 bool
-SwapManager::write_header(int fd)
+SwapManager::write_header(int fd, const JournalCtx &ctx)
 {
 	if (fd < 0)
 		return false;
 	// Fixed 64-byte header (v1)
-	// [magic 8][version u32][flags u32][created_time u64][reserved/padding]
+	// [magic 8][version u32][flags u32][created_time u64]
+	// [base_size u64][base_mtime_ns i64] (valid when flags bit 0 is set)
+	// [reserved/padding]
 	std::uint8_t hdr[64];
 	std::memset(hdr, 0, sizeof(hdr));
 	std::memcpy(hdr, MAGIC, 8);
@@ -658,7 +685,12 @@ SwapManager::write_header(int fd)
 	hdr[9]  = static_cast<std::uint8_t>((VERSION >> 8) & 0xFFu);
 	hdr[10] = static_cast<std::uint8_t>((VERSION >> 16) & 0xFFu);
 	hdr[11] = static_cast<std::uint8_t>((VERSION >> 24) & 0xFFu);
-	// flags = 0
+	// flags: bit 0 = base file identity present
+	if (ctx.has_base) {
+		hdr[12] = 1;
+		put_le64(hdr + 24, ctx.base_size);
+		put_le64(hdr + 32, static_cast<std::uint64_t>(ctx.base_mtime_ns));
+	}
 	// created_time (unix seconds; little-endian)
 	std::uint64_t ts = static_cast<std::uint64_t>(std::time(nullptr));
 	put_le64(hdr + 16, ts);
@@ -695,6 +727,15 @@ SwapManager::open_ctx(JournalCtx &ctx, const std::string &path, std::string &err
 		}
 		return false;
 	}
+	// Take ownership of the journal. A lock held by another kte process means
+	// that session is journaling this file: writing here too would interleave
+	// its records with ours.
+	if (::flock(fd, LOCK_EX | LOCK_NB) != 0 && errno == EWOULDBLOCK) {
+		kte::syscall::Close(fd);
+		ctx.locked_out = true;
+		err            = "Swap file is in use by another kte process: " + path;
+		return false;
+	}
 	// Ensure permissions even if file already existed.
 	(void) kte::syscall::Fchmod(fd, 0600);
 	struct stat st{};
@@ -728,13 +769,14 @@ SwapManager::open_ctx(JournalCtx &ctx, const std::string &path, std::string &err
 			}
 			return false;
 		}
+		(void) ::flock(fd, LOCK_EX | LOCK_NB);
 		(void) kte::syscall::Fchmod(fd, 0600);
 		st.st_size = 0;
 	}
 	ctx.fd   = fd;
 	ctx.path = path;
 	if (st.st_size == 0) {
-		ctx.header_ok         = write_header(fd);
+		ctx.header_ok         = write_header(fd, ctx);
 		ctx.approx_size_bytes = ctx.header_ok ? 64 : 0;
 		if (!ctx.header_ok) {
 			err = "Failed to write swap file header: " + path;
@@ -812,7 +854,7 @@ SwapManager::compact_to_checkpoint(JournalCtx &ctx, const std::vector<std::uint8
 		return false;
 	}
 	(void) kte::syscall::Fchmod(tfd, 0600);
-	bool ok = write_header(tfd);
+	bool ok = write_header(tfd, ctx);
 	if (ok)
 		ok = write_full(tfd, chkpt_record.data(), chkpt_record.size());
 	if (ok) {
@@ -1261,6 +1303,9 @@ SwapManager::process_one(const Pending &p)
 			auto it = journals_.find(p.buf);
 			if (it == journals_.end())
 				return;
+			// Another process owns this journal (reported once when found).
+			if (it->second.locked_out)
+				return;
 			// After a gap only a checkpoint can bring the journal back in step.
 			if (it->second.gap && p.type != SwapRecType::CHKPT)
 				return;
@@ -1275,6 +1320,8 @@ SwapManager::process_one(const Pending &p)
 		std::string open_err;
 		if (!open_ctx(*ctxp, path, open_err)) {
 			report_error(open_err, p.buf);
+			if (ctxp->locked_out)
+				return; // not an I/O failure; later records are skipped
 			{
 				std::lock_guard<std::mutex> lg(mtx_);
 				circuit_breaker_.RecordFailure();
@@ -1405,6 +1452,44 @@ parse_u32_le(const std::vector<std::uint8_t> &p, std::size_t &off, std::uint32_t
 	      ((std::uint32_t) p[off + 3] << 24);
 	off += 4;
 	return true;
+}
+
+
+bool
+SwapManager::JournalInUse(const std::string &swap_path)
+{
+	int flags = O_RDONLY;
+#ifdef O_CLOEXEC
+	flags |= O_CLOEXEC;
+#endif
+	const int fd = kte::syscall::Open(swap_path.c_str(), flags);
+	if (fd < 0)
+		return false;
+	const bool in_use = ::flock(fd, LOCK_SH | LOCK_NB) != 0 && errno == EWOULDBLOCK;
+	kte::syscall::Close(fd); // also releases our shared lock, if taken
+	return in_use;
+}
+
+
+bool
+SwapManager::JournalMatchesFile(const std::string &swap_path, const std::string &file_path)
+{
+	std::ifstream in(swap_path, std::ios::binary);
+	std::uint8_t hdr[64];
+	if (!in || !in.read(reinterpret_cast<char *>(hdr), sizeof(hdr)))
+		return true; // unreadable: left to ReplayFile to report
+	if (std::memcmp(hdr, MAGIC, 8) != 0 || (hdr[12] & 1u) == 0)
+		return true; // no base identity recorded
+	std::uint64_t want_size = 0, want_mtime = 0;
+	for (int i = 7; i >= 0; --i) {
+		want_size  = (want_size << 8) | hdr[24 + i];
+		want_mtime = (want_mtime << 8) | hdr[32 + i];
+	}
+	std::uint64_t size = 0;
+	std::int64_t mtime = 0;
+	if (!stat_base(file_path, size, mtime))
+		return false; // the file the journal was based on is gone
+	return size == want_size && static_cast<std::uint64_t>(mtime) == want_mtime;
 }
 
 

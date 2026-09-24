@@ -123,6 +123,16 @@ public:
 	// Returns empty string if filename is empty.
 	static std::string ComputeSwapPathForFilename(const std::string &filename);
 
+	// True if another process currently holds the journal at swap_path (it
+	// is live, not left by a crash): it must be neither replayed nor removed.
+	static bool JournalInUse(const std::string &swap_path);
+
+	// False if the journal records which version of `file_path` it applies
+	// to and the file on disk no longer matches (edited or replaced since
+	// the journal started); replaying it would apply edits to the wrong text.
+	// Journals without that record (older kte) are assumed to match.
+	static bool JournalMatchesFile(const std::string &swap_path, const std::string &file_path);
+
 	// Test-only hook to keep swap path logic centralized.
 	// (Avoid duplicating naming rules in unit tests.)
 #ifdef KTE_TESTS
@@ -204,6 +214,14 @@ private:
 		bool gap{false};
 		std::uint64_t gap_chkpt_request_ns{0};
 		bool gap_unfixable_reported{false}; // gap on a buffer too large to checkpoint
+		// Another kte process holds this journal's lock: do not write to it.
+		bool locked_out{false};
+		// Identity of the file the journal's records apply to (captured when
+		// the journal starts) and written into its header, so recovery can
+		// tell whether the file changed since.
+		bool has_base{false};
+		std::uint64_t base_size{0};
+		std::int64_t base_mtime_ns{0};
 	};
 
 	struct Pending {
@@ -225,7 +243,7 @@ private:
 
 	static std::string SwapDirRoot();
 
-	static bool write_header(int fd);
+	static bool write_header(int fd, const JournalCtx &ctx);
 
 	static bool open_ctx(JournalCtx &ctx, const std::string &path, std::string &err);
 
