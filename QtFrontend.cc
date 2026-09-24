@@ -204,10 +204,21 @@ protected:
 						p.drawText(QPointF(col_x(col), baseline), QString::fromUtf8(d, static_cast<int>(n)));
 					};
 					auto draw_seg = [&](std::size_t s, std::size_t e, const QColor &color) {
-						// Only the visible columns: characters left of coloffs or
-						// right of the viewport are skipped.
+						// Only the visible columns: characters that end at or
+						// before coloffs, or start right of the viewport, are
+						// skipped. A tab or wide character straddling coloffs
+						// starts left of it; it is drawn at its own column and
+						// the clip cuts its left part.
+						const std::size_t first = s;
 						s = static_cast<std::size_t>(std::lower_bound(col_of.begin() + s, col_of.begin() + e,
 						                                              coloffs) - col_of.begin());
+						if (s > first && col_of[s] > coloffs) {
+							// The character before s ends past coloffs: back up to
+							// its first byte.
+							--s;
+							while (s > first && (static_cast<unsigned char>(line[s]) & 0xC0) == 0x80)
+								--s;
+						}
 						e = static_cast<std::size_t>(std::lower_bound(col_of.begin() + s, col_of.begin() + e,
 						                                              coloffs + vis_cols) - col_of.begin());
 						if (e <= s)

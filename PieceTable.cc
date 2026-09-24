@@ -206,13 +206,17 @@ PieceTable::Clear()
 void
 PieceTable::AdoptOriginal(std::string &&bytes)
 {
+	// Allocate before touching the current content: if this throws, the
+	// table is unchanged (everything below is non-throwing).
+	std::vector<Piece> pieces;
+	if (!bytes.empty())
+		pieces.push_back(Piece{Source::Original, 0, bytes.size()});
 	Clear();
 	std::string().swap(add_); // release a previous content's capacity
 	std::string().swap(materialized_);
 	original_   = std::move(bytes);
 	total_size_ = original_.size();
-	if (total_size_ > 0)
-		pieces_.push_back(Piece{Source::Original, 0, total_size_});
+	pieces_.swap(pieces);
 	version_++;
 }
 

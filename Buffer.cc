@@ -617,11 +617,16 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		return false;
 	}
 	(void) kte::syscall::Close(fd);
-	// Build the new content aside and swap it in only once complete: if the
-	// copy runs out of memory, the buffer keeps its old text (clearing first
-	// left an empty buffer that a later save wrote over the file).
-	// The bytes become the piece table's original storage, uncopied.
-	content_.AdoptOriginal(std::move(data)); // not used under PieceTable
+	// The bytes become the piece table's original storage, uncopied. If that
+	// runs out of memory the buffer keeps its old text (clearing first left
+	// an empty buffer that a later save wrote over the file).
+	try {
+		content_.AdoptOriginal(std::move(data));
+	} catch (const std::bad_alloc &) {
+		err = "File too large to load: " + norm;
+		kte::ErrorHandler::Instance().Error("Buffer", err, norm);
+		return false;
+	}
 	filename_         = norm;
 	is_file_backed_   = true;
 	is_virtual_       = false;
