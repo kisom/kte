@@ -929,10 +929,14 @@ Buffer::insert_row(int row, const std::string_view text)
 	rows_cache_dirty_ = true;
 	edited_at_(row);
 	if (swap_rec_) {
-		// Avoid allocation: emit the row text insertion (if any) and the newline insertion.
-		if (!text.empty())
-			swap_rec_->OnInsert(row, 0, text);
-		swap_rec_->OnInsert(row, static_cast<int>(text.size()), std::string_view("\n", 1));
+		// One record: the first of two could trigger a journal checkpoint,
+		// whose snapshot already holds the newline the second then added
+		// again on replay.
+		std::string line;
+		line.reserve(text.size() + 1);
+		line.append(text);
+		line.push_back('\n');
+		swap_rec_->OnInsert(row, 0, line);
 	}
 }
 

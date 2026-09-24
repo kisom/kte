@@ -22,6 +22,8 @@ option(ENABLE_ASAN "Enable AddressSanitizer for builds" OFF)
 if (ENABLE_ASAN)
     message(STATUS "ASan enabled")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
+    # The project is C++; without this only C sources were instrumented.
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
     # Ensure the sanitizer is linked too (especially important on some platforms)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
 endif ()

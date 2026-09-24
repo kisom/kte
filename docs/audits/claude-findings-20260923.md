@@ -430,6 +430,19 @@ before the fix (unless noted).
   indefinitely. The editor loop now retries it each second while idle
   (this was also why SwapReplay_LostRecord_ResyncsWithCheckpoint was
   flaky under load).
+- Undoing C-k C-k (and redoing an inserted row) journaled the row and
+  its newline as two records; a checkpoint triggered by the first
+  already contained the newline, so recovery silently produced an
+  extra blank line.
+- Visual-line yank with the cursor moved out of the selection (C-k a,
+  Enter) left it past the end of a line or the buffer, and text typed
+  there could not be undone. Every command now leaves the cursor
+  inside the buffer (checked in the command dispatcher).
+- ENABLE_ASAN instrumented only C sources, i.e. none of the project;
+  it now applies to C++ as well. (Earlier "ASan clean" results in this
+  audit came from that uninstrumented build; the full suite has since
+  passed under a correctly instrumented ASan build with leak checks,
+  and the stress fuzzers ran with ASan and UBSan.)
 
 **Known limitations (not fixed)**
 - Catastrophic regex backtracking (e.g. `(a*)*b`) can still take very
