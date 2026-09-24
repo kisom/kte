@@ -390,21 +390,17 @@ public:
 
 	void SetDirty(bool d)
 	{
+		// The version tracks content, not the dirty flag: every text mutation
+		// bumps it (see edited_at_), including undo/redo back to the saved state.
 		dirty_ = d;
-		// Bump even when clearing: undo/redo back to the saved state changes the
-		// text and then calls SetDirty(false). Without a bump the highlighter
-		// keeps serving spans for the pre-undo text.
-		MarkContentChanged();
 	}
 
 
-	// Invalidate version-keyed caches (syntax highlighting) after a content change.
+	// Whole-buffer content change (load, reload, replace): bump the version
+	// and drop all cached highlighting.
 	void MarkContentChanged()
 	{
-		++version_;
-		if (highlighter_) {
-			highlighter_->InvalidateFrom(0);
-		}
+		edited_at_(0);
 	}
 
 
@@ -699,6 +695,15 @@ private:
 
 	// Syntax/highlighting state
 	std::uint64_t version_ = 0; // increment on edits
+
+	// Record a content change starting at `row`: bump the version and let the
+	// highlighter drop cached rows from `row` down (rows above are unaffected).
+	void edited_at_(int row)
+	{
+		++version_;
+		if (highlighter_)
+			highlighter_->OnEdit(row < 0 ? 0 : row, version_);
+	}
 	bool syntax_enabled_   = true;
 	bool syntax_user_override_ = false; // true once user explicitly set syntax state via a command
 	std::string filetype_;

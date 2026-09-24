@@ -2,8 +2,8 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
-#include <unordered_map>
 #include <vector>
 #include <mutex>
 
@@ -29,6 +29,12 @@ public:
 	// Invalidate cached lines from row (inclusive)
 	void InvalidateFrom(int row);
 
+	// The buffer changed at `row` and is now at `buf_version`. Highlighting
+	// of a row depends only on the rows above it, so rows before `row` stay
+	// cached. A version change that arrives without OnEdit (a path that
+	// changed content without reporting it) still clears the whole cache.
+	void OnEdit(int row, std::uint64_t buf_version);
+
 
 	bool HasHighlighter() const
 	{
@@ -46,20 +52,21 @@ public:
 
 private:
 	std::unique_ptr<LanguageHighlighter> hl_;
-	// Simple cache by row index (mutable to allow caching in const GetLine)
-	mutable std::unordered_map<int, LineHighlight> cache_;
+	// Cached spans by row, valid for version_ (ordered so InvalidateFrom can
+	// drop a tail cheaply).
+	mutable std::map<int, LineHighlight> cache_;
 
-	// For stateful highlighters, remember per-line state (state after finishing that row)
-	struct StateEntry {
-		std::uint64_t version{0};
-		// Using the interface type; forward-declare via header
-		StatefulHighlighter::LineState state;
-	};
+	// For stateful highlighters: states_[r] is the state after row r, for
+	// every row 0..states_.size()-1 (always a contiguous prefix).
+	mutable std::vector<StatefulHighlighter::LineState> states_;
 
-	mutable std::unordered_map<int, StateEntry> state_cache_;
+	// Buffer version the caches describe.
+	mutable std::uint64_t version_{0};
+	mutable bool have_version_{false};
 
-	// Track best known contiguous state row for a given version to avoid O(n) scans
-	mutable std::unordered_map<std::uint64_t, int> state_last_contig_;
+	void clear_caches_locked() const;
+
+	void invalidate_from_locked(int row) const;
 
 	// Guards the caches above.
 	mutable std::mutex mtx_;
