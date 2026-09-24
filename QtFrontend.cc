@@ -310,30 +310,8 @@ protected:
 					    HasHighlighter()) {
 						const kte::LineHighlight &lh = buf->Highlighter()->GetLine(
 							*buf, static_cast<int>(i), buf->Version());
-						struct SSpan {
-							std::size_t s;
-							std::size_t e;
-							kte::TokenKind k;
-						};
-						std::vector<SSpan> spans;
-						spans.reserve(lh.spans.size());
-						const std::size_t line_len = line.size();
-						for (const auto &sp: lh.spans) {
-							int s_raw = sp.col_start;
-							int e_raw = sp.col_end;
-							if (e_raw < s_raw)
-								std::swap(e_raw, s_raw);
-							std::size_t s = static_cast<std::size_t>(std::max(
-								0, std::min(s_raw, (int) line_len)));
-							std::size_t e = static_cast<std::size_t>(std::max(
-								(int) s, std::min(e_raw, (int) line_len)));
-							if (s < e)
-								spans.push_back({s, e, sp.kind});
-						}
-						std::sort(spans.begin(), spans.end(),
-						          [](const SSpan &a, const SSpan &b) {
-							          return a.s < b.s;
-						          });
+						std::vector<kte::HighlightSpan> spans; // clamped, ordered, whole characters
+						kte::SanitizeSpans(line, lh.spans, spans);
 
 						auto colorFor = [](kte::TokenKind k) -> QColor {
 							// GUITheme provides colors via ImGui vector; avoid direct dependency types
@@ -344,10 +322,10 @@ protected:
 
 						std::size_t pos = 0;
 						for (const auto &sp: spans) {
-							const std::size_t s = std::max(sp.s, pos);
+							const std::size_t s = std::max(static_cast<std::size_t>(sp.col_start), pos);
 							draw_seg(pos, s, fg);
-							draw_seg(s, sp.e, colorFor(sp.k));
-							pos = std::max(pos, sp.e);
+							draw_seg(s, static_cast<std::size_t>(sp.col_end), colorFor(sp.kind));
+							pos = std::max(pos, static_cast<std::size_t>(sp.col_end));
 						}
 						draw_seg(pos, line.size(), fg);
 					} else {
