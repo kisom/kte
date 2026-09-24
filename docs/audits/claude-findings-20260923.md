@@ -328,7 +328,7 @@ Updated as fixes land on `claude/funny-fermat-gj2vm5`.
 | P1 | fixed: `ensure_cursor_visible` and the terminal/ImGui renderers no longer call `Rows()` |
 | P2 | fixed: line index updated in place on insert/delete (14.7 ms -> 0.28 ms per keystroke on a 38 MB buffer) |
 | P3 | fixed: highlighting invalidated from the edited row (46 ms -> 0.14 ms per keystroke near the end of a 100k-line C++ file) |
-| P4 | replace-all and delete-region fixed; indent/unindent loops unchanged |
+| P4 | fixed: replace-all, delete-region, indent/unindent and visual-line edits each apply as one edit |
 | P5 | fixed: no throwaway checkpoint on filename change |
 | P6 | open (test-only code) |
 
@@ -490,6 +490,14 @@ before the fix (unless noted).
   unindent and visual-line insert/delete/backspace/newline/yank made one
   piece-table edit per row (1.1 s per keystroke with 5,000 rows
   selected; now 4 ms, as one edit).
+
+**Ninth round (review of the eighth round's changes)**
+- No serious findings. Highlighting (cached vs fresh), search (against
+  the old per-line code, 3,200 random buffers) and the row-range edits
+  (differential against the previous commit, ~88k random steps: text
+  identical after every step; undo-all and journal replay exact) all
+  agreed. Redo-all after heavy branching can end on an older branch of
+  the undo tree (a state that did exist), as before.
 
 **Known limitations (not fixed)**
 - Catastrophic regex backtracking (e.g. `(a*)*b`) can still take very
