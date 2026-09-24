@@ -53,6 +53,15 @@ map_key_to_command(const int ch,
 	// (e.g. U+0107 'ć' equals KEY_BACKSPACE's value), which would wrongly
 	// swallow it as a special key instead of inserting it.
 	// These keys exit k-prefix mode if active (user pressed C-k then a special key).
+	//
+	// ESC marks the next key as Meta. Consume that flag on every other key up
+	// front: keys handled before the Meta lookup below (arrows, mouse, Enter,
+	// control chords) used to leave it set, turning a later plain key into a
+	// Meta command (ESC, Left, d => delete word).
+	const bool meta = esc_meta && ch != 27;
+	if (ch != 27)
+		esc_meta = false;
+
 	switch (is_keycode ? ch : -1) {
 	case KEY_ENTER:
 		// Some terminals send KEY_ENTER distinct from '\n'/'\r'
@@ -184,6 +193,37 @@ map_key_to_command(const int ch,
 		return true;
 	}
 
+	// Meta (ESC-prefixed) keys: backspace, Enter and printable keys use the
+	// ESC keymap. Checked before control chords so ESC ^H (meta-backspace) is
+	// not taken as C-h, and before Enter so ESC Enter reaches SmartNewline.
+	// Other control chords after ESC act as themselves.
+	const bool is_backspace = (is_keycode && ch == KEY_BACKSPACE) || ch == 127 || ch == CTRL('H');
+	const bool meta_key = meta && (is_backspace || (!is_keycode && (ch == '\n' || ch == '\r' || ch >= 0x20)));
+	if (meta_key) {
+		k_prefix       = false;
+		k_ctrl_pending = false;
+		int ascii_key  = ch;
+		if (is_backspace) {
+			ascii_key = KEY_BACKSPACE; // normalized value for lookup
+		} else if (ch == ',') {
+			// Some terminals emit ',' when Shift state is lost after ESC; treat as '<'
+			ascii_key = '<';
+		} else if (ch == '.') {
+			// Likewise, map '.' to '>'
+			ascii_key = '>';
+		} else if (ascii_key >= 'A' && ascii_key <= 'Z') {
+			ascii_key = ascii_key - 'A' + 'a';
+		}
+		CommandId id;
+		if (KLookupEscCommand(ascii_key, id)) {
+			out = {true, id, "", 0};
+			return true;
+		}
+		// Unhandled ESC sequence: exit escape mode and show status
+		out = {true, CommandId::UnknownEscCommand, "", 0};
+		return true;
+	}
+
 	// Control keys
 	if (ch == CTRL('K')) {
 		// C-k prefix
@@ -278,32 +318,6 @@ map_key_to_command(const int ch,
 		out            = {true, CommandId::Newline, "", 0};
 		return true;
 	}
-	// If previous key was ESC, interpret as meta and use ESC keymap
-	if (esc_meta) {
-		esc_meta      = false;
-		int ascii_key = ch;
-		// Handle ESC + BACKSPACE (meta-backspace, Alt-Backspace)
-		if ((is_keycode && ch == KEY_BACKSPACE) || ch == 127 || ch == CTRL('H')) {
-			ascii_key = KEY_BACKSPACE; // normalized value for lookup
-		} else if (ch == ',') {
-			// Some terminals emit ',' when Shift state is lost after ESC; treat as '<'
-			ascii_key = '<';
-		} else if (ch == '.') {
-			// Likewise, map '.' to '>'
-			ascii_key = '>';
-		} else if (ascii_key >= 'A' && ascii_key <= 'Z') {
-			ascii_key = ascii_key - 'A' + 'a';
-		}
-		CommandId id;
-		if (KLookupEscCommand(ascii_key, id)) {
-			out = {true, id, "", 0};
-			return true;
-		}
-		// Unhandled ESC sequence: exit escape mode and show status
-		out = {true, CommandId::UnknownEscCommand, "", 0};
-		return true;
-	}
-
 	// Backspace in ncurses can be KEY_BACKSPACE or 127
 	if ((is_keycode && ch == KEY_BACKSPACE) || ch == 127 || ch == CTRL('H')) {
 		k_prefix       = false;
