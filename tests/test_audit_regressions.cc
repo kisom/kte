@@ -1337,3 +1337,60 @@ TEST(Audit_ReplaceAll_TrimmedEditMatchesModel)
 		}
 	}
 }
+
+
+// insert_row (undo of C-k C-k) sent its text and newline as two journal
+// records; a checkpoint triggered by the first (here the 1 MiB threshold)
+// already held the newline, which the second then added again on replay.
+TEST(Audit_Swap_InsertRowIsOneRecord)
+{
+	TempDir d("insert_row_swap");
+	const std::string path = (d.path / "big.txt").string();
+	{
+		std::ofstream o(path, std::ios::binary | std::ios::trunc);
+		o << std::string(1100000, 'A') << "\nB\n";
+	}
+	std::remove(kte::SwapManager::ComputeSwapPathForFilename(path).c_str());
+	TestHarness h;
+	std::string err;
+	ASSERT_TRUE(h.EditorRef().OpenFile(path, err));
+	Buffer &b = h.Buf();
+	b.SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::KillLine));
+	ASSERT_TRUE(h.Exec(CommandId::Undo));
+	const std::string text = b.BytesForTests();
+	h.EditorRef().Swap()->Flush(&b);
+	const std::string copy = (d.path / "crash.swp").string();
+	{
+		std::ofstream o(copy, std::ios::binary | std::ios::trunc);
+		o << slurp(kte::SwapManager::ComputeSwapPathForTests(b));
+	}
+	Buffer b2;
+	ASSERT_TRUE(b2.OpenFromFile(path, err));
+	ASSERT_TRUE(kte::SwapManager::ReplayFile(b2, copy, err));
+	ASSERT_TRUE(b2.BytesForTests() == text);
+	b.SetDirty(false);
+}
+
+
+// Visual-line yank with the cursor moved outside the selection (C-k a)
+// left it past the end of an empty row; text typed there could not be
+// undone. Every command now leaves the cursor inside the buffer.
+TEST(Audit_VisualYank_CursorStaysInBuffer)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "abc def\n");
+	b.SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::DeleteWordNext));
+	ASSERT_TRUE(h.Exec(CommandId::VisualLineModeToggle));
+	ASSERT_TRUE(h.Exec(CommandId::MarkAllAndJumpEnd));
+	ASSERT_TRUE(h.Exec(CommandId::Yank));
+	ASSERT_TRUE(b.Curx() <= b.GetLineString(b.Cury()).size());
+	ASSERT_TRUE(b.Cury() < b.Nrows());
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "Z"));
+	ASSERT_TRUE(h.Exec(CommandId::Backspace));
+	for (int i = 0; i < 20; ++i)
+		(void) h.Exec(CommandId::Undo);
+	ASSERT_EQ(h.Text(), std::string("abc def\n"));
+}

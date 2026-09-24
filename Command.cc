@@ -4103,8 +4103,12 @@ cmd_yank(CommandContext &ctx)
 		}
 		const std::size_t delta_y = nl_count;
 		const std::size_t delta_x = (last_nl == std::string::npos) ? ins.size() : (ins.size() - last_nl - 1);
-		const std::size_t above   = (y0 >= sy) ? (y0 - sy) : 0;
-		buf->SetCursor(delta_x, y0 + delta_y + above * nl_count);
+		// The cursor may have left the selection (C-k a, Enter, ...) without
+		// updating it; place it relative to the nearest selected line.
+		const std::size_t yc    = std::clamp(y0, sy, ey);
+		const std::size_t above = yc - sy;
+		buf->SetCursor(delta_x, yc + delta_y + above * nl_count);
+		clamp_cursor_to_buffer(*buf);
 	} else {
 		if (u)
 			u->Begin(UndoType::Paste);
@@ -5765,6 +5769,22 @@ run_handler(Editor &ed, const Command &cmd, CommandContext &ctx)
 			if (UndoSystem *u = b->Undo())
 				u->AbortGroups();
 	};
+	// Whatever a command did to the cursor (remembered positions, visual-line
+	// arithmetic, row counts from before an edit), never leave it past a line
+	// or the buffer: the next edit would be applied at the clamped position
+	// but recorded for undo at the stale one, and could not be undone.
+	struct ClampOnExit {
+		Editor &ed;
+
+
+		~ClampOnExit()
+		{
+			if (Buffer *b = ed.CurrentBuffer())
+				clamp_cursor_to_buffer(*b);
+		}
+	} clamp_on_exit{ed};
+	if (Buffer *b = ed.CurrentBuffer())
+		clamp_cursor_to_buffer(*b);
 	try {
 		return cmd.handler(ctx);
 	} catch (const std::exception &e) {
