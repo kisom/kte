@@ -342,6 +342,20 @@ is_mutating_command(CommandId id)
 }
 
 
+// True if `path` names the file `buf` is backed by (same inode).
+static bool
+is_buffers_own_file(const Buffer &buf, const std::string &path)
+{
+	if (!buf.IsFileBacked() || buf.Filename().empty())
+		return false;
+	try {
+		return std::filesystem::equivalent(path, buf.Filename());
+	} catch (...) {
+		return false;
+	}
+}
+
+
 // Commands that may run while a prompt is open: prompt editing and
 // navigation (their handlers check PromptActive), cancel, and view-only
 // commands that do not touch buffer contents or buffer selection.
@@ -907,6 +921,8 @@ cmd_save(CommandContext &ctx)
 				if (auto *sm = ctx.editor.Swap())
 					sm->ResetJournal(*buf);
 				ctx.editor.SetStatus("Saved " + buf->Filename());
+				if (auto *u = buf->Undo())
+					u->mark_saved();
 				return true;
 			}
 		}
@@ -980,6 +996,13 @@ cmd_save_as(CommandContext &ctx)
 		ctx.editor.SetStatus("save-as requires a filename");
 		return false;
 	}
+	// Ask before replacing an existing file other than the buffer's own.
+	if (std::filesystem::exists(ctx.arg) && !is_buffers_own_file(*buf, ctx.arg)) {
+		ctx.editor.StartPrompt(Editor::PromptKind::Confirm, "Overwrite", "");
+		ctx.editor.SetPendingOverwritePath(ctx.arg);
+		ctx.editor.SetStatus(std::string("Overwrite existing file '") + ctx.arg + "'? (y/N)");
+		return true;
+	}
 	std::string err;
 	if (!buf->SaveAs(ctx.arg, err)) {
 		ctx.editor.SetStatus(err);
@@ -1027,6 +1050,12 @@ cmd_save_and_quit(CommandContext &ctx)
 	Buffer *buf = ctx.editor.CurrentBuffer();
 	if (buf && buf->Dirty()) {
 		std::string err;
+		// Same guard as save: do not silently overwrite a file that changed
+		// on disk since it was loaded.
+		if (buf->IsFileBacked() && buf->ExternallyModifiedOnDisk()) {
+			ctx.editor.SetStatus("File changed on disk; save with C-k s to confirm overwriting, then quit");
+			return false;
+		}
 		if (buf->IsFileBacked()) {
 			if (buf->Save(err)) {
 				buf->SetDirty(false);
@@ -2903,9 +2932,9 @@ cmd_newline(CommandContext &ctx)
 						return in;
 					};
 					value = expand_user_path(value);
-					// If this is a first-time save (unnamed/non-file-backed) and the
-					// target exists, ask for confirmation before overwriting.
-					if (!buf->IsFileBacked() && std::filesystem::exists(value)) {
+					// Ask before overwriting any existing file other than the
+					// buffer's own (it used to ask only for unnamed buffers).
+					if (std::filesystem::exists(value) && !is_buffers_own_file(*buf, value)) {
 						ctx.editor.StartPrompt(Editor::PromptKind::Confirm, "Overwrite", "");
 						ctx.editor.SetPendingOverwritePath(value);
 						ctx.editor.SetStatus(

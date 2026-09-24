@@ -14,6 +14,10 @@
 #include "syntax/LanguageHighlighter.h"
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <random>
 #include <vector>
 #include <clocale>
@@ -715,4 +719,102 @@ TEST(Audit_Regex_LongLine_NoStackOverflow)
 	regex_replace_all(h, "a+", "b");
 	ASSERT_EQ(h.Line(0), std::string("b"));
 	ASSERT_EQ(h.Line(1), std::string("short"));
+}
+
+
+namespace {
+struct TempDir {
+	std::filesystem::path path;
+
+
+	explicit TempDir(const char *tag)
+	{
+		path = std::filesystem::temp_directory_path() /
+		       (std::string("kte_ut_") + tag + "_" + std::to_string((int) ::getpid()));
+		std::filesystem::remove_all(path);
+		std::filesystem::create_directories(path);
+	}
+
+
+	~TempDir()
+	{
+		std::filesystem::remove_all(path);
+	}
+};
+
+
+std::string
+slurp(const std::filesystem::path &p)
+{
+	std::ifstream in(p, std::ios::binary);
+	return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+} // namespace
+
+
+// New files honour the umask (mkstemp's 0600 used to stick).
+TEST(Audit_Save_NewFileHonoursUmask)
+{
+	TempDir d("save_umask");
+	const mode_t old = ::umask(022);
+	Buffer b;
+	b.insert_text(0, 0, "x\n");
+	std::string err;
+	const bool ok = b.SaveAs((d.path / "new.txt").string(), err);
+	::umask(old);
+	ASSERT_TRUE(ok);
+	struct stat st{};
+	ASSERT_EQ(::stat((d.path / "new.txt").c_str(), &st), 0);
+	ASSERT_EQ(st.st_mode & 0777, (mode_t) 0644);
+}
+
+
+// Save-as onto a symlink writes the target and keeps the link.
+TEST(Audit_Save_ThroughSymlinkKeepsLink)
+{
+	TempDir d("save_symlink");
+	std::ofstream(d.path / "target.txt") << "old\n";
+	std::filesystem::create_symlink(d.path / "target.txt", d.path / "link.txt");
+	Buffer b;
+	b.insert_text(0, 0, "new\n");
+	std::string err;
+	ASSERT_TRUE(b.SaveAs((d.path / "link.txt").string(), err));
+	ASSERT_TRUE(std::filesystem::is_symlink(d.path / "link.txt"));
+	ASSERT_EQ(slurp(d.path / "target.txt"), std::string("new\n"));
+}
+
+
+// A file with several hard links is rewritten in place, so every name sees
+// the new content.
+TEST(Audit_Save_KeepsHardLinks)
+{
+	TempDir d("save_hardlink");
+	std::ofstream(d.path / "a.txt") << "old\n";
+	std::filesystem::create_hard_link(d.path / "a.txt", d.path / "b.txt");
+	Buffer b;
+	std::string err;
+	ASSERT_TRUE(b.OpenFromFile((d.path / "a.txt").string(), err));
+	b.insert_text(0, 0, "new ");
+	ASSERT_TRUE(b.Save(err));
+	ASSERT_EQ(slurp(d.path / "b.txt"), std::string("new old\n"));
+	ASSERT_EQ(std::filesystem::hard_link_count(d.path / "a.txt"), (std::uintmax_t) 2);
+}
+
+
+// Save-as from a file-backed buffer onto another existing file asks first.
+TEST(Audit_SaveAs_ExistingFile_AsksFirst)
+{
+	TempDir d("saveas_confirm");
+	std::ofstream(d.path / "mine.txt") << "mine\n";
+	std::ofstream(d.path / "other.txt") << "precious\n";
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	std::string err;
+	ASSERT_TRUE(ed.OpenFile((d.path / "mine.txt").string(), err));
+	ASSERT_TRUE(Execute(ed, "save-as", (d.path / "other.txt").string()));
+	ASSERT_TRUE(ed.PromptActive());
+	ASSERT_EQ(slurp(d.path / "other.txt"), std::string("precious\n"));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "n"));
+	ASSERT_TRUE(h.Exec(CommandId::Newline));
+	ASSERT_EQ(slurp(d.path / "other.txt"), std::string("precious\n"));
 }
