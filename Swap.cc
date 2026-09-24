@@ -1173,6 +1173,27 @@ SwapManager::maybe_request_checkpoint(Buffer &buf, const std::size_t approx_edit
 
 
 void
+SwapManager::RetryGapCheckpoints()
+{
+	std::vector<Buffer *> due;
+	{
+		std::lock_guard<std::mutex> lg(mtx_);
+		const std::uint64_t now = now_ns();
+		for (auto &[b, ctx]: journals_) {
+			if (!b || !ctx.gap || ctx.suspended || ctx.locked_out || ctx.gap_unfixable_reported)
+				continue;
+			if (now - ctx.gap_chkpt_request_ns < kGapCheckpointIntervalNs)
+				continue;
+			ctx.gap_chkpt_request_ns = now;
+			due.push_back(b);
+		}
+	}
+	for (Buffer *b: due)
+		RecordCheckpoint(*b, false);
+}
+
+
+void
 SwapManager::RecordCheckpoint(Buffer &buf, const bool urgent_flush)
 {
 	{

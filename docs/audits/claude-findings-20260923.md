@@ -424,6 +424,12 @@ before the fix (unless noted).
   the skip now applies only to search-as-you-type (at 2,000 bytes, where
   the worst case is well under a second), says so in the status line,
   and moving to the next/previous match searches every line.
+- After a lost journal record, the recovery checkpoint was requested
+  only by later edits, at most once a second; if the first attempt
+  failed and the user then stopped typing, the journal stayed behind
+  indefinitely. The editor loop now retries it each second while idle
+  (this was also why SwapReplay_LostRecord_ResyncsWithCheckpoint was
+  flaky under load).
 
 **Known limitations (not fixed)**
 - Catastrophic regex backtracking (e.g. `(a*)*b`) can still take very
