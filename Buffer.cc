@@ -167,7 +167,12 @@ write_in_place(const std::string &path, const ByteChunks &data, std::string &err
 		err = std::string("Failed to open file for writing: ") + std::strerror(errno);
 		return false;
 	}
-	bool ok = write_all_fd(fd, data, err);
+	struct stat before{};
+	const bool have_mode = ::fstat(fd, &before) == 0;
+	bool ok              = write_all_fd(fd, data, err);
+	// Without privilege, writing clears setuid/setgid; put them back.
+	if (ok && have_mode)
+		(void) kte::syscall::Fchmod(fd, before.st_mode & 07777);
 	if (ok && kte::syscall::Fsync(fd) != 0) {
 		err = std::string("fsync failed: ") + std::strerror(errno);
 		ok  = false;
@@ -303,20 +308,18 @@ atomic_write_file(const std::string &path_in, const ByteChunks &data, std::strin
 	}
 	std::string tmp_path(buf.data());
 
-	if (dst_exists) {
-		// Carry over ownership (best effort; needs privilege to give a file
-		// away) and then permissions: chown clears setuid/setgid, so the
-		// mode has to be applied after it.
+	bool ok = write_all_fd(fd, data, err);
+	// Ownership and mode go on after the data: without privilege, both
+	// chown and write clear setuid/setgid, so the mode is applied last.
+	if (ok && dst_exists) {
 		if (::fchown(fd, dst_st.st_uid, dst_st.st_gid) != 0) {
 			// Expected without privilege when the owner differs; keep ours.
 		}
 		(void) kte::syscall::Fchmod(fd, dst_st.st_mode & 07777);
-	} else {
+	} else if (ok) {
 		// mkstemp creates 0600; a new file gets the usual 0666 & ~umask.
 		(void) kte::syscall::Fchmod(fd, 0666 & ~g_process_umask);
 	}
-
-	bool ok = write_all_fd(fd, data, err);
 	// Never retry fsync: after a writeback error Linux may mark the pages
 	// clean, so a second fsync can succeed although the data was lost, and
 	// the rename below would then replace a good file with a bad one.

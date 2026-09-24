@@ -985,21 +985,50 @@ TEST(Audit_SaveAs_FileOpenInOtherBuffer_Refused)
 }
 
 
-// Saving keeps setuid/setgid bits (chown after chmod used to clear them).
+// Saving keeps setuid/setgid bits (chown after chmod used to clear them,
+// and so does writing the data after chmod unless running as root). The
+// expected mode is read back after chmod: BSD drops setgid silently when
+// the file's group, inherited from the directory, is not one of ours.
 TEST(Audit_Save_KeepsSpecialModeBits)
 {
 	TempDir d("save_setuid");
 	const auto f = d.path / "s.sh";
 	std::ofstream(f) << "echo\n";
 	ASSERT_EQ(::chmod(f.c_str(), 06755), 0);
+	struct stat st{};
+	ASSERT_EQ(::stat(f.c_str(), &st), 0);
+	const mode_t want = st.st_mode & 07777;
+	ASSERT_TRUE((want & S_ISUID) != 0);
 	Buffer b;
 	std::string err;
 	ASSERT_TRUE(b.OpenFromFile(f.string(), err));
 	b.insert_text(0, 0, "#");
 	ASSERT_TRUE(b.Save(err));
+	ASSERT_EQ(::stat(f.c_str(), &st), 0);
+	ASSERT_EQ(st.st_mode & 07777, want);
+}
+
+
+// The same through the in-place write used for files with hard links.
+TEST(Audit_Save_HardLink_KeepsSpecialModeBits)
+{
+	TempDir d("save_setuid_link");
+	const auto f = d.path / "s.sh";
+	std::ofstream(f) << "echo\n";
+	ASSERT_EQ(::link(f.c_str(), (d.path / "t.sh").c_str()), 0);
+	ASSERT_EQ(::chmod(f.c_str(), 04755), 0);
 	struct stat st{};
 	ASSERT_EQ(::stat(f.c_str(), &st), 0);
-	ASSERT_EQ(st.st_mode & 07777, (mode_t) 06755);
+	const mode_t want = st.st_mode & 07777;
+	ASSERT_TRUE((want & S_ISUID) != 0);
+	Buffer b;
+	std::string err;
+	ASSERT_TRUE(b.OpenFromFile(f.string(), err));
+	b.insert_text(0, 0, "#");
+	ASSERT_TRUE(b.Save(err));
+	ASSERT_EQ(::stat(f.c_str(), &st), 0);
+	ASSERT_EQ(st.st_nlink, (nlink_t) 2);
+	ASSERT_EQ(st.st_mode & 07777, want);
 }
 
 
