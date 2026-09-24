@@ -493,6 +493,10 @@ Editor::ProcessPendingOpens()
 	// runs from every frontend's loop, outside command dispatch: report the
 	// failure instead of letting it end the editor.
 	try {
+		// Also the once-per-frame hook for the journal: retry the
+		// checkpoint of a journal that lost a record.
+		if (kte::SwapManager *sm = Swap())
+			sm->RetryGapCheckpoints();
 		return process_pending_opens_();
 	} catch (const std::exception &e) {
 		kte::ErrorHandler::Instance().Error("Editor", std::string("open failed: ") + e.what(), "");

@@ -6,7 +6,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
+#include <chrono>
 #include <filesystem>
+#include <thread>
 #include <string>
 #include <vector>
 
@@ -312,6 +314,12 @@ TEST(SwapReplay_LostRecord_ResyncsWithCheckpoint)
 	b.insert_text(0, 2, std::string("C")); // dropped; triggers a resync checkpoint
 	sm.Flush(&b);
 	b.insert_text(0, 3, std::string("D"));
+	sm.Flush(&b);
+	// If the writer handled B before its edit asked for a checkpoint, that
+	// checkpoint failed too and the next attempt is rate-limited; the
+	// per-frame retry then brings the journal back in step without an edit.
+	std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+	sm.RetryGapCheckpoints();
 	sm.Flush(&b);
 	const std::string expected = buffer_bytes_via_views(b);
 	ASSERT_EQ(expected, std::string("ABCDbase\n"));

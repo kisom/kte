@@ -80,6 +80,13 @@ public:
 	// This is best-effort and asynchronous; call Flush() if you need it written before continuing.
 	void Checkpoint(Buffer *buf = nullptr);
 
+	// Main thread, called once per frame: request the recovery checkpoint of
+	// any journal left with a gap (a lost record) whose last attempt is more
+	// than the retry interval ago. Otherwise that checkpoint is only
+	// requested by the next edit, and a journal that lost a record just
+	// before the user stopped typing would stay behind indefinitely.
+	void RetryGapCheckpoints();
+
 
 	void SetConfig(const SwapConfig &cfg)
 	{
