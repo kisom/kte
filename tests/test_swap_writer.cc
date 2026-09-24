@@ -125,8 +125,8 @@ TEST(SwapWriter_Header_Records_And_CRC)
 		ASSERT_EQ(bytes[(std::size_t) i], magic[i]);
 	ASSERT_EQ(read_le32(bytes.data() + 8), (std::uint32_t) 1);
 	// flags bit 0: the base file's identity (size, mtime) is recorded, since
-	// the buffer is file-backed.
-	ASSERT_EQ(read_le32(bytes.data() + 12), (std::uint32_t) 1);
+	// the buffer is file-backed; bit 1: its content CRC-32 too.
+	ASSERT_EQ(read_le32(bytes.data() + 12), (std::uint32_t) 3);
 	ASSERT_EQ(read_le64(bytes.data() + 24), (std::uint64_t) std::filesystem::file_size(b.Filename()));
 	ASSERT_TRUE(read_le64(bytes.data() + 16) != 0);
 

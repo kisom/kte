@@ -136,6 +136,16 @@ best_effort_fsync_dir(const std::string &path)
 }
 
 
+// The process umask, read once during static initialisation (before any
+// thread exists): reading it later needs umask(0) + umask(old), which briefly
+// changes it for the swap writer thread creating files concurrently.
+static const mode_t g_process_umask = [] {
+	const mode_t m = ::umask(0);
+	(void) ::umask(m);
+	return m;
+}();
+
+
 // Rewrite `path` in place (truncate, write, fsync). Used for files with
 // several hard links, which a temp-file-and-rename save would split.
 static bool
@@ -156,6 +166,31 @@ write_in_place(const std::string &path, const char *data, std::size_t len, std::
 		ok  = false;
 	}
 	(void) kte::syscall::Close(fd);
+	return ok;
+}
+
+
+// Create `path` (which must not exist) with the content, fsynced.
+static bool
+write_new_file(const std::string &path, const char *data, std::size_t len, std::string &err)
+{
+	int flags = O_WRONLY | O_CREAT | O_EXCL;
+#ifdef O_CLOEXEC
+	flags |= O_CLOEXEC;
+#endif
+	const int fd = kte::syscall::Open(path.c_str(), flags, 0600);
+	if (fd < 0) {
+		err = "Failed to create " + path + ": " + std::strerror(errno);
+		return false;
+	}
+	bool ok = write_all_fd(fd, data, len, err);
+	if (ok && kte::syscall::Fsync(fd) != 0) {
+		err = std::string("fsync failed: ") + std::strerror(errno);
+		ok  = false;
+	}
+	(void) kte::syscall::Close(fd);
+	if (!ok)
+		(void) ::unlink(path.c_str());
 	return ok;
 }
 
@@ -183,8 +218,20 @@ atomic_write_file(const std::string &path_in, const char *data, std::size_t len,
 
 	// A file with other hard links must be rewritten in place, or those
 	// names would keep the old content.
-	if (dst_exists && S_ISREG(dst_st.st_mode) && dst_st.st_nlink > 1)
-		return write_in_place(path, data, len, err);
+	if (dst_exists && S_ISREG(dst_st.st_mode) && dst_st.st_nlink > 1) {
+		// Truncating in place risks the only copy if the write then fails
+		// (ENOSPC, EIO, crash), so first write and sync a copy beside it.
+		const std::string copy = path + ".kte-save";
+		if (!write_new_file(copy, data, len, err))
+			return false;
+		if (!write_in_place(path, data, len, err)) {
+			err += " (the new content is in " + copy + ")";
+			return false;
+		}
+		(void) ::unlink(copy.c_str());
+		best_effort_fsync_dir(path);
+		return true;
+	}
 
 	// Create a temp file in the same directory so rename() is atomic.
 	std::filesystem::path p(path);
@@ -216,17 +263,16 @@ atomic_write_file(const std::string &path_in, const char *data, std::size_t len,
 	std::string tmp_path(buf.data());
 
 	if (dst_exists) {
-		// Carry over permissions and (best effort; needs privilege to give a
-		// file away) ownership of the file being replaced.
-		(void) kte::syscall::Fchmod(fd, dst_st.st_mode & 07777);
+		// Carry over ownership (best effort; needs privilege to give a file
+		// away) and then permissions: chown clears setuid/setgid, so the
+		// mode has to be applied after it.
 		if (::fchown(fd, dst_st.st_uid, dst_st.st_gid) != 0) {
 			// Expected without privilege when the owner differs; keep ours.
 		}
+		(void) kte::syscall::Fchmod(fd, dst_st.st_mode & 07777);
 	} else {
 		// mkstemp creates 0600; a new file gets the usual 0666 & ~umask.
-		const mode_t mask = ::umask(0);
-		(void) ::umask(mask);
-		(void) kte::syscall::Fchmod(fd, 0666 & ~mask);
+		(void) kte::syscall::Fchmod(fd, 0666 & ~g_process_umask);
 	}
 
 	bool ok = write_all_fd(fd, data, len, err);

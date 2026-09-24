@@ -7,6 +7,7 @@
 
 #include "tests/TestHarness.h" // for ktet::InstallDefaultCommandsOnce
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -652,4 +653,29 @@ TEST(SwapRecoveryPrompt_EmptyAnswer_KeepsSwap)
 	ASSERT_EQ(ed.PendingRecoveryPrompt(), Editor::RecoveryPromptKind::None);
 	ASSERT_TRUE(!ed.PromptActive());
 	ASSERT_TRUE(std::filesystem::exists(swp));
+}
+
+
+// A timestamp-only change (touch, git checkout back and forth) does not make
+// a journal stale: its base content is unchanged.
+TEST(SwapRecoveryPrompt_TouchedFile_StillRecoverable)
+{
+	ktet::InstallDefaultCommandsOnce();
+	XdgSandbox sb("touched");
+	const std::string file = (sb.root / "work" / "t2.txt").string();
+	write_file_bytes(file, "base\n");
+	std::string expected;
+	(void) make_journal(file, [](Buffer &b) {
+		b.insert_text(0, 0, std::string("A"));
+	}, expected);
+	std::filesystem::last_write_time(file, std::filesystem::last_write_time(file) + std::chrono::hours(1));
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+	ed.AddBuffer(Buffer());
+	ed.RequestOpenFile(file);
+	(void) ed.ProcessPendingOpens();
+	ASSERT_EQ(ed.PendingRecoveryPrompt(), Editor::RecoveryPromptKind::RecoverOrDiscard);
+	answer(ed, "y");
+	ASSERT_EQ(buffer_bytes_via_views(*ed.CurrentBuffer()), expected);
 }

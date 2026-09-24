@@ -974,3 +974,21 @@ TEST(Audit_SaveAs_FileOpenInOtherBuffer_Refused)
 	ASSERT_EQ(ed.BufferCount(), n);
 	ASSERT_EQ(ed.FindOpenBuffer((d.path / "y.txt").string()) != ed.CurrentBufferIndex(), true);
 }
+
+
+// Saving keeps setuid/setgid bits (chown after chmod used to clear them).
+TEST(Audit_Save_KeepsSpecialModeBits)
+{
+	TempDir d("save_setuid");
+	const auto f = d.path / "s.sh";
+	std::ofstream(f) << "echo\n";
+	ASSERT_EQ(::chmod(f.c_str(), 06755), 0);
+	Buffer b;
+	std::string err;
+	ASSERT_TRUE(b.OpenFromFile(f.string(), err));
+	b.insert_text(0, 0, "#");
+	ASSERT_TRUE(b.Save(err));
+	struct stat st{};
+	ASSERT_EQ(::stat(f.c_str(), &st), 0);
+	ASSERT_EQ(st.st_mode & 07777, (mode_t) 06755);
+}
