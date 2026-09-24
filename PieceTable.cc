@@ -74,6 +74,7 @@ PieceTable::PieceTable(PieceTable &&other) noexcept
 {
 	other.dirty_      = true;
 	other.total_size_ = 0;
+	other.InvalidateLineIndex(); // its index described the moved-away text
 	version_          = other.version_;
 	range_cache_      = {};
 	find_cache_       = {};
@@ -93,6 +94,7 @@ PieceTable::operator=(PieceTable &&other) noexcept
 	total_size_       = other.total_size_;
 	other.dirty_      = true;
 	other.total_size_ = 0;
+	other.InvalidateLineIndex(); // its index described the moved-away text
 	version_          = other.version_;
 	range_cache_      = {};
 	find_cache_       = {};
@@ -603,9 +605,10 @@ PieceTable::consolidateRange(std::size_t start_idx, std::size_t end_idx)
 	              pieces_.begin() + static_cast<std::ptrdiff_t>(end_idx));
 	pieces_.insert(pieces_.begin() + static_cast<std::ptrdiff_t>(start_idx), consolidated);
 
-	// total_size_ unchanged
+	// total_size_ unchanged. Content and byte offsets are unchanged too, so
+	// the line index stays valid (invalidating it here forced a full rescan
+	// on every edit once a buffer had many pieces).
 	dirty_ = true;
-	InvalidateLineIndex();
 	coalesceNeighbors(start_idx);
 	// Layout changed; invalidate caches/version
 	version_++;

@@ -511,10 +511,10 @@ TEST(Audit_B6_HorizontalScroll_CountsCells)
 
 // P2: the line index is updated in place by Insert/Delete. Query it after
 // every edit (so it is never dirty) and compare with a plain string model.
-TEST(Audit_P2_IncrementalLineIndex_MatchesModel)
+static void
+check_incremental_line_index(PieceTable &t)
 {
 	std::mt19937 rng(20260923u);
-	PieceTable t;
 	std::string model;
 	const char alphabet[] = "ab\nc\n\nd";
 	for (int step = 0; step < 3000; ++step) {
@@ -545,4 +545,36 @@ TEST(Audit_P2_IncrementalLineIndex_MatchesModel)
 			ASSERT_EQ(e, (l + 1 < starts.size()) ? starts[l + 1] : model.size());
 		}
 	}
+}
+
+
+TEST(Audit_P2_IncrementalLineIndex_MatchesModel)
+{
+	PieceTable t;
+	check_incremental_line_index(t);
+}
+
+
+// Consolidation (forced here by a tiny piece limit) rewrites pieces without
+// changing content; the incrementally maintained index must stay correct.
+TEST(Audit_P2_IncrementalLineIndex_WithConsolidation)
+{
+	PieceTable t(0, 8, 64, 1 << 20);
+	check_incremental_line_index(t);
+}
+
+
+// A moved-from table must not keep (and incrementally update) the index of
+// the text it gave away.
+TEST(Audit_PieceTable_MovedFrom_LineIndexReset)
+{
+	const std::string text = "l1\nl2\nl3\n";
+	PieceTable a;
+	a.Append(text.data(), text.size());
+	ASSERT_EQ(a.LineCount(), (std::size_t) 4);
+	PieceTable b(std::move(a));
+	a.Insert(0, "x", 1);
+	ASSERT_EQ(a.Size(), (std::size_t) 1);
+	ASSERT_EQ(a.LineCount(), (std::size_t) 1);
+	ASSERT_EQ(b.LineCount(), (std::size_t) 4);
 }
