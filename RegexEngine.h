@@ -11,8 +11,11 @@
  * PCRE2 additionally has lookbehind, possessive quantifiers and the like.
  *
  * Replacement strings use ECMAScript syntax with either engine, as
- * std::regex_replace reads it: $& (the match), $1..$99 (groups), $` (the
- * text since the previous match), $' (the rest of the line), $$ (a dollar).
+ * std::regex_replace (libstdc++) reads it: $& or $0 (the match), $1..$99
+ * (groups, two digits read greedily; a group the pattern lacks expands to
+ * nothing), $` (the text since the previous match), $' (the rest of the
+ * line), $$ (a dollar sign). As in ECMAScript, '.' matches neither CR nor
+ * LF and '$' matches only at the end of the line's text.
  */
 #pragma once
 

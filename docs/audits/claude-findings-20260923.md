@@ -558,6 +558,15 @@ before the fix (unless noted).
   1.55 s -> 0.10 s per keystroke.
 - Only one checkpoint per journal is queued at a time; whole-file edits
   in a row on a large buffer each queued a full copy of it.
+- Review of this work found, and these are fixed: with PCRE2, '.'
+  matched the CR of CRLF lines (regex replace-all deleted it) — PCRE2
+  now uses the ANYCRLF newline convention and $ matches only at the end;
+  $0, out-of-range $n and $nn in replacements now follow libstdc++;
+  plain search visits overlapping matches in both directions (the count
+  could read "2/1"); the recovery prompt replays again if the journal
+  changed while it was open; a version 1 journal continued after
+  recovery gets a chunked checkpoint only by being rewritten as
+  version 2.
 
 **Known limitations (not fixed)**
 - Without PCRE2 (std::regex builds), catastrophic regex backtracking

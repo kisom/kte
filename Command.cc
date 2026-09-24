@@ -1169,7 +1169,7 @@ search_count(const Buffer &buf, bool regex, const std::string &q, const RegexMat
 			else
 				c.reached = true;
 			++c.total;
-			p += q.size();
+			p += 1; // overlapping, as Next/Previous visit them
 		}
 		if (p != std::string_view::npos && p >= cur_off)
 			c.reached = true;
@@ -1238,7 +1238,9 @@ run_search(Editor &ed, Buffer &buf, bool regex, SearchStep step, bool incrementa
 		x = ed.SearchOrigX();
 	}
 	if (step == SearchStep::Next && have_cur) {
-		const std::size_t len = std::max<std::size_t>(ed.SearchMatchLen(), 1);
+		// Plain search visits overlapping matches ("aa" in "aaa" at 0 and 1),
+		// as the backward search does; a regex continues after its match.
+		const std::size_t len = regex ? std::max<std::size_t>(ed.SearchMatchLen(), 1) : 1;
 		x += len;
 		if (x > line_text_view(buf, y).size() && y + 1 < buf.Nrows()) {
 			++y;

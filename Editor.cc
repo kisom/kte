@@ -397,6 +397,7 @@ Editor::CancelRecoveryPrompt()
 	pending_recovery_replay_err_.clear();
 	std::string().swap(pending_recovery_content_);
 	pending_recovery_valid_bytes_  = 0;
+	pending_recovery_swap_size_    = 0;
 	pending_recovery_have_content_ = false;
 }
 
@@ -413,6 +414,7 @@ Editor::ResolveRecoveryPrompt(const bool yes)
 	std::string content      = std::move(pending_recovery_content_);
 	const bool have_content  = pending_recovery_have_content_;
 	std::uint64_t valid_bytes = pending_recovery_valid_bytes_;
+	const std::uint64_t swap_size_then = pending_recovery_swap_size_;
 	CancelRecoveryPrompt();
 
 	std::string err;
@@ -427,8 +429,13 @@ Editor::ResolveRecoveryPrompt(const bool yes)
 				SetStatus("Recovery failed: no buffer");
 				return false;
 			}
-			if (have_content) {
-				// The prompt already replayed the journal; install that.
+			std::uint64_t swap_size_now = 0;
+			try {
+				swap_size_now = std::filesystem::file_size(swp);
+			} catch (...) {
+			}
+			if (have_content && swap_size_now == swap_size_then) {
+				// The prompt already replayed the journal (unchanged since); install that.
 				b->replace_all_bytes(content);
 				std::string().swap(content);
 			} else {
@@ -607,6 +614,11 @@ Editor::process_pending_opens_()
 						pending_recovery_content_      = std::move(rec);
 						pending_recovery_valid_bytes_  = valid;
 						pending_recovery_have_content_ = true;
+						try {
+							pending_recovery_swap_size_ = std::filesystem::file_size(swp);
+						} catch (...) {
+							pending_recovery_have_content_ = false; // replay on "y"
+						}
 						StartPrompt(PromptKind::Confirm, "Recover", "");
 						SetStatus("Recover swap edits for " + req.path + "? (y/n, C-g cancel)");
 						return opened_any;
