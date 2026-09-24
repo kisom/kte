@@ -157,6 +157,24 @@ map_key(const SDL_Keycode key,
 
 	// If we are in k-prefix, interpret the very next key via the C-k keymap immediately.
 	if (k_prefix) {
+		// A modifier pressed on its own (Shift for C-k C or C-k ^, Ctrl
+		// pressed again for C-k C-d) is not the suffix: keep waiting.
+		switch (key) {
+		case SDLK_LSHIFT:
+		case SDLK_RSHIFT:
+		case SDLK_LCTRL:
+		case SDLK_RCTRL:
+		case SDLK_LALT:
+		case SDLK_RALT:
+		case SDLK_LGUI:
+		case SDLK_RGUI:
+		case SDLK_CAPSLOCK:
+		case SDLK_MODE:
+			out.hasCommand = false;
+			return true;
+		default:
+			break;
+		}
 		esc_meta = false;
 		// Normalize to ASCII; preserve case for letters using Shift
 		int ascii_key = 0;
