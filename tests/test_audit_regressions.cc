@@ -2328,3 +2328,34 @@ TEST(Swap_V1JournalGetsNoChunkedRecords)
 	b.SetSwapRecorder(nullptr);
 	sm.Detach(&b, true);
 }
+
+
+// B7: spans that split a UTF-8 character (highlighters emit one per byte of
+// a non-ASCII character) are widened to whole characters, and overlaps are
+// removed, before renderers decode them.
+TEST(Audit_B7_SanitizeSpans_WholeCharacters)
+{
+	const std::string line = "h\xC3\xA9llo \xE2\x9C\x93!"; // "héllo ✓!"
+	using kte::HighlightSpan;
+	using kte::TokenKind;
+	// Bytes: h 0, é 1-2, l 3, l 4, o 5, space 6, ✓ 7-9, ! 10.
+	const std::vector<HighlightSpan> in = {
+		{10, 11, TokenKind::Operator}, // '!' (listed out of order)
+		{0, 1, TokenKind::Identifier},
+		{1, 2, TokenKind::Identifier}, // first byte of é
+		{2, 3, TokenKind::Identifier}, // second byte of é
+		{3, 6, TokenKind::Identifier},
+		{8, 9, TokenKind::Error},   // middle byte of ✓
+		{9, 50, TokenKind::Error},  // last byte of ✓, runs past the end
+		{5, 4, TokenKind::Keyword}, // reversed, overlaps [3,6)
+	};
+	std::vector<HighlightSpan> out;
+	kte::SanitizeSpans(line, in, out);
+	std::vector<std::pair<int, int> > got;
+	for (const auto &sp: out)
+		got.emplace_back(sp.col_start, sp.col_end);
+	const std::vector<std::pair<int, int> > want = {{0, 1}, {1, 3}, {3, 6}, {7, 10}, {10, 11}};
+	ASSERT_EQ(got, want);
+	ASSERT_TRUE(out[3].kind == TokenKind::Error);
+	ASSERT_TRUE(out[4].kind == TokenKind::Error); // the earlier-starting span wins
+}

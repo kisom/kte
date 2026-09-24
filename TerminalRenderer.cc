@@ -165,40 +165,20 @@ TerminalRenderer::Draw(Editor &ed)
 				    HasHighlighter()) {
 					const kte::LineHighlight &lh_val = buf->Highlighter()->GetLine(
 						*buf, static_cast<int>(li), buf->Version());
-					// Sanitize defensively: clamp to [0, line.size()], ensure end>=start, drop empties
-					const std::size_t line_len = line.size();
-					sane_spans.reserve(lh_val.spans.size());
-					for (const auto &sp: lh_val.spans) {
-						int s_raw = sp.col_start;
-						int e_raw = sp.col_end;
-						if (e_raw < s_raw)
-							std::swap(e_raw, s_raw);
-						std::size_t s = static_cast<std::size_t>(std::max(
-							0, std::min(s_raw, static_cast<int>(line_len))));
-						std::size_t e = static_cast<std::size_t>(std::max(
-							static_cast<int>(s),
-							std::min(e_raw, static_cast<int>(line_len))));
-						if (e <= s)
-							continue;
-						sane_spans.push_back(kte::HighlightSpan{
-							static_cast<int>(s), static_cast<int>(e), sp.kind
-						});
-					}
-					std::sort(sane_spans.begin(), sane_spans.end(),
-					          [](const kte::HighlightSpan &a, const kte::HighlightSpan &b) {
-						          return a.col_start < b.col_start;
-					          });
+					kte::SanitizeSpans(line, lh_val.spans, sane_spans);
 				}
+				// Called left to right while drawing: walk the spans with a
+				// cursor (rescanning from the first span for every byte was
+				// quadratic on long highlighted lines).
+				std::size_t span_i = 0;
 				auto token_at = [&](std::size_t src_index) -> kte::TokenKind {
-					if (sane_spans.empty())
-						return kte::TokenKind::Default;
-					int si = static_cast<int>(src_index);
-					for (const auto &sp: sane_spans) {
-						if (si < sp.col_start)
-							break;
-						if (si >= sp.col_start && si < sp.col_end)
-							return sp.kind;
-					}
+					const int si = static_cast<int>(src_index);
+					if (span_i > 0 && span_i <= sane_spans.size() && si < sane_spans[span_i - 1].col_start)
+						span_i = 0; // moved backwards: restart
+					while (span_i < sane_spans.size() && sane_spans[span_i].col_end <= si)
+						++span_i;
+					if (span_i < sane_spans.size() && sane_spans[span_i].col_start <= si)
+						return sane_spans[span_i].kind;
 					return kte::TokenKind::Default;
 				};
 				auto token_attr = [&](kte::TokenKind k) -> attr_t {

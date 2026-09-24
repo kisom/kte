@@ -440,42 +440,19 @@ ImGuiRenderer::Draw(Editor &ed)
 			if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
 				const kte::LineHighlight &lh = buf->Highlighter()->GetLine(
 					*buf, static_cast<int>(i), buf->Version());
-				// Sanitize spans defensively: clamp to [0, line.size()], ensure end>=start, drop empties
-				struct SSpan {
-					std::size_t s;
-					std::size_t e;
-					kte::TokenKind k;
-				};
-				std::vector<SSpan> spans;
-				spans.reserve(lh.spans.size());
-				const std::size_t line_len = line.size();
-				for (const auto &sp: lh.spans) {
-					int s_raw = sp.col_start;
-					int e_raw = sp.col_end;
-					if (e_raw < s_raw)
-						std::swap(e_raw, s_raw);
-					std::size_t s = static_cast<std::size_t>(std::max(
-						0, std::min(s_raw, static_cast<int>(line_len))));
-					std::size_t e = static_cast<std::size_t>(std::max(
-						static_cast<int>(s), std::min(e_raw, static_cast<int>(line_len))));
-					if (e <= s)
-						continue;
-					spans.push_back(SSpan{s, e, sp.kind});
-				}
-				std::sort(spans.begin(), spans.end(), [](const SSpan &a, const SSpan &b) {
-					return a.s < b.s;
-				});
+				std::vector<kte::HighlightSpan> spans; // clamped, ordered, whole characters
+				kte::SanitizeSpans(line, lh.spans, spans);
 
 				for (const auto &sp: spans) {
-					std::size_t rx_s = src_to_rx(sp.s);
-					std::size_t rx_e = src_to_rx(sp.e);
+					std::size_t rx_s = src_to_rx(static_cast<std::size_t>(sp.col_start));
+					std::size_t rx_e = src_to_rx(static_cast<std::size_t>(sp.col_end));
 					std::size_t draw_start = rx_s;
 					if (draw_start >= expanded.size())
 						continue;
 					std::size_t draw_end = std::min<std::size_t>(rx_e, expanded.size());
 					if (draw_end <= draw_start)
 						continue;
-					ImU32 col = ImGui::GetColorU32(kte::SyntaxInk(sp.k));
+					ImU32 col = ImGui::GetColorU32(kte::SyntaxInk(sp.kind));
 					ImVec2 p = ImVec2(line_pos.x + rx_to_px(draw_start),
 					                  line_pos.y);
 					ImGui::GetWindowDrawList()->AddText(
