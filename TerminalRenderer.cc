@@ -6,11 +6,10 @@
 #include <filesystem>
 #include <cstdlib>
 #include <ncurses.h>
-#include <regex>
 #include <string>
 
 #include "TerminalRenderer.h"
-#include "RegexGuard.h"
+#include "RegexEngine.h"
 #include "TermWidth.h"
 #include "Buffer.h"
 #include "Editor.h"
@@ -58,6 +57,16 @@ TerminalRenderer::Draw(Editor &ed)
 			buf->Highlighter()->PrefetchViewport(*buf, fr, rc, buf->Version());
 		}
 
+		// The search pattern, compiled once per frame (it was compiled for
+		// every row).
+		kte::Regex draw_rx;
+		bool draw_rx_ok = false;
+		if (ed.SearchActive() && !ed.SearchQuery().empty() && ed.PromptActive() &&
+		    (ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
+		     ed.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind)) {
+			std::string rx_err;
+			draw_rx_ok = draw_rx.Compile(ed.SearchQuery(), rx_err);
+		}
 		for (int r = 0; r < content_rows; ++r) {
 			move(r, 0);
 			std::size_t li         = rowoffs + static_cast<std::size_t>(r);
@@ -72,15 +81,15 @@ TerminalRenderer::Draw(Editor &ed)
 				if (ed.PromptActive() && (
 					    ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch || ed.
 					    CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind)) {
-					// Long lines are not highlighted: std::regex recursion
-					// could overflow the stack (RegexGuard.h).
-					if (sline.size() <= kte::kRegexRenderLineLimit) try {
-						std::regex rx(ed.SearchQuery());
-						kte::ForEachRegexMatch(sline, rx, [&](std::size_t pos, std::size_t len) {
+					// Very long lines are not highlighted (see
+					// Regex::IncrementalLineLimit); an invalid pattern
+					// highlights nothing (the status shows the error).
+					if (draw_rx_ok && sline.size() <= kte::Regex::IncrementalLineLimit()) {
+						std::size_t from = 0, pos = 0, len = 0;
+						while (from <= sline.size() && draw_rx.Search(sline, from, pos, len)) {
 							ranges.emplace_back(pos, pos + len);
-						});
-					} catch (const std::regex_error &) {
-						// ignore invalid patterns here; status shows error
+							from = pos + std::max<std::size_t>(len, 1);
+						}
 					}
 				} else {
 					const std::string &q = ed.SearchQuery();

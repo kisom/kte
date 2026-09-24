@@ -9,6 +9,8 @@ RUN apk add --no-cache \
     cmake \
     make \
     ncurses-dev \
+    pcre2-dev \
+    pkgconf \
     sdl2-dev \
     mesa-dev \
     freetype-dev \

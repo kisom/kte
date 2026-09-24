@@ -15,6 +15,7 @@ set(KTE_FONT_SIZE "18.0" CACHE STRING "Default font size for GUI")
 option(KTE_UNDO_DEBUG "Enable undo instrumentation logs" OFF)
 option(KTE_ENABLE_TREESITTER "Enable optional Tree-sitter highlighter adapter" OFF)
 option(KTE_STATIC_LINK "Enable static linking on Linux" OFF)
+option(KTE_USE_PCRE2 "Use PCRE2 (libpcre2-8) for regex search when found; std::regex otherwise" ON)
 
 # Optionally enable AddressSanitizer (ASan)
 option(ENABLE_ASAN "Enable AddressSanitizer for builds" OFF)
@@ -65,6 +66,26 @@ if (KTE_ENABLE_TREESITTER)
 endif ()
 
 message(STATUS "Build system: ${CMAKE_HOST_SYSTEM_NAME}")
+
+# Regex engine (see RegexEngine.h). Linked by name (-lpcre2-8) so that a
+# static build picks up the static library.
+if (KTE_USE_PCRE2)
+    find_package(PkgConfig QUIET)
+    if (PKG_CONFIG_FOUND)
+        pkg_check_modules(PCRE2 QUIET libpcre2-8)
+    endif ()
+    if (PCRE2_FOUND)
+        message(STATUS "Regex engine: PCRE2 ${PCRE2_VERSION}")
+        add_compile_definitions(KTE_USE_PCRE2)
+        include_directories(${PCRE2_INCLUDE_DIRS})
+        link_directories(${PCRE2_LIBRARY_DIRS})
+        link_libraries(${PCRE2_LIBRARIES})
+    else ()
+        message(STATUS "Regex engine: std::regex (libpcre2-8 not found)")
+    endif ()
+else ()
+    message(STATUS "Regex engine: std::regex")
+endif ()
 
 if (BUILD_GUI)
     include(cmake/imgui.cmake)
@@ -175,6 +196,7 @@ set(COMMON_SOURCES
         SyscallWrappers.cc
         ErrorRecovery.cc
         RegexGuard.cc
+        RegexEngine.cc
         TerminalInputHandler.cc
         TerminalRenderer.cc
         TerminalFrontend.cc
@@ -273,6 +295,7 @@ set(COMMON_HEADERS
         TestRenderer.h
         TestFrontend.h
         TextSpan.h
+        RegexEngine.h
         UndoNode.h
         UndoTree.h
         UndoSystem.h
@@ -389,6 +412,7 @@ if (BUILD_TESTS)
             SyscallWrappers.cc
             ErrorRecovery.cc
             RegexGuard.cc
+            RegexEngine.cc
             KKeymap.cc
             SwapRecorder.h
             OptimizedSearch.cc

@@ -9,6 +9,7 @@
 #include "ErrorRecovery.h"
 #include "PieceTable.h"
 #include "RegexGuard.h"
+#include "RegexEngine.h"
 #include "Swap.h"
 #include "UndoTree.h"
 #include "syntax/HighlighterEngine.h"
@@ -1285,14 +1286,16 @@ TEST(Audit_RegexSearch_LongLineFoundByNext)
 {
 	TestHarness h;
 	Editor &ed = h.EditorRef();
-	h.Buf().insert_text(0, 0, "short\n" + std::string(25000, 'a') + "NEEDLE\nend\n");
+	// Longer than search-as-you-type scans (depends on the regex engine).
+	const std::size_t long_len = kte::Regex::IncrementalLineLimit() + 1000;
+	h.Buf().insert_text(0, 0, "short\n" + std::string(long_len, 'a') + "NEEDLE\nend\n");
 	h.Buf().SetCursor(0, 0);
 	ASSERT_TRUE(h.Exec(CommandId::RegexFindStart));
 	ASSERT_TRUE(h.Exec(CommandId::InsertText, "NEE+DLE"));
 	ASSERT_TRUE(ed.Status().find("long line") != std::string::npos);
 	ASSERT_TRUE(h.Exec(CommandId::MoveRight));
 	ASSERT_EQ(h.Buf().Cury(), (std::size_t) 1);
-	ASSERT_EQ(h.Buf().Curx(), (std::size_t) 25000);
+	ASSERT_EQ(h.Buf().Curx(), long_len);
 	ASSERT_TRUE(h.Exec(CommandId::Refresh));
 	ASSERT_TRUE(!ed.PromptActive());
 	// The regex replace prompt steps through matches the same way.
@@ -1302,7 +1305,7 @@ TEST(Audit_RegexSearch_LongLineFoundByNext)
 	ASSERT_TRUE(ed.Status().find("Left/Right search all") != std::string::npos);
 	ASSERT_TRUE(h.Exec(CommandId::MoveRight));
 	ASSERT_EQ(h.Buf().Cury(), (std::size_t) 1);
-	ASSERT_EQ(h.Buf().Curx(), (std::size_t) 25000);
+	ASSERT_EQ(h.Buf().Curx(), long_len);
 }
 
 
@@ -2178,4 +2181,50 @@ TEST(Swap_DeferredBaseCrc)
 	ASSERT_TRUE(!kte::SwapManager::JournalMatchesFile(swp, path));
 	b.SetSwapRecorder(nullptr);
 	sm.Detach(&b, true);
+}
+
+
+// kte::Regex replacements follow std::regex_replace (ECMAScript), whichever
+// engine is built in. (References to groups the pattern does not have, like
+// $3 with two groups, are implementation-defined and left out.)
+TEST(RegexEngine_ReplaceMatchesStdRegex)
+{
+	const char *subjects[] = {"", "baaac", "one two  three", "a-b-c", "xyz", "aaa", "  lead", "tail  "};
+	const std::pair<const char *, const char *> cases[] = {
+		{"a*", "X"}, {"a", "[$&]"}, {"(\\w+)", "<$1>"}, {"(o)(n)?", "$2$1"}, {"-", "$`|$'"},
+		{"\\s+", "$$"}, {"^", ">"}, {"$", "<"}, {"b|", "_"}, {"\\b", "|"},
+		{"([a-z])([a-z])", "$2$1"}, {"(a)(x)?", "[$2]"}
+	};
+	for (const char *subj: subjects) {
+		for (const auto &[pat, fmt]: cases) {
+			kte::Regex rx;
+			std::string err;
+			ASSERT_TRUE(rx.Compile(pat, err));
+			const std::string got  = rx.ReplaceAll(subj, fmt);
+			const std::string want = std::regex_replace(std::string(subj), std::regex(pat), fmt);
+			if (got != want)
+				fprintf(stderr, "subj=[%s] pat=[%s] fmt=[%s] got=[%s] want=[%s]\n", subj, pat, fmt,
+				        got.c_str(), want.c_str());
+			ASSERT_EQ(got, want);
+		}
+	}
+}
+
+
+// With PCRE2, catastrophic backtracking stops at the match limit and says
+// so, instead of hanging the editor.
+TEST(RegexEngine_CatastrophicPatternStops)
+{
+	if (std::string(kte::Regex::EngineName()) != "PCRE2")
+		return; // std::regex has no limit (a known limitation)
+	TestHarness h;
+	h.Buf().insert_text(0, 0, std::string(40, 'a') + "!\n");
+	h.Buf().SetCursor(0, 0);
+	const auto t0 = std::chrono::steady_clock::now();
+	ASSERT_TRUE(h.Exec(CommandId::RegexFindStart));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "^(a+)+$"));
+	const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+	ASSERT_TRUE(secs < 10.0);
+	ASSERT_TRUE(h.EditorRef().Status().find("too complex") != std::string::npos);
+	ASSERT_TRUE(h.Exec(CommandId::Refresh));
 }
