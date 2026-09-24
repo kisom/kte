@@ -53,6 +53,7 @@ PieceTable::operator=(const PieceTable &other)
 	range_cache_  = {};
 	find_cache_   = {};
 	last_deleted_ = {};
+	piece_ends_version_ = std::numeric_limits<std::uint64_t>::max();
 	InvalidateLineIndex();
 	return *this;
 }
@@ -69,6 +70,7 @@ PieceTable::PieceTable(PieceTable &&other) noexcept
 	other.dirty_      = true;
 	other.total_size_ = 0;
 	other.InvalidateLineIndex(); // its index described the moved-away text
+	other.piece_ends_version_ = std::numeric_limits<std::uint64_t>::max();
 	version_          = other.version_;
 	range_cache_      = {};
 	find_cache_       = {};
@@ -94,6 +96,8 @@ PieceTable::operator=(PieceTable &&other) noexcept
 	find_cache_       = {};
 	last_deleted_     = {};
 	other.last_deleted_ = {};
+	piece_ends_version_       = std::numeric_limits<std::uint64_t>::max();
+	other.piece_ends_version_ = std::numeric_limits<std::uint64_t>::max();
 	InvalidateLineIndex();
 	return *this;
 }
@@ -209,6 +213,7 @@ PieceTable::AdoptOriginal(std::string &&bytes)
 	total_size_ = original_.size();
 	if (total_size_ > 0)
 		pieces_.push_back(Piece{Source::Original, 0, total_size_});
+	version_++;
 }
 
 
@@ -343,16 +348,20 @@ PieceTable::locate(const std::size_t byte_offset) const
 	if (byte_offset >= total_size_) {
 		return {pieces_.size(), 0};
 	}
-	std::size_t off = byte_offset;
-	for (std::size_t i = 0; i < pieces_.size(); ++i) {
-		const auto &p = pieces_[i];
-		if (off < p.len) {
-			return {i, off};
-		}
-		off -= p.len;
+	// Rebuilt once per modification: an edited buffer's lookups (two per
+	// rendered line per frame) used to walk the piece list each time.
+	if (piece_ends_version_ != version_ || piece_ends_.size() != pieces_.size()) {
+		piece_ends_.resize(pieces_.size());
+		std::size_t end = 0;
+		for (std::size_t i = 0; i < pieces_.size(); ++i)
+			piece_ends_[i] = end += pieces_[i].len;
+		piece_ends_version_ = version_;
 	}
-	// Should not reach here unless inconsistency; return end
-	return {pieces_.size(), 0};
+	const auto it = std::upper_bound(piece_ends_.begin(), piece_ends_.end(), byte_offset);
+	if (it == piece_ends_.end())
+		return {pieces_.size(), 0}; // inconsistent sizes; treat as the end
+	const std::size_t i = static_cast<std::size_t>(it - piece_ends_.begin());
+	return {i, byte_offset - (i > 0 ? piece_ends_[i - 1] : 0)};
 }
 
 
@@ -397,6 +406,32 @@ PieceTable::InvalidateLineIndex() const
 }
 
 
+std::size_t
+PieceTable::lineUpperBound(const std::size_t byte_offset) const
+{
+	// Line starts ascend; binary search over them with the shift applied.
+	std::size_t lo = 0, hi = line_index_.size();
+	while (lo < hi) {
+		const std::size_t mid = lo + (hi - lo) / 2;
+		if (lineStart(mid) <= byte_offset)
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
+	return lo;
+}
+
+
+void
+PieceTable::applyLineShift() const
+{
+	for (std::size_t i = line_shift_from_; i < line_index_.size(); ++i)
+		line_index_[i] += line_shift_by_;
+	line_shift_from_ = std::numeric_limits<std::size_t>::max();
+	line_shift_by_   = 0;
+}
+
+
 void
 PieceTable::lineIndexOnInsert(std::size_t offset, const char *text, std::size_t len) const
 {
@@ -405,15 +440,21 @@ PieceTable::lineIndexOnInsert(std::size_t offset, const char *text, std::size_t 
 		return;
 	// Line starts after the insertion point move right; a start exactly at
 	// the insertion point stays (the text joins that line).
-	auto first_after = std::upper_bound(line_index_.begin(), line_index_.end(), offset);
-	for (auto it = first_after; it != line_index_.end(); ++it)
-		*it += len;
+	const std::size_t first_after = lineUpperBound(offset);
 	std::vector<std::size_t> added;
 	const char *end = text + len;
 	for (const char *p = text; (p = static_cast<const char *>(std::memchr(p, '\n', end - p))) != nullptr; ++p)
 		added.push_back(offset + static_cast<std::size_t>(p - text) + 1);
+	// The pending shift can absorb this one only if it starts at the same
+	// line (the usual case: typing along one line).
+	if (line_shift_by_ != 0 && line_shift_from_ != first_after)
+		applyLineShift();
 	if (!added.empty())
-		line_index_.insert(first_after, added.begin(), added.end());
+		line_index_.insert(line_index_.begin() + static_cast<std::ptrdiff_t>(first_after), added.begin(),
+		                   added.end());
+	// The new starts are exact; the ones after them move by len.
+	line_shift_from_ = first_after + added.size();
+	line_shift_by_ += len;
 }
 
 
@@ -425,11 +466,16 @@ PieceTable::lineIndexOnDelete(std::size_t offset, std::size_t len) const
 		return;
 	// Starts in (offset, offset+len] followed a deleted newline: drop them.
 	// Later starts move left.
-	auto lo = std::upper_bound(line_index_.begin(), line_index_.end(), offset);
-	auto hi = std::upper_bound(lo, line_index_.end(), offset + len);
-	for (auto it = hi; it != line_index_.end(); ++it)
-		*it -= len;
-	line_index_.erase(lo, hi);
+	const std::size_t lo = lineUpperBound(offset);
+	const std::size_t hi = lineUpperBound(offset + len);
+	// After the erase the starts from hi on are at lo; a pending shift
+	// beginning anywhere in [lo, hi] covers exactly them.
+	if (line_shift_by_ != 0 && (line_shift_from_ < lo || line_shift_from_ > hi))
+		applyLineShift();
+	line_index_.erase(line_index_.begin() + static_cast<std::ptrdiff_t>(lo),
+	                  line_index_.begin() + static_cast<std::ptrdiff_t>(hi));
+	line_shift_from_ = lo;
+	line_shift_by_ -= len;
 }
 
 
@@ -443,6 +489,8 @@ PieceTable::RebuildLineIndex() const
 	}
 	line_index_.clear();
 	line_index_.push_back(0);
+	line_shift_from_ = std::numeric_limits<std::size_t>::max();
+	line_shift_by_   = 0;
 
 	std::size_t pos = 0;
 	for (const auto &pc: pieces_) {
@@ -818,8 +866,8 @@ PieceTable::GetLineRange(std::size_t line_num) const
 		return {0, 0};
 	if (line_num >= line_index_.size())
 		return {0, 0};
-	std::size_t start = line_index_[line_num];
-	std::size_t end   = (line_num + 1 < line_index_.size()) ? line_index_[line_num + 1] : total_size_;
+	std::size_t start = lineStart(line_num);
+	std::size_t end   = (line_num + 1 < line_index_.size()) ? lineStart(line_num + 1) : total_size_;
 	return {start, end};
 }
 
@@ -846,9 +894,9 @@ PieceTable::ByteOffsetToLineCol(std::size_t byte_offset) const
 	RebuildLineIndex();
 	if (line_index_.empty())
 		return {0, 0};
-	auto it         = std::upper_bound(line_index_.begin(), line_index_.end(), byte_offset);
-	std::size_t row = (it == line_index_.begin()) ? 0 : static_cast<std::size_t>((it - line_index_.begin()) - 1);
-	std::size_t col = byte_offset - line_index_[row];
+	const std::size_t ub = lineUpperBound(byte_offset);
+	std::size_t row      = ub == 0 ? 0 : ub - 1;
+	std::size_t col      = byte_offset - lineStart(row);
 	return {row, col};
 }
 
@@ -861,8 +909,8 @@ PieceTable::LineColToByteOffset(std::size_t row, std::size_t col) const
 		return 0;
 	if (row >= line_index_.size())
 		return total_size_;
-	std::size_t start = line_index_[row];
-	std::size_t end   = (row + 1 < line_index_.size()) ? line_index_[row + 1] : total_size_;
+	std::size_t start = lineStart(row);
+	std::size_t end   = (row + 1 < line_index_.size()) ? lineStart(row + 1) : total_size_;
 	// Clamp col to the line's length without its newline (every line but
 	// the last has one).
 	if (end > start && row + 1 < line_index_.size())
