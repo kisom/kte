@@ -19,8 +19,6 @@
 #include "fonts/Font.h" // embedded default font (DefaultFont)
 #include "fonts/FontRegistry.h"
 #include "fonts/IosevkaExtended.h"
-#include "syntax/HighlighterRegistry.h"
-#include "syntax/NullHighlighter.h"
 
 
 #ifndef KTE_FONT_SIZE
@@ -54,22 +52,8 @@ apply_syntax_to_buffer(Buffer *b, const GUIConfig &cfg)
 	if (cfg.syntax && b->GetEditMode() != EditMode::Writing) {
 		b->SetSyntaxEnabled(true);
 		b->EnsureHighlighter();
-		if (auto *eng = b->Highlighter()) {
-			if (!eng->HasHighlighter()) {
-				const std::string first_line = b->Nrows() > 0 ? b->GetLineString(0) : std::string();
-				std::string ft = kte::HighlighterRegistry::DetectForPath(
-					b->Filename(), first_line);
-				if (!ft.empty()) {
-					eng->SetHighlighter(kte::HighlighterRegistry::CreateFor(ft));
-					b->SetFiletype(ft);
-					eng->InvalidateFrom(0);
-				} else {
-					eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-					b->SetFiletype("");
-					eng->InvalidateFrom(0);
-				}
-			}
-		}
+		if (!b->Highlighter()->HasHighlighter())
+			b->ApplyDetectedFiletype();
 	} else {
 		b->SetSyntaxEnabled(false);
 	}
