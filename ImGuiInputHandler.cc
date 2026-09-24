@@ -346,6 +346,11 @@ ImGuiInputHandler::ProcessSDLEvent(const SDL_Event &e)
 		return false;
 	}
 	case SDL_KEYDOWN: {
+		// A suppression request covers only the text event of the key that
+		// made it, which arrives before the next key press. Chords such as
+		// Ctrl+V produce no text event at all, and a leftover request ate
+		// the next character typed (B8).
+		suppress_text_input_once_ = false;
 		// Remember state before mapping; used for TEXTINPUT suppression heuristics
 		const bool was_k_prefix = k_prefix_;
 		const bool was_esc_meta = esc_meta_;
