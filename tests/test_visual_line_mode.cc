@@ -11,7 +11,7 @@ static std::string
 dump_buf(const Buffer &buf)
 {
 	std::string out;
-	for (const auto &r: buf.Rows()) {
+	for (const auto &r: buf.LinesForTests()) {
 		out += static_cast<std::string>(r);
 		out.push_back('\n');
 	}

@@ -2,13 +2,13 @@
  * test_migration_coverage.cc - Edge case tests for Buffer::Line migration
  *
  * This file provides comprehensive test coverage for the migration from
- * Buffer::Rows() to direct PieceTable operations using Nrows(), GetLineString(),
+ * the removed Buffer::Rows() to direct PieceTable operations using Nrows(), GetLineString(),
  * and GetLineView().
  *
  * Tests cover:
  * - Edge cases: empty buffers, single lines, very long lines
  * - Boundary conditions: first line, last line, out-of-bounds
- * - Consistency: GetLineString vs GetLineView vs Rows()
+ * - Consistency: GetLineString vs GetLineView vs LinesForTests()
  * - Performance: large files, many small operations
  * - Correctness: special characters, newlines, unicode
  */
@@ -117,7 +117,7 @@ TEST (Migration_ManyEmptyLines)
 
 
 // ============================================================================
-// Consistency Tests: GetLineString vs GetLineView vs Rows()
+// Consistency Tests: GetLineString vs GetLineView vs LinesForTests()
 // ============================================================================
 
 TEST (Migration_Consistency_AllMethods)
@@ -125,13 +125,13 @@ TEST (Migration_Consistency_AllMethods)
 	Buffer buf;
 	buf.insert_text(0, 0, std::string("abc\n123\nxyz"));
 
-	const auto &rows = buf.Rows();
+	const auto &rows = buf.LinesForTests();
 	ASSERT_EQ(buf.Nrows(), rows.size());
 
 	for (std::size_t i = 0; i < buf.Nrows(); ++i) {
 		std::string via_string = buf.GetLineString(i);
 		std::string via_rows   = std::string(rows[i]);
-		// GetLineString and Rows() both strip newlines
+		// GetLineString and LinesForTests() both strip newlines
 		ASSERT_EQ(via_string, via_rows);
 		// GetLineView includes the raw range (with newlines if present)
 		// Just verify it's accessible
@@ -148,18 +148,18 @@ TEST (Migration_Consistency_AfterEdits)
 	// Edit: insert in middle
 	buf.insert_text(1, 2, std::string("XX"));
 
-	const auto &rows = buf.Rows();
+	const auto &rows = buf.LinesForTests();
 	ASSERT_EQ(buf.Nrows(), rows.size());
 
 	for (std::size_t i = 0; i < buf.Nrows(); ++i) {
-		// GetLineString and Rows() both strip newlines
+		// GetLineString and LinesForTests() both strip newlines
 		ASSERT_EQ(buf.GetLineString(i), std::string(rows[i]));
 	}
 
 	// Edit: delete line
 	buf.delete_row(1);
 
-	const auto &rows2 = buf.Rows();
+	const auto &rows2 = buf.LinesForTests();
 	ASSERT_EQ(buf.Nrows(), rows2.size());
 
 	for (std::size_t i = 0; i < buf.Nrows(); ++i) {
@@ -332,7 +332,7 @@ TEST (Migration_Stress_ManySmallInserts)
 	ASSERT_EQ(buf.GetLineString(1).size(), (std::size_t) 100);
 
 	// Verify consistency
-	const auto &rows = buf.Rows();
+	const auto &rows = buf.LinesForTests();
 	ASSERT_EQ(buf.GetLineString(1), std::string(rows[1]));
 }
 
@@ -367,11 +367,11 @@ TEST (Migration_Stress_AlternatingInsertDelete)
 	}
 
 	// Verify consistency after many operations
-	const auto &rows = buf.Rows();
+	const auto &rows = buf.LinesForTests();
 	ASSERT_EQ(buf.Nrows(), rows.size());
 
 	for (std::size_t i = 0; i < buf.Nrows(); ++i) {
-		// GetLineString and Rows() both strip newlines
+		// GetLineString and LinesForTests() both strip newlines
 		ASSERT_EQ(buf.GetLineString(i), std::string(rows[i]));
 	}
 }

@@ -32,7 +32,7 @@ read_file_bytes(const std::string &path)
 static std::string
 buffer_bytes_via_views(const Buffer &b)
 {
-	const auto &rows = b.Rows();
+	const auto &rows = b.LinesForTests();
 	std::string out;
 	for (std::size_t i = 0; i < rows.size(); i++) {
 		auto v = b.GetLineView(i);

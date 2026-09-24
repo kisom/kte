@@ -12,7 +12,7 @@ static std::string
 to_string_rows(const Buffer &buf)
 {
 	std::string out;
-	for (const auto &r: buf.Rows()) {
+	for (const auto &r: buf.LinesForTests()) {
 		out += static_cast<std::string>(r);
 		out.push_back('\n');
 	}
@@ -45,7 +45,7 @@ TEST(ReflowParagraph_IndentedBullets_PreserveStructure)
 	const int width = 80;
 	ASSERT_TRUE(Execute(ed, std::string("reflow-paragraph"), std::string(), width));
 
-	const auto &rows         = buf->Rows();
+	const auto &rows         = buf->LinesForTests();
 	const std::string result = to_string_rows(*buf);
 
 	// We should have 3 lines (plus possibly a trailing empty line)

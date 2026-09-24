@@ -94,7 +94,7 @@ public:
 	[[nodiscard]] std::string
 	Text() const
 	{
-		const auto &rows = Buf().Rows();
+		const auto &rows = Buf().LinesForTests();
 		std::string out;
 		for (std::size_t i = 0; i < rows.size(); ++i) {
 			out += static_cast<std::string>(rows[i]);

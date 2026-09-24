@@ -12,7 +12,7 @@ static std::string
 to_string_rows(const Buffer &buf)
 {
 	std::string out;
-	for (const auto &r: buf.Rows()) {
+	for (const auto &r: buf.LinesForTests()) {
 		out += static_cast<std::string>(r);
 		out.push_back('\n');
 	}
@@ -46,7 +46,7 @@ TEST(ReflowParagraph_NumberedList_HangingIndent)
 	const int width = 25;
 	ASSERT_TRUE(Execute(ed, std::string("reflow-paragraph"), std::string(), width));
 
-	const auto &rows = buf->Rows();
+	const auto &rows = buf->LinesForTests();
 	ASSERT_TRUE(!rows.empty());
 	const std::string dump = to_string_rows(*buf);
 

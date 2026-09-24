@@ -56,10 +56,7 @@ apply_syntax_to_buffer(Buffer *b, const GUIConfig &cfg)
 		b->EnsureHighlighter();
 		if (auto *eng = b->Highlighter()) {
 			if (!eng->HasHighlighter()) {
-				std::string first_line;
-				const auto &rows = b->Rows();
-				if (!rows.empty())
-					first_line = static_cast<std::string>(rows[0]);
+				const std::string first_line = b->Nrows() > 0 ? b->GetLineString(0) : std::string();
 				std::string ft = kte::HighlighterRegistry::DetectForPath(
 					b->Filename(), first_line);
 				if (!ft.empty()) {

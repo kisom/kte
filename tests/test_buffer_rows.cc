@@ -56,7 +56,7 @@ static void
 check_buffer_matches_model(const Buffer &b, const std::string &model)
 {
 	auto expected_lines = split_lines_preserve_trailing_empty(model);
-	const auto &rows    = b.Rows();
+	const auto &rows    = b.LinesForTests();
 	ASSERT_EQ(rows.size(), expected_lines.size());
 	ASSERT_EQ(b.Nrows(), rows.size());
 
