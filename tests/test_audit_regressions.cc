@@ -8,6 +8,7 @@
 
 #include "ErrorRecovery.h"
 #include "PieceTable.h"
+#include "RegexGuard.h"
 #include "UndoTree.h"
 #include "syntax/HighlighterEngine.h"
 #include "syntax/HighlighterRegistry.h"
@@ -879,4 +880,21 @@ TEST(Audit_Commands_FilesystemErrorsDoNotThrow)
 	(void) h.Exec(CommandId::Newline);
 	(void) ed.ProcessPendingOpens();
 	ASSERT_EQ(h.Text(), std::string("precious\n"));
+}
+
+
+// Renderer regex highlighting on a long line with a deeply recursive pattern
+// (overflowed an 8 MiB stack at under 10,000 bytes) runs off the main stack.
+TEST(Audit_ForEachRegexMatch_LongLine)
+{
+	std::string line;
+	while (line.size() < 200000)
+		line += "word, more words; and so on. ";
+	std::size_t n = 0, total = 0;
+	kte::ForEachRegexMatch(line, std::regex("(\\w|\\s|[.,;])+"), [&](std::size_t, std::size_t len) {
+		++n;
+		total += len;
+	});
+	ASSERT_EQ(n, (std::size_t) 1);
+	ASSERT_EQ(total, line.size());
 }

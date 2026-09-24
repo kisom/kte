@@ -48,4 +48,22 @@ RunWithLargeStack(const std::function<void()> &fn)
 	if (job.error)
 		std::rethrow_exception(job.error);
 }
+
+
+void
+ForEachRegexMatch(const std::string &line, const std::regex &rx,
+                  const std::function<void(std::size_t, std::size_t)> &on_match)
+{
+	auto scan = [&] {
+		for (auto it = std::sregex_iterator(line.begin(), line.end(), rx); it != std::sregex_iterator(); ++it)
+			on_match(static_cast<std::size_t>(it->position()), static_cast<std::size_t>(it->length()));
+	};
+	// Stack use grows with match length; a few hundred bytes stays far below
+	// any thread's stack for every pattern we measured.
+	constexpr std::size_t kInlineLimit = 512;
+	if (line.size() <= kInlineLimit)
+		scan();
+	else
+		RunWithLargeStack(scan);
+}
 } // namespace kte

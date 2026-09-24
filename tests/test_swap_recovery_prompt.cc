@@ -583,3 +583,42 @@ TEST(SwapRecoveryPrompt_LiveJournalOfOtherSession_LeftAlone)
 	other.SetSwapRecorder(nullptr);
 	other_sm.Detach(&other, true);
 }
+
+
+// A session locked out of a journal (another session owns it) must not
+// delete it when it closes or saves the buffer.
+TEST(SwapJournal_SecondSession_DoesNotDeleteOwnersJournal)
+{
+	ktet::InstallDefaultCommandsOnce();
+	XdgSandbox sb("owner");
+	const std::string file = (sb.root / "work" / "g.txt").string();
+	write_file_bytes(file, "base\n");
+
+	Editor a;
+	a.SetDimensions(24, 80);
+	std::string err;
+	ASSERT_TRUE(a.OpenFile(file, err));
+	a.CurrentBuffer()->insert_text(0, 0, std::string("A"));
+	a.Swap()->Flush(a.CurrentBuffer());
+	const std::string swp = kte::SwapManager::ComputeSwapPathForTests(*a.CurrentBuffer());
+	ASSERT_TRUE(std::filesystem::exists(swp));
+
+	{
+		Editor b;
+		b.SetDimensions(24, 80);
+		b.AddBuffer(Buffer());
+		b.RequestOpenFile(file);
+		(void) b.ProcessPendingOpens();
+		b.CurrentBuffer()->insert_text(0, 0, std::string("B"));
+		b.Swap()->Flush(b.CurrentBuffer());
+		ASSERT_TRUE(b.CloseBuffer(b.CurrentBufferIndex()));
+	}
+	ASSERT_TRUE(std::filesystem::exists(swp));
+
+	// A's journal still replays to A's content.
+	Buffer check;
+	std::string rerr;
+	ASSERT_TRUE(check.OpenFromFile(file, err));
+	ASSERT_TRUE(kte::SwapManager::ReplayFile(check, swp, rerr));
+	ASSERT_EQ(buffer_bytes_via_views(check), std::string("Abase\n"));
+}

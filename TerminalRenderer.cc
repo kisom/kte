@@ -76,13 +76,9 @@ TerminalRenderer::Draw(Editor &ed)
 					// could overflow the stack (RegexGuard.h).
 					if (sline.size() <= kte::kRegexRenderLineLimit) try {
 						std::regex rx(ed.SearchQuery());
-						for (auto it = std::sregex_iterator(sline.begin(), sline.end(), rx);
-						     it != std::sregex_iterator(); ++it) {
-							const auto &m  = *it;
-							std::size_t sx = static_cast<std::size_t>(m.position());
-							std::size_t ex = sx + static_cast<std::size_t>(m.length());
-							ranges.emplace_back(sx, ex);
-						}
+						kte::ForEachRegexMatch(sline, rx, [&](std::size_t pos, std::size_t len) {
+							ranges.emplace_back(pos, pos + len);
+						});
 					} catch (const std::regex_error &) {
 						// ignore invalid patterns here; status shows error
 					}
