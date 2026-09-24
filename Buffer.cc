@@ -175,6 +175,11 @@ atomic_write_file(const std::string &path_in, const char *data, std::size_t len,
 
 	struct stat dst_st{};
 	const bool dst_exists = ::stat(path.c_str(), &dst_st) == 0;
+	// Never replace a directory, device node, FIFO or socket with a file.
+	if (dst_exists && !S_ISREG(dst_st.st_mode)) {
+		err = "Refusing to overwrite a non-regular file: " + path;
+		return false;
+	}
 
 	// A file with other hard links must be rewritten in place, or those
 	// names would keep the old content.
@@ -484,7 +489,15 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 	const std::string norm = normalize_path(path);
 	// If the file doesn't exist, initialize an empty, non-file-backed buffer
 	// with the provided filename. Do not touch the filesystem until Save/SaveAs.
-	if (!std::filesystem::exists(norm)) {
+	std::error_code exists_ec;
+	const bool exists = std::filesystem::exists(norm, exists_ec);
+	if (exists_ec) {
+		// e.g. name too long, or a parent directory we may not search
+		err = "Cannot open " + norm + ": " + exists_ec.message();
+		kte::ErrorHandler::Instance().Error("Buffer", err, norm);
+		return false;
+	}
+	if (!exists) {
 		rows_.clear();
 		nrows_          = 0;
 		filename_       = norm;
@@ -508,50 +521,52 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		return true;
 	}
 
-	std::ifstream in(norm, std::ios::in | std::ios::binary);
-	if (!in) {
-		err = "Failed to open file: " + norm;
+	// Open non-blocking so a named pipe cannot hang the editor, then accept
+	// regular files only: a directory reads as garbage (or throws), a FIFO
+	// blocks, and saving over a device node would replace it with a file.
+	int oflags = O_RDONLY | O_NONBLOCK;
+#ifdef O_CLOEXEC
+	oflags |= O_CLOEXEC;
+#endif
+	const int fd = kte::syscall::Open(norm.c_str(), oflags);
+	if (fd < 0) {
+		err = "Failed to open file: " + norm + ": " + std::strerror(errno);
+		kte::ErrorHandler::Instance().Error("Buffer", err, norm);
+		return false;
+	}
+	struct stat st{};
+	if (kte::syscall::Fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
+		err = S_ISDIR(st.st_mode) ? ("Is a directory: " + norm) : ("Not a regular file: " + norm);
+		(void) kte::syscall::Close(fd);
 		kte::ErrorHandler::Instance().Error("Buffer", err, norm);
 		return false;
 	}
 
-	// Read entire file into PieceTable as-is
+	// Read to EOF in chunks (the file may change size while we read).
 	std::string data;
-	in.seekg(0, std::ios::end);
-	if (!in) {
-		err = "Failed to seek to end of file: " + norm;
+	try {
+		data.reserve(static_cast<std::size_t>(st.st_size));
+		char chunk[1 << 16];
+		for (;;) {
+			const ssize_t n = ::read(fd, chunk, sizeof(chunk));
+			if (n > 0) {
+				data.append(chunk, static_cast<std::size_t>(n));
+			} else if (n == 0) {
+				break;
+			} else if (errno != EINTR) {
+				err = "Failed to read file: " + norm + ": " + std::strerror(errno);
+				(void) kte::syscall::Close(fd);
+				kte::ErrorHandler::Instance().Error("Buffer", err, norm);
+				return false;
+			}
+		}
+	} catch (const std::bad_alloc &) {
+		(void) kte::syscall::Close(fd);
+		err = "File too large to load: " + norm;
 		kte::ErrorHandler::Instance().Error("Buffer", err, norm);
 		return false;
 	}
-	auto sz = in.tellg();
-	if (sz < 0) {
-		err = "Failed to get file size: " + norm;
-		kte::ErrorHandler::Instance().Error("Buffer", err, norm);
-		return false;
-	}
-	if (sz > 0) {
-		data.resize(static_cast<std::size_t>(sz));
-		in.seekg(0, std::ios::beg);
-		if (!in) {
-			err = "Failed to seek to beginning of file: " + norm;
-			kte::ErrorHandler::Instance().Error("Buffer", err, norm);
-			return false;
-		}
-		in.read(data.data(), static_cast<std::streamsize>(data.size()));
-		if (!in && !in.eof()) {
-			err = "Failed to read file: " + norm;
-			kte::ErrorHandler::Instance().Error("Buffer", err, norm);
-			return false;
-		}
-		// Validate we read the expected number of bytes
-		const std::streamsize bytes_read = in.gcount();
-		if (bytes_read != static_cast<std::streamsize>(data.size())) {
-			err = "Partial read of file (expected " + std::to_string(data.size()) +
-			      " bytes, got " + std::to_string(bytes_read) + "): " + norm;
-			kte::ErrorHandler::Instance().Error("Buffer", err, norm);
-			return false;
-		}
-	}
+	(void) kte::syscall::Close(fd);
 	content_.Clear();
 	if (!data.empty())
 		content_.Append(data.data(), data.size());
