@@ -68,6 +68,13 @@ private:
 
 	void invalidate_from_locked(int row) const;
 
+	// Span cache bounds: rows within kCacheNear of a requested row are
+	// cached; past kCacheMax entries, those far from the current row go.
+	static constexpr int kCacheNear        = 1024;
+	static constexpr std::size_t kCacheMax = 16384;
+
+	void trim_cache_locked(int row) const;
+
 	// Guards the caches above.
 	mutable std::mutex mtx_;
 };

@@ -720,6 +720,37 @@ replace_rows_text(Buffer &buf, std::size_t y, const std::string &old_text, const
 }
 
 
+static std::string_view line_text_view(const Buffer &buf, std::size_t y);
+
+
+// Rewrite rows [sy, ey] with fn(line, y) as a single edit (see
+// replace_rows_text). Commands that change every row of a range (indent,
+// visual-line editing) made one piece-table edit per row, each costing time
+// linear in the buffer: minutes for a region of a few hundred thousand rows.
+template<typename Fn>
+static void
+transform_rows(Buffer &buf, const std::size_t sy, std::size_t ey, UndoSystem *u, Fn &&fn)
+{
+	const std::size_t nrows = buf.Nrows();
+	if (nrows == 0 || sy >= nrows)
+		return;
+	ey = std::min(ey, nrows - 1);
+	std::string old_text, new_text;
+	for (std::size_t y = sy; y <= ey; ++y) {
+		std::string line(line_text_view(buf, y));
+		if (y > sy) {
+			old_text.push_back('\n');
+			new_text.push_back('\n');
+		}
+		old_text += line;
+		fn(line, y);
+		new_text += line;
+	}
+	if (old_text != new_text)
+		replace_rows_text(buf, sy, old_text, new_text, u);
+}
+
+
 // Replace the whole buffer's text as one undo group.
 static void
 replace_buffer_text(Buffer &buf, const std::string &old_text, const std::string &new_text, UndoSystem *u)
@@ -865,20 +896,49 @@ cmd_move_cursor_to(CommandContext &ctx)
 
 
 // --- Search helpers (UI-agnostic) ---
+// Row y's text without its newline, viewing the materialized buffer (valid
+// until the next edit).
+static std::string_view
+line_text_view(const Buffer &buf, const std::size_t y)
+{
+	std::string_view v = buf.GetLineView(y);
+	if (!v.empty() && v.back() == '\n')
+		v.remove_suffix(1);
+	return v;
+}
+
 static std::vector<std::pair<std::size_t, std::size_t> >
 search_compute_matches(const Buffer &buf, const std::string &q)
 {
 	std::vector<std::pair<std::size_t, std::size_t> > out;
 	if (q.empty())
 		return out;
-	const auto &rows = buf.Rows();
-	for (std::size_t y = 0; y < rows.size(); ++y) {
-		std::string line = static_cast<std::string>(rows[y]);
-		std::size_t pos  = 0;
-		while (!q.empty() && (pos = line.find(q, pos)) != std::string::npos) {
-			out.emplace_back(y, pos);
-			pos += q.size();
+	// Views into the materialized buffer (one copy, kept until the next
+	// edit): Rows() built a string per line, and kept them all, on every
+	// search keystroke after an edit.
+	// Matches never span lines (the query is matched within each line).
+	if (q.find('\n') != std::string::npos)
+		return out;
+	const std::size_t nrows = buf.Nrows();
+	if (nrows == 0)
+		return out;
+	// One scan of the whole text (find is much faster over one large range
+	// than restarted per line), mapping each hit to its row as we go.
+	const char *base       = buf.GetLineView(0).data();
+	const auto last        = buf.GetLineView(nrows - 1);
+	const std::string_view text(base, static_cast<std::size_t>(last.data() + last.size() - base));
+	std::size_t y          = 0;
+	std::size_t line_start = 0;
+	std::size_t next_nl    = text.find('\n');
+	std::size_t pos        = 0;
+	while ((pos = text.find(q, pos)) != std::string_view::npos) {
+		while (next_nl < pos) {
+			++y;
+			line_start = next_nl + 1;
+			next_nl    = text.find('\n', line_start);
 		}
+		out.emplace_back(y, pos - line_start);
+		pos += q.size();
 	}
 	return out;
 }
@@ -904,23 +964,23 @@ search_compute_matches_regex(const Buffer &buf, const std::string &pattern, std:
 		return out;
 	try {
 		const std::regex rx(pattern);
-		const auto &rows = buf.Rows();
+		const std::size_t nrows = buf.Nrows();
 		// std::regex recurses per matched character; see RegexGuard.h.
 		kte::RunWithLargeStack([&] {
-			for (std::size_t y = 0; y < rows.size(); ++y) {
+			for (std::size_t y = 0; y < nrows; ++y) {
+				const std::string_view line = line_text_view(buf, y);
 				// std::regex can be quadratic in line length for ordinary
 				// patterns (".*q" on a 40 KB minified line took over a
 				// minute, uninterruptibly), so the per-keystroke caller
 				// passes a limit; moving to the next/previous match
 				// (Left/Right in the prompt) searches every line.
-				if (rows[y].size() > line_limit) {
+				if (line.size() > line_limit) {
 					if (skipped)
 						++*skipped;
 					continue;
 				}
-				std::string line = static_cast<std::string>(rows[y]);
-				for (auto it = std::sregex_iterator(line.begin(), line.end(), rx);
-				     it != std::sregex_iterator(); ++it) {
+				for (auto it = std::cregex_iterator(line.data(), line.data() + line.size(), rx);
+				     it != std::cregex_iterator(); ++it) {
 					const auto &m = *it;
 					out.push_back(RegexMatch{
 						y, static_cast<std::size_t>(m.position()), static_cast<std::size_t>(m.length())
@@ -2499,18 +2559,7 @@ cmd_insert_text(CommandContext &ctx)
 		ctx.editor.SetSearchQuery(q);
 
 		// Recompute matches and move cursor to current index
-		const auto &rows = rows_of(*buf);
-		std::vector<std::pair<std::size_t, std::size_t> > matches;
-		if (!q.empty()) {
-			for (std::size_t y = 0; y < rows.size(); ++y) {
-				std::string line = static_cast<std::string>(rows[y]);
-				std::size_t pos  = 0;
-				while (!q.empty() && (pos = line.find(q, pos)) != std::string::npos) {
-					matches.emplace_back(y, pos);
-					pos += q.size();
-				}
-			}
-		}
+		const auto matches = search_compute_matches(*buf, q);
 		if (matches.empty()) {
 			ctx.editor.SetSearchMatch(0, 0, 0);
 			// Restore to origin if available
@@ -2575,26 +2624,14 @@ cmd_insert_text(CommandContext &ctx)
 				ins += ctx.arg;
 		}
 		const std::size_t xchars = y < rows.size() ? utf8_char_count(line_view(rows[y]), x) : x;
-		for (std::size_t yy = sy; yy <= ey; ++yy) {
-			if (yy >= rows.size())
-				break;
-			std::size_t xx = utf8_byte_of_char(line_view(rows[yy]), xchars);
-			if (!ins.empty()) {
-				buf->SetCursor(xx, yy);
-				if (u)
-					u->Begin(UndoType::Insert);
-				buf->insert_text(static_cast<int>(yy), static_cast<int>(xx), std::string_view(ins));
-				xx += ins.size();
-				if (u) {
-					u->Append(std::string_view(ins));
-					u->commit();
-				}
-			}
+		transform_rows(*buf, sy, ey, u, [&](std::string &line, const std::size_t yy) {
+			const std::size_t xx = utf8_byte_of_char(line, xchars);
+			line.insert(xx, ins);
 			if (yy == y) {
-				cx = xx;
+				cx = xx + ins.size();
 				cy = yy;
 			}
-		}
+		});
 		if (u)
 			u->EndGroup();
 		buf->SetDirty(true);
@@ -3486,31 +3523,16 @@ cmd_newline(CommandContext &ctx)
 		if (sy < y)
 			splits_above = std::min(ey, y - 1) - sy + 1;
 
-		// Every split is recorded, as one undo step. Begin() takes the node's
-		// position from the cursor, so place the cursor at each split first.
+		// All splits as one edit (one undo step): repeat newlines at the
+		// cursor's column on every selected line.
 		UndoSystem *vu = buf->Undo();
 		UndoGroupGuard vguard(vu);
-		auto split_at  = [&](std::size_t row, std::size_t col) {
-			buf->SetCursor(col, row);
-			if (vu) {
-				vu->Begin(UndoType::Newline);
-				vu->commit();
-			}
-			buf->split_line(static_cast<int>(row), static_cast<int>(col));
-		};
-
-		// Iterate bottom-up to keep row indices stable while splitting.
 		const std::size_t nrows  = buf->Nrows();
-		const std::size_t xchars = y < nrows ? utf8_char_count(buf->GetLineString(y), x) : x;
-		for (std::size_t yy = ey + 1; yy-- > sy;) {
-			if (yy >= nrows)
-				continue;
-			const std::size_t xx = utf8_byte_of_char(buf->GetLineString(yy), xchars);
-			// First split at the cursor column; subsequent splits create blank lines.
-			split_at(yy, xx);
-			for (int i = 1; i < repeat; ++i)
-				split_at(yy + static_cast<std::size_t>(i), 0);
-		}
+		const std::size_t xchars = y < nrows ? utf8_char_count(line_text_view(*buf, y), x) : x;
+		const std::string nls(static_cast<std::size_t>(repeat), '\n');
+		transform_rows(*buf, sy, ey, vu, [&](std::string &line, std::size_t) {
+			line.insert(utf8_byte_of_char(line, xchars), nls);
+		});
 
 		buf->SetDirty(true);
 		// Cursor: end up on the final inserted line for the original cursor line.
@@ -3693,32 +3715,16 @@ cmd_backspace(CommandContext &ctx)
 		(void) gid;
 		std::size_t cx = x;
 		const std::size_t xchars = y < rows.size() ? utf8_char_count(line_view(rows[y]), x) : x;
-		for (std::size_t yy = sy; yy <= ey; ++yy) {
-			if (yy >= rows.size())
-				break;
-			std::size_t xx = utf8_byte_of_char(line_view(rows_of(*buf)[yy]), xchars);
-			std::string deleted;
-			for (int i = 0; i < repeat; ++i) {
-				if (xx == 0)
-					break;
-				const auto &rows_view = rows_of(*buf);
-				if (yy >= rows_view.size())
-					break;
-				const std::string_view lv = line_view(rows_view[yy]);
-				const std::size_t n       = utf8_prev_len(lv, xx);
-				deleted.insert(0, std::string(lv.substr(xx - n, n)));
-				buf->delete_text(static_cast<int>(yy), static_cast<int>(xx - n), n);
+		transform_rows(*buf, sy, ey, u, [&](std::string &line, const std::size_t yy) {
+			std::size_t xx = utf8_byte_of_char(line, xchars);
+			for (int i = 0; i < repeat && xx > 0; ++i) {
+				const std::size_t n = utf8_prev_len(line, xx);
+				line.erase(xx - n, n);
 				xx -= n;
-			}
-			if (u && !deleted.empty()) {
-				buf->SetCursor(xx, yy);
-				u->Begin(UndoType::Delete);
-				u->Append(std::string_view(deleted));
-				u->commit();
 			}
 			if (yy == y)
 				cx = xx;
-		}
+		});
 		if (u)
 			u->EndGroup();
 		buf->SetDirty(true);
@@ -3804,31 +3810,14 @@ cmd_delete_char(CommandContext &ctx)
 			gid = u->BeginGroup();
 		(void) gid;
 		const std::size_t xchars = y < rows.size() ? utf8_char_count(line_view(rows[y]), x) : x;
-		for (std::size_t yy = sy; yy <= ey; ++yy) {
-			if (yy >= rows.size())
-				break;
-			std::size_t xx = utf8_byte_of_char(line_view(rows_of(*buf)[yy]), xchars);
-			std::string deleted;
-			for (int i = 0; i < repeat; ++i) {
-				const auto &rows_view = rows_of(*buf);
-				if (yy >= rows_view.size() || xx >= rows_view[yy].size())
-					break;
-				const std::string_view lv = line_view(rows_view[yy]);
-				const std::size_t n       = utf8_next_len(lv, xx);
-				deleted.append(lv.substr(xx, n));
-				buf->delete_text(static_cast<int>(yy), static_cast<int>(xx), n);
-			}
-			if (u && !deleted.empty()) {
-				buf->SetCursor(xx, yy);
-				u->Begin(UndoType::Delete);
-				u->Append(std::string_view(deleted));
-				u->commit();
-			}
-		}
+		transform_rows(*buf, sy, ey, u, [&](std::string &line, std::size_t) {
+			const std::size_t xx = utf8_byte_of_char(line, xchars);
+			for (int i = 0; i < repeat && xx < line.size(); ++i)
+				line.erase(xx, utf8_next_len(line, xx));
+		});
 		if (u)
 			u->EndGroup();
-		// Recording each line's undo moved the cursor; deleting forward
-		// leaves it where it was.
+		// The edit moved the cursor; deleting forward leaves it where it was.
 		buf->SetCursor(x, y);
 		buf->SetDirty(true);
 		ensure_cursor_visible(ctx.editor, *buf);
@@ -4108,24 +4097,13 @@ cmd_yank(CommandContext &ctx)
 		const std::size_t ey = buf->VisualLineEndY();
 		const std::size_t y0 = buf->Cury();
 
-		std::uint64_t gid = 0;
-		if (u)
-			gid = u->BeginGroup();
-		(void) gid;
-
-		// Iterate from bottom to top so insertions don't invalidate remaining line indices.
-		for (std::size_t yy = ey + 1; yy-- > sy;) {
-			buf->SetCursor(0, yy);
-			if (u)
-				u->Begin(UndoType::Paste);
-			insert_text_at_cursor(*buf, ins);
-			if (u) {
-				u->Append(std::string_view(ins));
-				u->commit();
-			}
+		{
+			// One edit for all lines (see transform_rows).
+			UndoGroupGuard yguard(u);
+			transform_rows(*buf, sy, ey, u, [&](std::string &line, std::size_t) {
+				line.insert(0, ins);
+			});
 		}
-		if (u)
-			u->EndGroup();
 
 		// Keep the point on the primary cursor line (as it was before yank), at the end of the
 		// inserted text for that line.
@@ -5063,17 +5041,11 @@ cmd_indent_region(CommandContext &ctx)
 	// Empty lines are left alone: indenting them only added trailing
 	// whitespace, and the empty row after a final newline became a tab-only
 	// last line.
-	for (std::size_t y = sy; y <= ey && y < rows_of(*buf).size(); ++y) {
-		if (rows_of(*buf)[y].empty())
-			continue;
-		buf->insert_text(static_cast<int>(y), 0, std::string_view("\t"));
-		if (u) {
-			buf->SetCursor(0, y);
-			u->Begin(UndoType::Insert);
-			u->Append('\t');
-			u->commit();
-		}
-	}
+	transform_rows(*buf, sy, ey, u, [](std::string &line, std::size_t) {
+		if (!line.empty())
+			line.insert(0, 1, '\t');
+	});
+	buf->SetCursor(0, std::min(ey, buf->Nrows() ? buf->Nrows() - 1 : 0));
 	buf->SetDirty(true);
 	buf->ClearMark();
 	ensure_cursor_visible(ctx.editor, *buf);
@@ -5098,37 +5070,19 @@ cmd_unindent_region(CommandContext &ctx)
 	}
 	UndoSystem *u = buf->Undo();
 	UndoGroupGuard guard(u);
-	for (std::size_t y = sy; y <= ey && y < rows_of(*buf).size(); ++y) {
-		const auto &rows_view = rows_of(*buf);
-		if (y >= rows_view.size())
-			break;
-		const std::string line = static_cast<std::string>(rows_view[y]);
-		if (!line.empty()) {
-			if (line[0] == '\t') {
-				buf->delete_text(static_cast<int>(y), 0, 1);
-				if (u) {
-					buf->SetCursor(0, y);
-					u->Begin(UndoType::Delete);
-					u->Append('\t');
-					u->commit();
-				}
-			} else if (line[0] == ' ') {
-				std::size_t spaces = 0;
-				while (spaces < line.size() && spaces < 8 && line[spaces] == ' ') {
-					++spaces;
-				}
-				if (spaces > 0) {
-					buf->delete_text(static_cast<int>(y), 0, spaces);
-					if (u) {
-						buf->SetCursor(0, y);
-						u->Begin(UndoType::Delete);
-						u->Append(line.substr(0, spaces));
-						u->commit();
-					}
-				}
-			}
+	transform_rows(*buf, sy, ey, u, [](std::string &line, std::size_t) {
+		if (line.empty())
+			return;
+		if (line[0] == '\t') {
+			line.erase(0, 1);
+		} else if (line[0] == ' ') {
+			std::size_t spaces = 0;
+			while (spaces < line.size() && spaces < 8 && line[spaces] == ' ')
+				++spaces;
+			line.erase(0, spaces);
 		}
-	}
+	});
+	buf->SetCursor(0, std::min(ey, buf->Nrows() ? buf->Nrows() - 1 : 0));
 	buf->SetDirty(true);
 	buf->ClearMark();
 	ensure_cursor_visible(ctx.editor, *buf);

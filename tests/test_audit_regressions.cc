@@ -1648,3 +1648,85 @@ TEST(Audit_CountedDelete_AcrossJoin_OneUndo)
 		ASSERT_EQ(h.Text(), std::string("abc\nde"));
 	}
 }
+
+
+// Plain search scans the materialized text in one pass; it must report the
+// same matches as a per-line search, also after scattered edits (many
+// pieces) and at line boundaries.
+TEST(Audit_Search_WholeBufferScanMatchesPerLine)
+{
+	std::mt19937 rng(7);
+	const char alphabet[] = {'a', 'b', '\n', 'a', 'b', ' ', '\r'};
+	for (int iter = 0; iter < 40; ++iter) {
+		TestHarness h;
+		std::string text;
+		const int n = 50 + static_cast<int>(rng() % 400);
+		for (int i = 0; i < n; ++i)
+			text.push_back(alphabet[rng() % sizeof(alphabet)]);
+		h.Buf().insert_text(0, 0, text);
+		// Scattered edits fragment the piece table.
+		for (int e = 0; e < 20; ++e) {
+			const std::size_t y = rng() % h.Buf().Nrows();
+			h.Buf().insert_text(static_cast<int>(y), 0, (rng() % 2) ? "ab" : "b");
+		}
+		const std::string all = h.Text();
+		const std::string q   = (iter % 3 == 0) ? "ab" : (iter % 3 == 1) ? "b a" : "a";
+		// Per-line reference.
+		std::vector<std::pair<std::size_t, std::size_t> > want;
+		std::size_t y = 0, start = 0;
+		while (true) {
+			const std::size_t nl   = all.find('\n', start);
+			const std::string line = all.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
+			for (std::size_t p = line.find(q); p != std::string::npos; p = line.find(q, p + q.size()))
+				want.emplace_back(y, p);
+			if (nl == std::string::npos)
+				break;
+			start = nl + 1;
+			++y;
+		}
+		h.Buf().SetCursor(0, 0);
+		ASSERT_TRUE(h.Exec(CommandId::FindStart));
+		ASSERT_TRUE(h.Exec(CommandId::InsertText, q));
+		if (want.empty()) {
+			ASSERT_TRUE(h.EditorRef().Status().find(" 1/") == std::string::npos);
+		} else {
+			ASSERT_TRUE(h.EditorRef().Status().find("1/" + std::to_string(want.size())) != std::string::npos);
+			for (std::size_t i = 0; i < want.size() && i < 10; ++i) {
+				ASSERT_EQ(h.Buf().Cury(), want[i].first);
+				ASSERT_EQ(h.Buf().Curx(), want[i].second);
+				ASSERT_TRUE(h.Exec(CommandId::MoveRight));
+			}
+		}
+		ASSERT_TRUE(h.Exec(CommandId::Refresh));
+	}
+}
+
+
+// Indent/unindent and visual-line edits over many rows are one edit, not
+// one per row (each costing time linear in the buffer): indenting 100k
+// rows took minutes. Generous bound; typically well under a second.
+TEST(Audit_RowRangeEdits_Scale)
+{
+	TestHarness h;
+	std::string text;
+	for (int i = 0; i < 100000; ++i)
+		text += "line " + std::to_string(i) + "\n";
+	h.Buf().insert_text(0, 0, text);
+	h.Buf().SetCursor(0, 0);
+	const auto t0 = std::chrono::steady_clock::now();
+	ASSERT_TRUE(h.Exec(CommandId::MarkAllAndJumpEnd));
+	ASSERT_TRUE(h.Exec(CommandId::IndentRegion));
+	ASSERT_EQ(h.Buf().GetLineString(99999), std::string("\tline 99999"));
+	h.Buf().SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::VisualLineModeToggle));
+	for (int i = 0; i < 50000; ++i)
+		(void) Execute(h.EditorRef(), CommandId::MoveDown);
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "x"));
+	ASSERT_EQ(h.Buf().GetLineString(49999), std::string("x\tline 49999"));
+	ASSERT_EQ(h.Buf().GetLineString(50001), std::string("\tline 50001"));
+	ASSERT_TRUE(h.Undo());
+	ASSERT_TRUE(h.Undo());
+	const auto secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+	ASSERT_EQ(h.Text(), text);
+	ASSERT_TRUE(secs < 20.0);
+}
