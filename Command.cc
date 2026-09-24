@@ -5172,15 +5172,19 @@ cmd_reflow_paragraph(CommandContext &ctx)
 	if (para_start > para_end)
 		return false;
 	// CRLF text: reflow the lines without their CR (it would otherwise be
-	// joined into the middle of lines) and end every new line with one.
-	bool crlf = true;
-	for (std::size_t i = para_start; i <= para_end && crlf; ++i) {
+	// joined into the middle of lines). If any line had one, every new line
+	// but the last gets one; the last keeps whatever the paragraph's last
+	// line had (a CRLF file often lacks the final line ending).
+	bool crlf = false;
+	for (std::size_t i = para_start; i <= para_end && !crlf; ++i) {
 		const std::string_view lv = line_view(rows[i]);
 		crlf = !lv.empty() && lv.back() == '\r';
 	}
+	const std::string_view last_lv = line_view(rows[para_end]);
+	const bool last_cr             = !last_lv.empty() && last_lv.back() == '\r';
 	auto row_text = [&](std::size_t i) {
 		std::string t = static_cast<std::string>(rows[i]);
-		if (crlf)
+		if (!t.empty() && t.back() == '\r')
 			t.pop_back();
 		return t;
 	};
@@ -5266,6 +5270,15 @@ cmd_reflow_paragraph(CommandContext &ctx)
 		return out.substr(start, end - start);
 	};
 
+	auto looks_like_marker = [](const std::string &wrd) {
+		if (wrd == "-" || wrd == "+" || wrd == "*")
+			return true;
+		std::size_t i = 0;
+		while (i < wrd.size() && std::isdigit(static_cast<unsigned char>(wrd[i])))
+			++i;
+		return i > 0 && i + 1 == wrd.size() && (wrd[i] == '.' || wrd[i] == ')');
+	};
+
 	auto wrap_with_prefixes = [&](const std::string &content,
 	                              const std::string &first_prefix,
 	                              const std::string &cont_prefix,
@@ -5305,7 +5318,11 @@ cmd_reflow_paragraph(CommandContext &ctx)
 			// first word on a line: that emitted a line holding only the
 			// prefix (a blank line, or a bullet marker split from its text)
 			// ahead of a word longer than the width, again on every reflow.
-			if (!first_word_on_line && static_cast<int>(cur_len + needed) > w) {
+			// Nor before a word that would read as a list marker at the
+			// start of a line ("-", "*", "1."): the next reflow would turn
+			// the paragraph into a list. Such a word stays on this line.
+			if (!first_word_on_line && static_cast<int>(cur_len + needed) > w &&
+			    !looks_like_marker(wrd)) {
 				flush_line();
 			}
 			if (!first_word_on_line) {
@@ -5474,7 +5491,7 @@ cmd_reflow_paragraph(CommandContext &ctx)
 		if (i > 0)
 			new_text.push_back('\n');
 		new_text += new_lines[i];
-		if (crlf)
+		if (crlf && (i + 1 < new_lines.size() || last_cr))
 			new_text.push_back('\r');
 	}
 	if (new_text != old_text)
