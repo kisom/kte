@@ -247,7 +247,25 @@ void
 UndoSystem::mark_saved()
 {
 	commit();
-	tree_.saved = tree_.current;
+	tree_.saved   = tree_.current;
+	base_unsaved_ = false;
+	update_dirty_flag();
+}
+
+
+void
+UndoSystem::AbortGroups()
+{
+	commit();
+	group_depth_     = 0;
+	active_group_id_ = 0;
+}
+
+
+void
+UndoSystem::mark_base_unsaved()
+{
+	base_unsaved_ = true;
 	update_dirty_flag();
 }
 
@@ -272,6 +290,7 @@ UndoSystem::clear()
 	tree_.root       = nullptr;
 	tree_.current    = nullptr;
 	tree_.saved      = nullptr;
+	base_unsaved_    = false;
 	active_group_id_ = 0;
 	group_depth_     = 0;
 	next_group_id_   = 1;
@@ -279,9 +298,31 @@ UndoSystem::clear()
 }
 
 
+// Position just after `node->text` inserted at (node->col, node->row). The text
+// may span lines: the column is then the length after its last newline, not
+// col + size (which left the cursor past the end of the line, so later edits
+// and their undo records went to the wrong place).
+static void
+end_of_text(const UndoNode *node, std::size_t &x, std::size_t &y)
+{
+	y             = static_cast<std::size_t>(node->row);
+	x             = static_cast<std::size_t>(node->col);
+	const auto nl = node->text.rfind('\n');
+	if (nl == std::string::npos) {
+		x += node->text.size();
+		return;
+	}
+	for (char c: node->text)
+		if (c == '\n')
+			++y;
+	x = node->text.size() - nl - 1;
+}
+
+
 void
 UndoSystem::apply(const UndoNode *node, int direction)
 {
+	std::size_t ex = 0, ey = 0;
 	if (!node)
 		return;
 	// Cursor positioning: keep the point at a sensible location after undo/redo.
@@ -291,8 +332,8 @@ UndoSystem::apply(const UndoNode *node, int direction)
 	case UndoType::Paste:
 		if (direction > 0) {
 			buf_->insert_text(node->row, node->col, node->text);
-			buf_->SetCursor(static_cast<std::size_t>(node->col + node->text.size()),
-			                static_cast<std::size_t>(node->row));
+			end_of_text(node, ex, ey);
+			buf_->SetCursor(ex, ey);
 		} else {
 			buf_->delete_text(node->row, node->col, node->text.size());
 			buf_->SetCursor(static_cast<std::size_t>(node->col), static_cast<std::size_t>(node->row));
@@ -304,8 +345,8 @@ UndoSystem::apply(const UndoNode *node, int direction)
 			buf_->SetCursor(static_cast<std::size_t>(node->col), static_cast<std::size_t>(node->row));
 		} else {
 			buf_->insert_text(node->row, node->col, node->text);
-			buf_->SetCursor(static_cast<std::size_t>(node->col + node->text.size()),
-			                static_cast<std::size_t>(node->row));
+			end_of_text(node, ex, ey);
+			buf_->SetCursor(ex, ey);
 		}
 		break;
 	case UndoType::Newline:
@@ -409,7 +450,7 @@ void
 UndoSystem::update_dirty_flag()
 {
 	// dirty if current != saved
-	bool dirty = (tree_.current != tree_.saved);
+	bool dirty = base_unsaved_ || (tree_.current != tree_.saved);
 	buf_->SetDirty(dirty);
 }
 

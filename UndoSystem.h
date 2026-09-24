@@ -76,6 +76,14 @@ public:
 
 	void mark_saved();
 
+	// No undo state matches the file on disk any more (e.g. after crash
+	// recovery replayed edits onto it): the buffer stays dirty in every state
+	// until the next mark_saved() or clear().
+	void mark_base_unsaved();
+
+	// Close any open group (after an interrupted command) and seal pending.
+	void AbortGroups();
+
 	void discard_pending();
 
 	void clear();
@@ -115,6 +123,7 @@ private:
 
 	std::uint64_t active_group_id_ = 0;
 	int group_depth_                = 0; // nesting depth of BeginGroup/EndGroup
+	bool base_unsaved_               = false; // see mark_base_unsaved()
 	std::uint64_t next_group_id_   = 1;
 
 	Buffer *buf_;

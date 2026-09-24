@@ -1026,3 +1026,87 @@ TEST(Audit_Yank_HugeRepeatRefused)
 	ASSERT_EQ(h.Buf().Nrows(), (std::size_t) 1);
 	ASSERT_EQ(h.Line(0), std::string());
 }
+
+
+// Undoing a multi-line kill puts the cursor after the restored text (it was
+// placed at col + size on the start row, past the end of the line, so later
+// edits and their undo went to the wrong place).
+TEST(Audit_Undo_MultiLineRestore_CursorAfterText)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "a\nb\n");
+	b.SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::ToggleMark));
+	ASSERT_TRUE(h.Exec(CommandId::MoveDown));
+	ASSERT_TRUE(h.Exec(CommandId::KillRegion));
+	ASSERT_EQ(h.Text(), std::string("b\n"));
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), std::string("a\nb\n"));
+	ASSERT_EQ(b.Cury(), (std::size_t) 1);
+	ASSERT_EQ(b.Curx(), (std::size_t) 0);
+	ASSERT_TRUE(h.Exec(CommandId::KillLine));
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), std::string("a\nb\n"));
+}
+
+
+// Same shape that overflowed the heap in delete-word-prev: after the undo
+// the cursor is within its line.
+TEST(Audit_Undo_ThenDeleteWordPrev_NoOverflow)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, std::string(24, 'a') + "\n" + std::string(30, 'b'));
+	b.SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::ToggleMark));
+	ASSERT_TRUE(h.Exec(CommandId::MoveDown));
+	ASSERT_TRUE(h.Exec(CommandId::MoveEnd));
+	ASSERT_TRUE(h.Exec(CommandId::KillRegion));
+	ASSERT_TRUE(h.Undo());
+	ASSERT_TRUE(b.Curx() <= h.Line(b.Cury()).size());
+	ASSERT_TRUE(h.Exec(CommandId::DeleteWordPrev));
+}
+
+
+// Save-and-quit records the saved state, so undo afterwards marks the buffer
+// dirty again (it differs from the file).
+TEST(Audit_SaveAndQuit_MarksSaved)
+{
+	TempDir d("saq_marksaved");
+	std::ofstream(d.path / "a.txt") << "aaa\n";
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	h.Buf().insert_text(0, 0, "dirty other");
+	h.Buf().SetDirty(true);
+	std::string err;
+	ASSERT_TRUE(ed.OpenFile((d.path / "a.txt").string(), err));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "X"));
+	ASSERT_TRUE(h.Exec(CommandId::SaveAndQuit));
+	ASSERT_TRUE(!ed.QuitRequested()); // other buffer still dirty
+	ASSERT_EQ(slurp(d.path / "a.txt"), std::string("Xaaa\n"));
+	ASSERT_TRUE(!ed.CurrentBuffer()->Dirty());
+	ASSERT_TRUE(h.Undo());
+	ASSERT_TRUE(ed.CurrentBuffer()->Dirty());
+}
+
+
+// Visual-line newline with a stale selection never puts the cursor past the
+// buffer, so later typing is undoable.
+TEST(Audit_VisualLine_StaysInsideBuffer)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "one\ntwo\nthree\n");
+	b.SetCursor(0, 0);
+	const std::string orig = h.Text();
+	ASSERT_TRUE(h.Exec(CommandId::VisualLineModeToggle));
+	ASSERT_TRUE(h.Exec(CommandId::MarkAllAndJumpEnd));
+	ASSERT_TRUE(h.Exec(CommandId::Newline));
+	ASSERT_TRUE(h.Exec(CommandId::VisualLineModeToggle));
+	ASSERT_TRUE(b.Cury() < b.Nrows());
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "Z"));
+	for (int i = 0; i < 10; ++i)
+		(void) h.Undo();
+	ASSERT_EQ(h.Text(), orig);
+}

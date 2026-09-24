@@ -1120,6 +1120,8 @@ cmd_save_and_quit(CommandContext &ctx)
 				buf->SetDirty(false);
 				if (auto *sm = ctx.editor.Swap())
 					sm->ResetJournal(*buf);
+				if (auto *u = buf->Undo())
+					u->mark_saved();
 			} else {
 				ctx.editor.SetStatus(err);
 				return false;
@@ -1129,6 +1131,8 @@ cmd_save_and_quit(CommandContext &ctx)
 				buf->SetDirty(false);
 				if (auto *sm = ctx.editor.Swap())
 					sm->ResetJournal(*buf);
+				if (auto *u = buf->Undo())
+					u->mark_saved();
 			} else {
 				ctx.editor.SetStatus(err);
 				return false;
@@ -3420,10 +3424,13 @@ cmd_newline(CommandContext &ctx)
 
 		buf->SetDirty(true);
 		// Cursor: end up on the final inserted line for the original cursor line.
-		// Each selected line above the cursor gained `repeat` lines.
-		std::size_t new_y = y + static_cast<std::size_t>(repeat);
-		new_y             += splits_above * static_cast<std::size_t>(repeat);
+		// Each selected line above the cursor gained `repeat` lines, and the
+		// cursor's own line only if it was selected.
+		const bool own_split = (y >= sy && y <= ey);
+		std::size_t new_y    = y + (own_split ? static_cast<std::size_t>(repeat) : 0);
+		new_y                += splits_above * static_cast<std::size_t>(repeat);
 		buf->SetCursor(0, new_y);
+		clamp_cursor_to_buffer(*buf);
 		ensure_cursor_visible(ctx.editor, *buf);
 		return true;
 	}
@@ -3770,6 +3777,7 @@ cmd_undo(CommandContext &ctx)
 		for (int i = 0; i < repeat; ++i)
 			u->undo();
 		// Keep cursor within buffer bounds
+		clamp_cursor_to_buffer(*buf); // never leave the cursor past a line or the buffer
 		ensure_cursor_visible(ctx.editor, *buf);
 		ctx.editor.SetStatus("Undone");
 		return true;
@@ -3795,6 +3803,7 @@ cmd_redo(CommandContext &ctx)
 		} else {
 			u->redo();
 		}
+		clamp_cursor_to_buffer(*buf); // never leave the cursor past a line or the buffer
 		ensure_cursor_visible(ctx.editor, *buf);
 		ctx.editor.SetStatus("Redone");
 		return true;
@@ -3971,7 +3980,10 @@ cmd_yank(CommandContext &ctx)
 	// Bound the total: C-u 1000000 C-y of a large kill would allocate
 	// gigabytes (and bad_alloc or the OOM killer end the session).
 	constexpr std::size_t kMaxYankBytes = std::size_t{256} << 20;
-	if (text.size() * static_cast<std::size_t>(repeat) > kMaxYankBytes) {
+	// Visual-line yank inserts the text once per selected line.
+	const std::size_t yank_lines =
+		buf->VisualLineActive() ? (buf->VisualLineEndY() - buf->VisualLineStartY() + 1) : 1;
+	if (text.size() * static_cast<std::size_t>(repeat) * yank_lines > kMaxYankBytes) {
 		ctx.editor.SetStatus("Yank too large (" + std::to_string(repeat) + " x " + std::to_string(text.size()) +
 		                     " bytes)");
 		return false;
@@ -5673,12 +5685,21 @@ run_handler(Editor &ed, const Command &cmd, CommandContext &ctx)
 {
 	if (!cmd.handler)
 		return false;
+	// An exception can leave undo groups opened by hand (BeginGroup without
+	// its EndGroup); close them, or every later edit would join that group.
+	auto close_undo_groups = [&ed] {
+		if (Buffer *b = ed.CurrentBuffer())
+			if (UndoSystem *u = b->Undo())
+				u->AbortGroups();
+	};
 	try {
 		return cmd.handler(ctx);
 	} catch (const std::exception &e) {
+		close_undo_groups();
 		kte::ErrorHandler::Instance().Error("Command", std::string(cmd.name) + ": " + e.what(), "");
 		ed.SetStatus(std::string("Error in ") + cmd.name + ": " + e.what());
 	} catch (...) {
+		close_undo_groups();
 		kte::ErrorHandler::Instance().Error("Command", std::string(cmd.name) + ": unknown exception", "");
 		ed.SetStatus(std::string("Error in ") + cmd.name);
 	}

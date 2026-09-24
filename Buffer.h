@@ -482,15 +482,22 @@ public:
 	}
 
 
+	// The selected rows, clamped to the buffer: they are stored as row numbers
+	// and go stale when lines are removed, and commands must never act on rows
+	// past the end (edits there were misplaced and could not be undone).
 	[[nodiscard]] std::size_t VisualLineStartY() const
 	{
-		return visual_line_anchor_y_ < visual_line_active_y_ ? visual_line_anchor_y_ : visual_line_active_y_;
+		const std::size_t y = visual_line_anchor_y_ < visual_line_active_y_ ? visual_line_anchor_y_
+		                                                                      : visual_line_active_y_;
+		return clamp_row_(y);
 	}
 
 
 	[[nodiscard]] std::size_t VisualLineEndY() const
 	{
-		return visual_line_anchor_y_ < visual_line_active_y_ ? visual_line_active_y_ : visual_line_anchor_y_;
+		const std::size_t y = visual_line_anchor_y_ < visual_line_active_y_ ? visual_line_active_y_
+		                                                                      : visual_line_anchor_y_;
+		return clamp_row_(y);
 	}
 
 
@@ -512,6 +519,15 @@ public:
 
 
 	[[nodiscard]] std::string AsString() const;
+
+private:
+	[[nodiscard]] std::size_t clamp_row_(std::size_t y) const
+	{
+		const std::size_t n = Nrows();
+		return (n == 0) ? 0 : (y < n ? y : n - 1);
+	}
+
+public:
 
 	// Syntax highlighting integration (per-buffer)
 	[[nodiscard]] std::uint64_t Version() const
