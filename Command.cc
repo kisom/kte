@@ -63,6 +63,29 @@ compute_render_x(std::string_view line, const std::size_t curx, const std::size_
 }
 
 
+// Clamp the cursor to an existing row and to that row's length. Commands that
+// set the cursor from remembered or scrolled positions must call this: edits
+// at a column past end-of-line are misapplied (and mis-recorded for undo).
+static void
+clamp_cursor_to_buffer(Buffer &buf)
+{
+	const std::size_t nrows = buf.Nrows();
+	std::size_t y           = buf.Cury();
+	if (nrows == 0) {
+		buf.SetCursor(0, 0);
+		return;
+	}
+	if (y >= nrows)
+		y = nrows - 1;
+	const auto [start, end] = buf.GetLineRange(y);
+	std::size_t len         = end - start;
+	// GetLineRange includes the trailing newline, if any.
+	if (len > 0 && y + 1 < nrows)
+		--len;
+	buf.SetCursor(std::min(buf.Curx(), len), y);
+}
+
+
 static void
 ensure_cursor_visible(const Editor &ed, Buffer &buf)
 {
@@ -83,12 +106,10 @@ ensure_cursor_visible(const Editor &ed, Buffer &buf)
 		rowoffs = cury - content_rows + 1;
 	}
 
-	// Clamp vertical offset to available content. Use the materialized rows cache
-	// because some legacy editing commands still modify Buffer::Rows() directly.
-	// TerminalRenderer also renders from Buffer::Rows(), so keeping viewport math
-	// consistent with that avoids desync where the cursor goes off-screen when
-	// inserting newlines at EOF.
-	const auto total_rows = buf.Rows().size();
+	// Clamp vertical offset to available content. Nrows() reads the line index
+	// and equals Rows().size(); calling Rows() here would rebuild a string for
+	// every line of the file after each edit.
+	const auto total_rows = buf.Nrows();
 	if (content_rows < total_rows) {
 		std::size_t max_rowoffs = total_rows - content_rows;
 		if (rowoffs > max_rowoffs)
@@ -98,11 +119,11 @@ ensure_cursor_visible(const Editor &ed, Buffer &buf)
 	}
 
 	// Horizontal scrolling (use rendered columns with tabs expanded)
-	std::size_t rx   = 0;
-	const auto total = buf.Nrows();
-	if (cury < total) {
-		// Avoid materializing all rows and copying strings; get a zero-copy view
-		rx = compute_render_x(buf.GetLineView(cury), curx, 8);
+	std::size_t rx = 0;
+	if (cury < total_rows) {
+		// GetLineView would materialize the whole buffer after an edit; copying
+		// the one line is cheaper.
+		rx = compute_render_x(buf.GetLineString(cury), curx, 8);
 	}
 	if (rx < coloffs) {
 		coloffs = rx;
@@ -2537,48 +2558,52 @@ cmd_newline(CommandContext &ctx)
 			UndoSystem *u      = buf->Undo();
 			if (u)
 				u->commit(); // end any pending batch
-			for (std::size_t y = 0; y < buf->Rows().size(); ++y) {
-				std::size_t pos = 0;
-				while (true) {
-					const auto &rows_view = buf->Rows();
-					if (y >= rows_view.size())
-						break;
-					std::string line = static_cast<std::string>(rows_view[y]);
-					if (find.empty())
-						break;
-					std::size_t p = line.find(find, pos);
-					if (p == std::string::npos)
-						break;
-					// Delete matched segment from the piece table
-					buf->delete_text(static_cast<int>(y), static_cast<int>(p), find.size());
-					if (u) {
-						buf->SetCursor(p, y);
-						u->Begin(UndoType::Delete);
-						u->Append(std::string_view(find));
-					}
-					// Insert replacement if provided
-					if (!with.empty()) {
-						buf->insert_text(static_cast<int>(y), static_cast<int>(p),
-						                 std::string_view(with));
+			{
+				// One undo step for the whole replace-all; EndGroup also commits the
+				// final node so later typing cannot coalesce into it.
+				UndoGroupGuard group(u);
+				// The prompt input is single-line, so the row count is stable. Keep a
+				// local copy of each line in step with the edits instead of
+				// re-fetching (and rebuilding) Rows() after every replacement.
+				const std::size_t nrows = buf->Nrows();
+				for (std::size_t y = 0; y < nrows && !find.empty(); ++y) {
+					std::string line = buf->GetLineString(y);
+					std::size_t pos  = 0;
+					while (true) {
+						std::size_t p = line.find(find, pos);
+						if (p == std::string::npos)
+							break;
+						// Delete matched segment from the piece table
+						buf->delete_text(static_cast<int>(y), static_cast<int>(p), find.size());
 						if (u) {
 							buf->SetCursor(p, y);
-							u->Begin(UndoType::Insert);
-							u->Append(std::string_view(with));
+							u->Begin(UndoType::Delete);
+							u->Append(std::string_view(find));
 						}
+						// Insert replacement if provided
+						if (!with.empty()) {
+							buf->insert_text(static_cast<int>(y), static_cast<int>(p),
+							                 std::string_view(with));
+							if (u) {
+								buf->SetCursor(p, y);
+								u->Begin(UndoType::Insert);
+								u->Append(std::string_view(with));
+							}
+						}
+						line.replace(p, find.size(), with);
+						// Resume just past the replacement. For an empty replacement that
+						// is `p` itself (not p+1), which catches adjacent matches, e.g.
+						// "aaaa" -> "" replacing "aa".
 						pos = p + with.size();
-					} else {
-						// Replacing with empty leaves nothing inserted at the deletion
-						// point, so resume scanning from `p` itself (not p+1) to catch
-						// adjacent/overlapping matches, e.g. "aaaa" -> "" replacing "aa".
-						pos = p;
+						++total;
 					}
-					++total;
 				}
 			}
 			buf->SetDirty(true);
-			// Restore original cursor
-			if (orig_y < buf->Rows().size())
+			// Restore original cursor, clamped: replacements may have shortened the line.
+			if (orig_y < buf->Nrows())
 				buf->SetCursor(orig_x, orig_y);
+			clamp_cursor_to_buffer(*buf);
 			ensure_cursor_visible(ctx.editor, *buf);
 			char msg[128];
 			std::snprintf(msg, sizeof(msg), "Replaced %zu occurrence%s", total, (total == 1 ? "" : "s"));
@@ -3109,6 +3134,11 @@ cmd_smart_newline(CommandContext &ctx)
 		return false;
 	}
 
+	// With a prompt open, Enter accepts the prompt; there is no line to indent,
+	// and accepting may switch or reallocate buffers, invalidating `buf`.
+	if (ctx.editor.PromptActive())
+		return cmd_newline(ctx);
+
 	if (buf->IsReadOnly()) {
 		ctx.editor.SetStatus("Read-only buffer");
 		return true;
@@ -3127,6 +3157,9 @@ cmd_smart_newline(CommandContext &ctx)
 		}
 	}
 
+	// The newline and its indent form one undo step.
+	UndoGroupGuard group(buf->Undo());
+
 	// Perform standard newline first
 	if (!cmd_newline(ctx)) {
 		return false;
@@ -3136,15 +3169,18 @@ cmd_smart_newline(CommandContext &ctx)
 	if (!indent.empty()) {
 		std::size_t new_y = buf->Cury();
 		std::size_t new_x = buf->Curx();
+		// Begin() records the cursor position, so it must run before the
+		// cursor moves past the inserted indent.
+		UndoSystem *u = buf->Undo();
+		if (u) {
+			u->Begin(UndoType::Insert);
+			u->Append(indent);
+		}
 		buf->insert_text(static_cast<int>(new_y), static_cast<int>(new_x), indent);
 		buf->SetCursor(new_x + indent.size(), new_y);
 		buf->SetDirty(true);
-
-		if (auto *u = buf->Undo()) {
-			u->Begin(UndoType::Insert);
-			u->Append(indent);
+		if (u)
 			u->commit();
-		}
 	}
 
 	ensure_cursor_visible(ctx.editor, *buf);
@@ -3718,6 +3754,8 @@ cmd_jump_to_mark(CommandContext &ctx)
 	std::size_t mx = buf->MarkCurx();
 	std::size_t my = buf->MarkCury();
 	buf->SetCursor(mx, my);
+	// Marks are not adjusted by edits, so the mark may now be past the end.
+	clamp_cursor_to_buffer(*buf);
 	buf->SetMark(cx, cy);
 	ensure_cursor_visible(ctx.editor, *buf);
 	return true;
@@ -4176,6 +4214,7 @@ cmd_scroll_up(CommandContext &ctx)
 		if (new_y >= rows.size() && !rows.empty())
 			new_y = rows.size() - 1;
 		buf->SetCursor(buf->Curx(), new_y);
+		clamp_cursor_to_buffer(*buf);
 	}
 
 	return true;
@@ -4213,6 +4252,7 @@ cmd_scroll_down(CommandContext &ctx)
 	std::size_t cury = buf->Cury();
 	if (cury < rowoffs) {
 		buf->SetCursor(buf->Curx(), rowoffs);
+		clamp_cursor_to_buffer(*buf);
 	}
 
 	return true;
@@ -4589,6 +4629,10 @@ cmd_reflow_paragraph(CommandContext &ctx)
 	// Treat a universal-argument count of 1 as "no width specified".
 	// Editor::UArgGet() returns 1 when no explicit count was provided.
 	int width              = ctx.count > 1 ? ctx.count : 72;
+	// A blank line separates paragraphs; expanding from it would merge the
+	// paragraphs above and below.
+	if (y >= rows.size() || rows[y].empty())
+		return true;
 	std::size_t para_start = y;
 	while (para_start > 0 && !rows[para_start - 1].empty())
 		--para_start;
