@@ -334,3 +334,68 @@ Updated as fixes land on `claude/funny-fermat-gj2vm5`.
 
 Regression tests: `tests/test_audit_regressions.cc`. Each test fails on the
 unfixed code (M4 by crashing).
+
+---
+
+## Follow-up review rounds
+
+After the first batch of fixes, three more review rounds (an adversarial
+review of each batch of changes, plus fresh reviews of areas the first
+audit covered lightly) found further defects. All of the following are
+fixed on this branch, each with a regression test that fails on the code
+before the fix (unless noted).
+
+**Crash / hang**
+- Opening a directory (bad_alloc exit), a FIFO (open blocked forever), or
+  a device node (later replaced by a regular file on save).
+- Filesystem exceptions (ENAMETOOLONG, EACCES, deleted cwd) and any other
+  exception escaping a command terminated the editor.
+- Regex search/replace, and renderer match highlighting, overflowed the
+  stack on long lines (std::regex recursion); a zero-width regex replace
+  hung the editor (D4).
+- Piped (non-tty) stdin was executed as commands, then spun at full CPU.
+
+**Data loss / corruption**
+- Recovery deleted the swap it was about to replay when another named
+  buffer was current (pre-existing).
+- Recovered sessions appended behind a torn final record.
+- Reload left the old journal (discarded edits came back on recovery);
+  reload discarded unsaved edits without confirmation and "reloaded" a
+  deleted file as empty.
+- Two buffers (duplicate open, save-as onto an open file) or two
+  sessions shared one journal; closing/saving one deleted the other's
+  live journal. Journals are now flock()ed; a session never removes a
+  journal it does not own; unnamed journals include the pid; distinct
+  paths no longer map to one swap name.
+- Journals now record the base file's size, mtime and CRC-32 and are
+  not replayed onto a file that changed afterwards.
+- Quit checked only the current buffer; Enter at "Recover?" / "Save
+  changes?" took the destructive branch; the close prompt's save
+  overwrote on-disk changes; save-as overwrote other files silently.
+- Kill-line with a count, stale marks in kill-region, commands running
+  behind an open prompt (read-only bypass, wrong buffer closed), paste
+  into a prompt, nested undo groups, UTF-8 splitting in word motions.
+- Save: fsync retried after failure (could report success for lost
+  data); new files got 0600; symlinks replaced; hard links split;
+  owner and setuid/setgid bits lost; umask race with the writer thread.
+- Writer-thread fsync raced with closes (fd reuse; kept a closed
+  journal's lock alive); crc32 table init race; Close() retried EINTR.
+
+**Performance**
+- Motion/delete commands rebuilt every line after an edit (80-90 ms per
+  keystroke on 500k lines; C-u 3000 C-d took 273 s, now 0.25 s).
+- Line index invalidated by consolidation; incremental index added.
+- Idle redraw every 16 ms rescanned long lines (one core busy); paste
+  handled one key per frame; RowsView retained unbounded copies.
+
+**Known limitations (not fixed)**
+- Catastrophic regex backtracking (e.g. `(a*)*b`) can still take very
+  long; std::regex has no time limit.
+- Typing in a multi-megabyte single line costs O(line length) per
+  keystroke (cursor column computed by scanning the line).
+- GUI-only items B7, B8, B10 and highlighter edge cases B13 are
+  unchanged; the ImGui and Qt frontends could not be built in the review
+  environment (changed GUI files were syntax-checked where possible).
+- A journal whose buffer exceeds 16 MiB cannot be checkpointed; after a
+  lost record such a journal stays incomplete until the file is saved
+  (reported to the user).
