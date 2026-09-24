@@ -18,6 +18,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <random>
@@ -2011,4 +2012,170 @@ TEST(Search_PrevAcrossBlocks)
 		ASSERT_EQ(off, want[j]);
 	}
 	ASSERT_TRUE(h.Exec(CommandId::Refresh));
+}
+
+
+namespace {
+// A 20 MiB buffer: over the 16 MiB a single checkpoint record can hold.
+std::string
+big_text()
+{
+	std::string t;
+	t.reserve(std::size_t{21} << 20);
+	for (int i = 0; t.size() < (std::size_t{20} << 20); ++i)
+		t += "line " + std::to_string(i) + " of a large buffer\n";
+	return t;
+}
+} // namespace
+
+
+// Buffers over 16 MiB are checkpointed as BEGIN/DATA.../END records, which
+// replay to the buffer; edits after the checkpoint apply on top.
+TEST(Swap_LargeCheckpointReplays)
+{
+	TempDir d("big_chkpt");
+	const std::string path = (d.path / "big.txt").string();
+	const std::string text = big_text();
+	{
+		std::ofstream o(path, std::ios::binary);
+		o << text;
+	}
+	Buffer b;
+	std::string err;
+	ASSERT_TRUE(b.OpenFromFile(path, err));
+	const std::string swp = kte::SwapManager::ComputeSwapPathForTests(b);
+	std::remove(swp.c_str());
+	kte::SwapManager sm;
+	sm.Attach(&b);
+	b.SetSwapRecorder(sm.RecorderFor(&b));
+	b.insert_text(0, 0, "A");
+	sm.Checkpoint(&b);
+	b.insert_text(1, 0, "B");
+	sm.Flush(&b);
+	const std::string want = b.BytesForTests();
+	const std::string copy = (d.path / "copy.swp").string();
+	{
+		std::ofstream o(copy, std::ios::binary | std::ios::trunc);
+		o << slurp(swp);
+	}
+	// The journal holds the chunked checkpoint.
+	ASSERT_TRUE(std::filesystem::file_size(copy) > text.size());
+	Buffer r;
+	ASSERT_TRUE(r.OpenFromFile(path, err));
+	std::uint64_t valid = 0;
+	ASSERT_TRUE(kte::SwapManager::ReplayFile(r, copy, err, &valid));
+	ASSERT_TRUE(err.empty());
+	ASSERT_TRUE(r.BytesForTests() == want);
+	ASSERT_EQ(valid, (std::uint64_t) std::filesystem::file_size(copy));
+
+	// Torn inside the checkpoint's data: the records before it replay, and
+	// the checkpoint is not counted as valid.
+	std::filesystem::resize_file(copy, 64 + 1000 + (std::size_t{8} << 20));
+	Buffer t;
+	ASSERT_TRUE(t.OpenFromFile(path, err));
+	valid = 0;
+	ASSERT_TRUE(kte::SwapManager::ReplayFile(t, copy, err, &valid));
+	ASSERT_TRUE(!err.empty());
+	ASSERT_EQ(t.BytesForTests(), "A" + text);
+	ASSERT_TRUE(valid < 64 + 1000);
+
+	b.SetSwapRecorder(nullptr);
+	sm.Detach(&b, true);
+}
+
+
+// A lost record on a large buffer is closed by a checkpoint (it could not
+// be before: the buffer was too large to checkpoint), and compaction
+// rewrites the journal to that checkpoint alone.
+TEST(Swap_LargeBufferGapResyncsAndCompacts)
+{
+	TempDir d("big_gap");
+	const std::string path = (d.path / "big.txt").string();
+	const std::string text = big_text();
+	{
+		std::ofstream o(path, std::ios::binary);
+		o << text;
+	}
+	Buffer b;
+	std::string err;
+	ASSERT_TRUE(b.OpenFromFile(path, err));
+	const std::string swp = kte::SwapManager::ComputeSwapPathForTests(b);
+	std::filesystem::remove_all(swp);
+	kte::SwapManager sm;
+	kte::SwapConfig cfg;
+	cfg.compact_bytes = 1024;
+	sm.SetConfig(cfg);
+	sm.Attach(&b);
+	b.SetSwapRecorder(sm.RecorderFor(&b));
+	// The journal cannot be opened: the record is lost.
+	std::filesystem::create_directories(swp);
+	b.insert_text(0, 0, "X");
+	sm.Flush(&b);
+	std::filesystem::remove_all(swp);
+	std::this_thread::sleep_for(std::chrono::milliseconds(2100)); // gap retry interval for 20 MiB
+	sm.RetryGapCheckpoints();
+	sm.Flush(&b);
+	b.insert_text(0, 1, "Y");
+	sm.Flush(&b);
+	const std::string copy = (d.path / "copy.swp").string();
+	{
+		std::ofstream o(copy, std::ios::binary | std::ios::trunc);
+		o << slurp(swp);
+	}
+	Buffer r;
+	ASSERT_TRUE(r.OpenFromFile(path, err));
+	ASSERT_TRUE(kte::SwapManager::ReplayFile(r, copy, err));
+	ASSERT_TRUE(r.BytesForTests() == b.BytesForTests());
+	// Compacted: header, the checkpoint (a few framing bytes over the
+	// content) and the one INS record after it.
+	ASSERT_TRUE(std::filesystem::file_size(copy) < text.size() + 4096);
+	b.SetSwapRecorder(nullptr);
+	sm.Detach(&b, true);
+}
+
+
+// A large base file's CRC is computed by the journal writer, not on open;
+// the journal still records it, so a same-size, same-mtime change on disk is
+// caught.
+TEST(Swap_DeferredBaseCrc)
+{
+	TempDir d("deferred_crc");
+	const std::string path = (d.path / "f.txt").string();
+	const std::string text(20000, 'a');
+	{
+		std::ofstream o(path, std::ios::binary);
+		o << text;
+	}
+	kte::SwapManager::SetSyncCrcLimitForTests(1024);
+	Buffer b;
+	std::string err;
+	ASSERT_TRUE(b.OpenFromFile(path, err));
+	const std::string swp = kte::SwapManager::ComputeSwapPathForTests(b);
+	std::remove(swp.c_str());
+	kte::SwapManager sm;
+	sm.Attach(&b);
+	b.SetSwapRecorder(sm.RecorderFor(&b));
+	b.insert_text(0, 0, "X");
+	sm.Flush(&b);
+	kte::SwapManager::SetSyncCrcLimitForTests(std::uint64_t{64} << 20);
+	const std::string j = slurp(swp);
+	ASSERT_TRUE(j.size() >= 64);
+	ASSERT_TRUE((static_cast<unsigned char>(j[12]) & 2) != 0); // CRC recorded
+	ASSERT_TRUE(kte::SwapManager::JournalMatchesFile(swp, path));
+	// Touched (new mtime, same content): the CRC shows it is still the same
+	// file, so recovery can use the journal. Without a CRC (large files
+	// before this), any touch made the journal unusable.
+	struct timespec later[2];
+	later[0].tv_sec  = later[1].tv_sec = ::time(nullptr) + 100;
+	later[0].tv_nsec = later[1].tv_nsec = 0;
+	ASSERT_TRUE(::utimensat(AT_FDCWD, path.c_str(), later, 0) == 0);
+	ASSERT_TRUE(kte::SwapManager::JournalMatchesFile(swp, path));
+	// Changed content with a new mtime: stale.
+	{
+		std::ofstream o(path, std::ios::binary | std::ios::trunc);
+		o << std::string(20000, 'b');
+	}
+	ASSERT_TRUE(!kte::SwapManager::JournalMatchesFile(swp, path));
+	b.SetSwapRecorder(nullptr);
+	sm.Detach(&b, true);
 }

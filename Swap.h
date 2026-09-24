@@ -27,6 +27,13 @@ enum class SwapRecType : std::uint8_t {
 	SPLIT = 3,
 	JOIN = 4,
 	META = 0xF0,
+	// A checkpoint too large for one record (a record's length field is 24
+	// bits) is written as BEGIN [encver u8][total u64][crc32 u32], DATA
+	// chunks (raw bytes), END [encver u8]. Replay applies it only at END,
+	// with the size and CRC-32 matching; an unfinished one is ignored.
+	CHKPT_BEGIN = 0xFB,
+	CHKPT_DATA = 0xFC,
+	CHKPT_END = 0xFD,
 	CHKPT = 0xFE,
 };
 
@@ -149,6 +156,9 @@ public:
 	// Test-only hook to keep swap path logic centralized.
 	// (Avoid duplicating naming rules in unit tests.)
 #ifdef KTE_TESTS
+	// Base files larger than this get their CRC on the writer thread.
+	static void SetSyncCrcLimitForTests(std::uint64_t bytes);
+
 	static std::string ComputeSwapPathForTests(const Buffer &buf)
 	{
 		return ComputeSidecarPath(buf);
@@ -239,15 +249,32 @@ private:
 		std::int64_t base_mtime_ns{0};
 		bool has_base_crc{false}; // CRC-32 of the base file's content
 		std::uint32_t base_crc{0};
+		// A large base file's CRC is computed by the writer thread before it
+		// creates the journal (see process_one), not on open/save.
+		std::string base_crc_file;
 	};
 
 	struct Pending {
 		Buffer *buf{nullptr};
 		SwapRecType type{SwapRecType::INS};
 		std::vector<std::uint8_t> payload; // framed payload only
+		std::string chkpt; // CHKPT: the buffer's content (framed by the writer)
 		bool urgent_flush{false};
 		std::uint64_t seq{0};
 	};
+
+	// A record (or, for a large checkpoint, several) as segments to write:
+	// small framing buffers owned here, and a reference to the checkpoint
+	// content (not copied).
+	struct RecordFrames {
+		std::deque<std::vector<std::uint8_t> > owned;
+		std::vector<std::pair<const std::uint8_t *, std::size_t> > segs;
+		std::size_t total = 0;
+	};
+
+	static void frame_pending(const Pending &p, RecordFrames &f);
+
+	static bool write_frames(int fd, const RecordFrames &f);
 
 	// Helpers
 	static std::string ComputeSidecarPath(const Buffer &buf);
@@ -266,7 +293,7 @@ private:
 
 	static void close_ctx(JournalCtx &ctx);
 
-	static bool compact_to_checkpoint(JournalCtx &ctx, const std::vector<std::uint8_t> &chkpt_record,
+	static bool compact_to_checkpoint(JournalCtx &ctx, const RecordFrames &chkpt_record,
 	                                  std::string &err);
 
 	static std::uint32_t crc32(const std::uint8_t *data, std::size_t len, std::uint32_t seed = 0);
@@ -283,9 +310,13 @@ private:
 		std::int64_t mtime_ns{0};
 		bool has_crc{false};
 		std::uint32_t crc{0};
+		std::string crc_file; // set when the CRC is deferred to the writer thread
 	};
 
 	static BaseId compute_base(const std::string &file);
+
+	// Writer thread: compute a deferred base CRC (see BaseId::crc_file).
+	void complete_base_crc(JournalCtx &ctx);
 
 	static void apply_base(JournalCtx &ctx, const BaseId &id);
 

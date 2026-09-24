@@ -395,6 +395,9 @@ Editor::CancelRecoveryPrompt()
 	pending_recovery_open_   = PendingOpen{};
 	pending_recovery_swap_path_.clear();
 	pending_recovery_replay_err_.clear();
+	std::string().swap(pending_recovery_content_);
+	pending_recovery_valid_bytes_  = 0;
+	pending_recovery_have_content_ = false;
 }
 
 
@@ -407,6 +410,9 @@ Editor::ResolveRecoveryPrompt(const bool yes)
 	const PendingOpen req    = pending_recovery_open_;
 	const std::string swp    = pending_recovery_swap_path_;
 	const std::string rerr_s = pending_recovery_replay_err_;
+	std::string content      = std::move(pending_recovery_content_);
+	const bool have_content  = pending_recovery_have_content_;
+	std::uint64_t valid_bytes = pending_recovery_valid_bytes_;
 	CancelRecoveryPrompt();
 
 	std::string err;
@@ -421,11 +427,16 @@ Editor::ResolveRecoveryPrompt(const bool yes)
 				SetStatus("Recovery failed: no buffer");
 				return false;
 			}
-			std::string rerr;
-			std::uint64_t valid_bytes = 0;
-			if (!kte::SwapManager::ReplayFile(*b, swp, rerr, &valid_bytes)) {
-				SetStatus("Swap recovery failed: " + rerr);
-				return false;
+			if (have_content) {
+				// The prompt already replayed the journal; install that.
+				b->replace_all_bytes(content);
+				std::string().swap(content);
+			} else {
+				std::string rerr;
+				if (!kte::SwapManager::ReplayFile(*b, swp, rerr, &valid_bytes)) {
+					SetStatus("Swap recovery failed: " + rerr);
+					return false;
+				}
 			}
 			// This session keeps appending to the same journal. Drop a torn
 			// final record first, or new records would land behind it and the
@@ -581,8 +592,9 @@ Editor::process_pending_opens_()
 			if (tmp.OpenFromFile(req.path, oerr)) {
 				const std::string orig = buffer_bytes_via_views(tmp);
 				std::string rerr;
-				if (kte::SwapManager::ReplayFile(tmp, swp, rerr)) {
-					const std::string rec = buffer_bytes_via_views(tmp);
+				std::uint64_t valid = 0;
+				if (kte::SwapManager::ReplayFile(tmp, swp, rerr, &valid)) {
+					std::string rec = buffer_bytes_via_views(tmp);
 					if (rec == orig) {
 						// Nothing to recover. Remove the journal rather than
 						// appending this session's records to it (it may end in a
@@ -592,6 +604,9 @@ Editor::process_pending_opens_()
 						pending_recovery_prompt_    = RecoveryPromptKind::RecoverOrDiscard;
 						pending_recovery_open_      = req;
 						pending_recovery_swap_path_ = swp;
+						pending_recovery_content_      = std::move(rec);
+						pending_recovery_valid_bytes_  = valid;
+						pending_recovery_have_content_ = true;
 						StartPrompt(PromptKind::Confirm, "Recover", "");
 						SetStatus("Recover swap edits for " + req.path + "? (y/n, C-g cancel)");
 						return opened_any;

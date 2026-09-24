@@ -123,7 +123,7 @@ TEST(SwapWriter_Header_Records_And_CRC)
 	static const std::uint8_t magic[8] = {'K', 'T', 'E', '_', 'S', 'W', 'P', '\0'};
 	for (int i = 0; i < 8; ++i)
 		ASSERT_EQ(bytes[(std::size_t) i], magic[i]);
-	ASSERT_EQ(read_le32(bytes.data() + 8), (std::uint32_t) 1);
+	ASSERT_EQ(read_le32(bytes.data() + 8), (std::uint32_t) 2); // v2: chunked checkpoints
 	// flags bit 0: the base file's identity (size, mtime) is recorded, since
 	// the buffer is file-backed; bit 1: its content CRC-32 too.
 	ASSERT_EQ(read_le32(bytes.data() + 12), (std::uint32_t) 3);

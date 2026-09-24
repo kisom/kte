@@ -27,13 +27,20 @@ namespace {
 constexpr std::size_t kMaxRecordPayload = 0xFFFFFFu;
 // While a journal has a gap, request a recovery checkpoint at most this often.
 constexpr std::uint64_t kGapCheckpointIntervalNs = 1000000000ULL;
+// Base files up to this size get their CRC computed on open/save; larger ones
+// on the writer thread (see compute_base). Adjustable for tests.
+std::uint64_t g_sync_crc_limit = std::uint64_t{64} << 20;
+// Checkpoints of buffers larger than this are spaced by buffer size.
+constexpr std::size_t kLargeCheckpointBytes = std::size_t{16} << 20;
 } // namespace
 
 static void remove_journal_unless_held(const std::string &path, bool locked_out);
 
 namespace {
 constexpr std::uint8_t MAGIC[8] = {'K', 'T', 'E', '_', 'S', 'W', 'P', '\0'};
-constexpr std::uint32_t VERSION = 1;
+// Version 2 adds chunked checkpoints (CHKPT_BEGIN/DATA/END); version 1
+// journals (which never contain them) are still read.
+constexpr std::uint32_t VERSION = 2;
 
 
 static std::string
@@ -866,15 +873,85 @@ SwapManager::close_ctx(JournalCtx &ctx)
 }
 
 
+void
+SwapManager::frame_pending(const Pending &p, RecordFrames &f)
+{
+	// One record: [type u8][len u24][prefix][data][crc32 u32], CRC over all
+	// but itself.
+	auto frame = [&f](SwapRecType type, std::vector<std::uint8_t> prefix, const char *data, std::size_t n) {
+		std::vector<std::uint8_t> head(4);
+		head[0] = static_cast<std::uint8_t>(type);
+		put_u24_le(head.data() + 1, static_cast<std::uint32_t>(prefix.size() + n));
+		std::uint32_t c = crc32(head.data(), head.size(), 0);
+		if (!prefix.empty())
+			c = crc32(prefix.data(), prefix.size(), c);
+		if (n > 0)
+			c = crc32(reinterpret_cast<const std::uint8_t *>(data), n, c);
+		head.insert(head.end(), prefix.begin(), prefix.end());
+		f.owned.push_back(std::move(head));
+		f.segs.emplace_back(f.owned.back().data(), f.owned.back().size());
+		f.total += f.owned.back().size();
+		if (n > 0) {
+			f.segs.emplace_back(reinterpret_cast<const std::uint8_t *>(data), n);
+			f.total += n;
+		}
+		std::vector<std::uint8_t> crc(4);
+		crc[0] = static_cast<std::uint8_t>(c & 0xFFu);
+		crc[1] = static_cast<std::uint8_t>((c >> 8) & 0xFFu);
+		crc[2] = static_cast<std::uint8_t>((c >> 16) & 0xFFu);
+		crc[3] = static_cast<std::uint8_t>((c >> 24) & 0xFFu);
+		f.owned.push_back(std::move(crc));
+		f.segs.emplace_back(f.owned.back().data(), f.owned.back().size());
+		f.total += 4;
+	};
+
+	if (p.type != SwapRecType::CHKPT) {
+		frame(p.type, p.payload, nullptr, 0);
+		return;
+	}
+	const std::string &bytes = p.chkpt;
+	if (bytes.size() <= kMaxRecordPayload - 5) {
+		// v1 checkpoint: [encver u8=1][nbytes u32][bytes]
+		std::vector<std::uint8_t> prefix{1};
+		put_le32(prefix, static_cast<std::uint32_t>(bytes.size()));
+		frame(SwapRecType::CHKPT, std::move(prefix), bytes.data(), bytes.size());
+		return;
+	}
+	// Chunked: BEGIN, DATA..., END (see SwapRecType).
+	std::vector<std::uint8_t> begin{1};
+	std::uint8_t total[8];
+	put_le64(total, static_cast<std::uint64_t>(bytes.size()));
+	begin.insert(begin.end(), total, total + 8);
+	put_le32(begin, crc32(reinterpret_cast<const std::uint8_t *>(bytes.data()), bytes.size(), 0));
+	frame(SwapRecType::CHKPT_BEGIN, std::move(begin), nullptr, 0);
+	for (std::size_t off = 0; off < bytes.size(); off += kMaxRecordPayload) {
+		const std::size_t n = std::min(kMaxRecordPayload, bytes.size() - off);
+		frame(SwapRecType::CHKPT_DATA, {}, bytes.data() + off, n);
+	}
+	frame(SwapRecType::CHKPT_END, std::vector<std::uint8_t>{1}, nullptr, 0);
+}
+
+
 bool
-SwapManager::compact_to_checkpoint(JournalCtx &ctx, const std::vector<std::uint8_t> &chkpt_record, std::string &err)
+SwapManager::write_frames(int fd, const RecordFrames &f)
+{
+	for (const auto &[data, n]: f.segs) {
+		if (!write_full(fd, data, n))
+			return false;
+	}
+	return true;
+}
+
+
+bool
+SwapManager::compact_to_checkpoint(JournalCtx &ctx, const RecordFrames &chkpt_record, std::string &err)
 {
 	err.clear();
 	if (ctx.path.empty()) {
 		err = "Compact failed: empty path";
 		return false;
 	}
-	if (chkpt_record.empty()) {
+	if (chkpt_record.total == 0) {
 		err = "Compact failed: empty checkpoint record";
 		return false;
 	}
@@ -912,7 +989,7 @@ SwapManager::compact_to_checkpoint(JournalCtx &ctx, const std::vector<std::uint8
 	(void) kte::syscall::Fchmod(tfd, 0600);
 	bool ok = write_header(tfd, ctx);
 	if (ok)
-		ok = write_full(tfd, chkpt_record.data(), chkpt_record.size());
+		ok = write_frames(tfd, chkpt_record);
 	if (ok) {
 		if (kte::syscall::Fsync(tfd) != 0) {
 			int saved_errno = errno;
@@ -969,7 +1046,7 @@ SwapManager::compact_to_checkpoint(JournalCtx &ctx, const std::vector<std::uint8
 	}
 
 	// Re-open for further appends.
-	ctx.approx_size_bytes = 64 + static_cast<std::uint64_t>(chkpt_record.size());
+	ctx.approx_size_bytes = 64 + static_cast<std::uint64_t>(chkpt_record.total);
 	return true;
 }
 
@@ -1168,11 +1245,20 @@ SwapManager::maybe_request_checkpoint(Buffer &buf, const std::size_t approx_edit
 		const std::uint64_t now    = now_ns();
 		if (ctx.last_chkpt_ns == 0)
 			ctx.last_chkpt_ns = now;
-		const bool bytes_hit = (cfg.checkpoint_bytes > 0) && (
-			                       ctx.edit_bytes_since_chkpt >= cfg.checkpoint_bytes);
+		// A checkpoint writes the whole buffer. For a large one, checkpoint
+		// after edits amounting to half its size (and on the timer only
+		// once edits reach a sixteenth), so the bytes written stay in
+		// proportion to the bytes edited; retry a gap less often too.
+		const std::size_t size        = buf.ContentBytes();
+		const bool large              = size > kLargeCheckpointBytes;
+		const std::size_t bytes_limit = std::max<std::size_t>(cfg.checkpoint_bytes, size / 2);
+		const bool bytes_hit          = (cfg.checkpoint_bytes > 0) && ctx.edit_bytes_since_chkpt >= bytes_limit;
 		const bool time_hit = (cfg.checkpoint_interval_ms > 0) &&
-		                      (((now - ctx.last_chkpt_ns) / 1000000ULL) >= cfg.checkpoint_interval_ms);
-		const bool gap_hit = ctx.gap && (now - ctx.gap_chkpt_request_ns) >= kGapCheckpointIntervalNs;
+		                      (((now - ctx.last_chkpt_ns) / 1000000ULL) >= cfg.checkpoint_interval_ms) &&
+		                      (!large || ctx.edit_bytes_since_chkpt >= size / 16);
+		const std::uint64_t gap_interval = kGapCheckpointIntervalNs *
+		                                   (1 + size / kLargeCheckpointBytes);
+		const bool gap_hit = ctx.gap && (now - ctx.gap_chkpt_request_ns) >= gap_interval;
 		if (gap_hit)
 			ctx.gap_chkpt_request_ns = now;
 		if (bytes_hit || time_hit || gap_hit) {
@@ -1197,7 +1283,9 @@ SwapManager::RetryGapCheckpoints()
 		for (auto &[b, ctx]: journals_) {
 			if (!b || !ctx.gap || ctx.suspended || ctx.locked_out || ctx.gap_unfixable_reported)
 				continue;
-			if (now - ctx.gap_chkpt_request_ns < kGapCheckpointIntervalNs)
+			const std::uint64_t interval = kGapCheckpointIntervalNs *
+			                               (1 + b->ContentBytes() / kLargeCheckpointBytes);
+			if (now - ctx.gap_chkpt_request_ns < interval)
 				continue;
 			ctx.gap_chkpt_request_ns = now;
 			due.push_back(b);
@@ -1238,41 +1326,12 @@ SwapManager::RecordCheckpoint(Buffer &buf, const bool urgent_flush)
 			return;
 	}
 
-	// payload = encver(1) + nbytes(4) + bytes; larger buffers cannot be
-	// checkpointed in this record format (the writer would reject them), so
-	// check the size before paying for a snapshot.
-	const std::size_t nrows      = buf.Nrows();
-	const std::size_t total_size = nrows ? buf.GetLineRange(nrows - 1).second : 0;
-	if (total_size > kMaxRecordPayload - 5) {
-		// If the journal has a gap, only a checkpoint could close it: say so
-		// once rather than silently dropping every later record.
-		bool report = false;
-		{
-			std::lock_guard<std::mutex> lg(mtx_);
-			auto it = journals_.find(&buf);
-			if (it != journals_.end() && it->second.gap && !it->second.gap_unfixable_reported) {
-				it->second.gap_unfixable_reported = true;
-				report                            = true;
-			}
-		}
-		if (report)
-			report_error("Swap journal lost a record and the buffer is too large to checkpoint; "
-			             "crash recovery will not include edits made until the file is saved", &buf);
-		return;
-	}
-	const std::string bytes = snapshot_buffer_bytes(buf);
-	if (bytes.size() > kMaxRecordPayload - 5)
-		return;
-
+	// Any size: the writer frames large checkpoints as several records.
 	Pending p;
 	p.buf          = &buf;
 	p.type         = SwapRecType::CHKPT;
 	p.urgent_flush = urgent_flush;
-	// payload v1: [encver u8=1][nbytes u32][bytes]
-	p.payload.push_back(1);
-	put_le32(p.payload, static_cast<std::uint32_t>(bytes.size()));
-	p.payload.insert(p.payload.end(), reinterpret_cast<const std::uint8_t *>(bytes.data()),
-	                 reinterpret_cast<const std::uint8_t *>(bytes.data()) + bytes.size());
+	p.chkpt        = snapshot_buffer_bytes(buf);
 	enqueue(std::move(p));
 }
 
@@ -1435,6 +1494,8 @@ SwapManager::process_one(const Pending &p)
 		}
 		if (!ctxp)
 			return;
+		if (ctxp->fd < 0)
+			complete_base_crc(*ctxp);
 		std::string open_err;
 		bool locked_out = false;
 		if (!open_ctx(*ctxp, path, open_err, &locked_out)) {
@@ -1473,32 +1534,26 @@ SwapManager::process_one(const Pending &p)
 			return;
 		}
 
-		// Build record: [type u8][len u24][payload][crc32 u32]
-		std::uint8_t len3[3];
-		put_u24_le(len3, static_cast<std::uint32_t>(p.payload.size()));
+		RecordFrames rec;
+		frame_pending(p, rec);
 
-		std::uint8_t head[4];
-		head[0] = static_cast<std::uint8_t>(p.type);
-		head[1] = len3[0];
-		head[2] = len3[1];
-		head[3] = len3[2];
-
-		std::uint32_t c = 0;
-		c               = crc32(head, sizeof(head), c);
-		if (!p.payload.empty())
-			c = crc32(p.payload.data(), p.payload.size(), c);
-		std::uint8_t crcbytes[4];
-		crcbytes[0] = static_cast<std::uint8_t>(c & 0xFFu);
-		crcbytes[1] = static_cast<std::uint8_t>((c >> 8) & 0xFFu);
-		crcbytes[2] = static_cast<std::uint8_t>((c >> 16) & 0xFFu);
-		crcbytes[3] = static_cast<std::uint8_t>((c >> 24) & 0xFFu);
-
-		std::vector<std::uint8_t> rec;
-		rec.reserve(sizeof(head) + p.payload.size() + sizeof(crcbytes));
-		rec.insert(rec.end(), head, head + sizeof(head));
-		if (!p.payload.empty())
-			rec.insert(rec.end(), p.payload.begin(), p.payload.end());
-		rec.insert(rec.end(), crcbytes, crcbytes + sizeof(crcbytes));
+		// A checkpoint that would trigger compaction goes straight into the
+		// compacted journal instead of being appended and then copied there.
+		// For a large buffer the thresholds scale with its size, so the cost
+		// of compacting stays proportional to what was journaled since.
+		const std::uint64_t compact_at = std::max<std::uint64_t>(compact_bytes, 2 * p.chkpt.size());
+		if (p.type == SwapRecType::CHKPT && compact_bytes > 0 &&
+		    ctxp->approx_size_bytes + rec.total >= compact_at) {
+			std::string compact_err;
+			if (compact_to_checkpoint(*ctxp, rec, compact_err)) {
+				std::lock_guard<std::mutex> lg(mtx_);
+				ctxp->gap          = false;
+				ctxp->gap_notified = false;
+				circuit_breaker_.RecordSuccess();
+				return;
+			}
+			report_error(compact_err, p.buf); // fall back to appending
+		}
 
 		// Remember where this record starts so a partial write can be undone;
 		// otherwise later records would be appended behind the torn bytes.
@@ -1506,7 +1561,7 @@ SwapManager::process_one(const Pending &p)
 		const bool have_size = kte::syscall::Fstat(ctxp->fd, &before) == 0;
 
 		// Write (handle partial writes and check results)
-		bool ok = write_full(ctxp->fd, rec.data(), rec.size());
+		bool ok = write_frames(ctxp->fd, rec);
 		if (!ok) {
 			int err = errno;
 			report_error("Failed to write swap record to '" + path + "': " + std::strerror(err), p.buf);
@@ -1524,21 +1579,13 @@ SwapManager::process_one(const Pending &p)
 			ctxp->gap          = false;
 			ctxp->gap_notified = false;
 		}
-		ctxp->approx_size_bytes += static_cast<std::uint64_t>(rec.size());
+		ctxp->approx_size_bytes += static_cast<std::uint64_t>(rec.total);
 		if (p.urgent_flush) {
 			if (kte::syscall::Fsync(ctxp->fd) != 0) {
 				int err = errno;
 				report_error("Failed to fsync swap file '" + path + "': " + std::strerror(err), p.buf);
 			}
 			ctxp->last_fsync_ns = now_ns();
-		}
-		if (p.type == SwapRecType::CHKPT && compact_bytes > 0 &&
-		    ctxp->approx_size_bytes >= static_cast<std::uint64_t>(compact_bytes)) {
-			std::string compact_err;
-			if (!compact_to_checkpoint(*ctxp, rec, compact_err)) {
-				report_error(compact_err, p.buf);
-				// Note: compaction failure is not fatal, don't record circuit breaker failure
-			}
 		}
 
 		// Record success for circuit breaker
@@ -1675,15 +1722,58 @@ SwapManager::file_crc32(const std::string &path, std::uint32_t &out)
 }
 
 
+#if defined(KTE_TESTS)
+void
+SwapManager::SetSyncCrcLimitForTests(std::uint64_t bytes)
+{
+	g_sync_crc_limit = bytes;
+}
+#endif
+
+
+void
+SwapManager::complete_base_crc(JournalCtx &ctx)
+{
+	std::string file;
+	std::uint64_t size = 0;
+	std::int64_t mtime = 0;
+	{
+		std::lock_guard<std::mutex> lg(mtx_);
+		if (!ctx.has_base || ctx.has_base_crc || ctx.base_crc_file.empty())
+			return;
+		file  = ctx.base_crc_file;
+		size  = ctx.base_size;
+		mtime = ctx.base_mtime_ns;
+	}
+	// Off the lock: this reads the whole file. Keep the CRC only if the file
+	// is still the one whose size and mtime the journal records.
+	std::uint32_t crc   = 0;
+	std::uint64_t size2 = 0;
+	std::int64_t mtime2 = 0;
+	const bool ok = file_crc32(file, crc) && stat_base(file, size2, mtime2) && size2 == size && mtime2 == mtime;
+	std::lock_guard<std::mutex> lg(mtx_);
+	if (ctx.base_crc_file != file || ctx.base_size != size || ctx.base_mtime_ns != mtime)
+		return; // the base changed meanwhile (save, rename)
+	ctx.base_crc_file.clear();
+	if (ok) {
+		ctx.has_base_crc = true;
+		ctx.base_crc     = crc;
+	}
+}
+
+
 SwapManager::BaseId
 SwapManager::compute_base(const std::string &file)
 {
-	// Content CRCs are skipped for very large files (reading them again on
-	// every open and save is too slow); size and mtime still identify them.
-	constexpr std::uint64_t kMaxCrcBytes = std::uint64_t{64} << 20;
+	// Reading a very large file again on every open and save is too slow
+	// for the main thread: its CRC is left to the writer thread, which
+	// computes it before creating the journal (see process_one).
+	const std::uint64_t kMaxCrcBytes = g_sync_crc_limit;
 	BaseId id;
 	id.has     = stat_base(file, id.size, id.mtime_ns);
 	id.has_crc = id.has && id.size <= kMaxCrcBytes && file_crc32(file, id.crc);
+	if (id.has && !id.has_crc && id.size > kMaxCrcBytes)
+		id.crc_file = file;
 	return id;
 }
 
@@ -1696,6 +1786,7 @@ SwapManager::apply_base(JournalCtx &ctx, const BaseId &id)
 	ctx.base_mtime_ns = id.mtime_ns;
 	ctx.has_base_crc  = id.has_crc;
 	ctx.base_crc      = id.crc;
+	ctx.base_crc_file = id.crc_file;
 }
 
 
@@ -1720,7 +1811,7 @@ SwapManager::ReplayFile(Buffer &buf, const std::string &swap_path, std::string &
 		return false;
 	}
 	const std::uint32_t ver = read_le32(hdr + 8);
-	if (ver != VERSION) {
+	if (ver != 1 && ver != VERSION) {
 		err = "Unsupported swap version: " + std::to_string(ver);
 		return false;
 	}
@@ -1739,15 +1830,27 @@ SwapManager::ReplayFile(Buffer &buf, const std::string &swap_path, std::string &
 		}
 	} restore{buf, prev_rec};
 
+	// A chunked checkpoint being assembled (see SwapRecType::CHKPT_BEGIN).
+	bool in_chkpt            = false;
+	std::uint64_t chkpt_size = 0;
+	std::uint32_t chkpt_crc  = 0;
+	std::string chkpt;
+
 	for (;;) {
-		// Everything before this offset replayed cleanly.
+		// Everything before this offset replayed cleanly. Inside a chunked
+		// checkpoint, that is where the checkpoint began (it only counts
+		// once complete).
 		const std::streamoff record_start = in.tellg();
-		if (valid_bytes && record_start >= 0)
+		if (valid_bytes && record_start >= 0 && !in_chkpt)
 			*valid_bytes = static_cast<std::uint64_t>(record_start);
 		std::uint8_t head[4];
 		in.read(reinterpret_cast<char *>(head), sizeof(head));
 		const std::size_t got_head = static_cast<std::size_t>(in.gcount());
 		if (got_head == 0 && in.eof()) {
+			if (in_chkpt) {
+				err = "Swap file ends inside a checkpoint; recovered the records before it: " + swap_path;
+				kte::ErrorHandler::Instance().Warning("SwapManager", err, swap_path);
+			}
 			return true; // clean EOF
 		}
 		// A record cut short by end-of-file is the expected result of a crash or
@@ -1786,8 +1889,52 @@ SwapManager::ReplayFile(Buffer &buf, const std::string &swap_path, std::string &
 			return false;
 		}
 
+		// Chunked checkpoint records; nothing else may come between them.
+		if (in_chkpt && type != SwapRecType::CHKPT_DATA && type != SwapRecType::CHKPT_END) {
+			err = "Swap file record inside a checkpoint: " + swap_path;
+			return false;
+		}
+
 		// Apply record
 		switch (type) {
+		case SwapRecType::CHKPT_BEGIN: {
+			// [encver u8=1][total u64][crc32 u32]
+			if (payload.size() < 13 || payload[0] != 1) {
+				err = "Malformed CHKPT_BEGIN payload";
+				return false;
+			}
+			chkpt_size = 0;
+			for (int i = 7; i >= 0; --i)
+				chkpt_size = (chkpt_size << 8) | payload[1 + static_cast<std::size_t>(i)];
+			chkpt_crc = read_le32(payload.data() + 9);
+			chkpt.clear();
+			try {
+				chkpt.reserve(static_cast<std::size_t>(chkpt_size));
+			} catch (...) {
+				err = "Checkpoint too large to replay: " + std::to_string(chkpt_size) + " bytes";
+				return false;
+			}
+			in_chkpt = true;
+			break;
+		}
+		case SwapRecType::CHKPT_DATA:
+			if (!in_chkpt || chkpt.size() + payload.size() > chkpt_size) {
+				err = "Swap file checkpoint data out of place: " + swap_path;
+				return false;
+			}
+			chkpt.append(reinterpret_cast<const char *>(payload.data()), payload.size());
+			break;
+		case SwapRecType::CHKPT_END: {
+			if (!in_chkpt || chkpt.size() != chkpt_size ||
+			    crc32(reinterpret_cast<const std::uint8_t *>(chkpt.data()), chkpt.size(), 0) != chkpt_crc) {
+				err = "Swap file checkpoint incomplete or corrupt: " + swap_path;
+				return false;
+			}
+			buf.replace_all_bytes(chkpt);
+			std::string().swap(chkpt);
+			in_chkpt = false;
+			break;
+		}
 		case SwapRecType::INS: {
 			std::size_t off = 0;
 			// INS payload: encver(1) + row(4) + col(4) + nbytes(4) + data(nbytes)
