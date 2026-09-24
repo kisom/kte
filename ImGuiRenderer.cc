@@ -9,7 +9,7 @@
 #include <imgui.h>
 
 #include "ImGuiRenderer.h"
-#include "RegexEngine.h"
+#include "SearchHighlight.h"
 #include "Highlight.h"
 #include "GUITheme.h"
 #include "Buffer.h"
@@ -157,18 +157,11 @@ ImGuiRenderer::Draw(Editor &ed)
 			max_width_version_ = buf->Version();
 		}
 
-		// Hoist the search-regex compilation out of the per-line loop. Compiling
-		// std::regex per line per frame was a large source of idle CPU on macOS.
-		const bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
-		const bool regex_mode  = search_mode && ed.PromptActive() && (
-			ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
-			ed.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind);
-		kte::Regex search_rx; // RegexEngine.h
-		bool search_rx_valid = false;
-		if (regex_mode) {
-			std::string rx_err;
-			search_rx_valid = search_rx.Compile(ed.SearchQuery(), rx_err);
-		}
+		// Search matches: the pattern is compiled once per frame (compiling it
+		// per line per frame was a large source of idle CPU on macOS).
+		const kte::SearchHighlight search_hl(ed);
+		const bool search_mode = search_hl.Active();
+		std::vector<std::pair<std::size_t, std::size_t> > hl_src_ranges;
 
 		// Compute the visible row range and skip rendering work for off-screen
 		// lines. ImGui clips drawing, but string allocation, tab expansion,
@@ -350,29 +343,8 @@ ImGuiRenderer::Draw(Editor &ed)
 				                           expanded.c_str() + end).x;
 			};
 
-			// Compute search highlight ranges for this line in source indices
-			std::vector<std::pair<std::size_t, std::size_t> > hl_src_ranges;
-			if (search_mode) {
-				// In regex mode, reuse the compiled regex hoisted above the loop.
-				if (regex_mode) {
-					// Very long lines are not highlighted (see
-					// Regex::IncrementalLineLimit).
-					if (search_rx_valid && line.size() <= kte::Regex::IncrementalLineLimit()) {
-						std::size_t from = 0, pos = 0, len = 0;
-						while (from <= line.size() && search_rx.Search(line, from, pos, len)) {
-							hl_src_ranges.emplace_back(pos, pos + len);
-							from = pos + std::max<std::size_t>(len, 1);
-						}
-					}
-				} else {
-					const std::string &q = ed.SearchQuery();
-					std::size_t pos      = 0;
-					while (!q.empty() && (pos = line.find(q, pos)) != std::string::npos) {
-						hl_src_ranges.emplace_back(pos, pos + q.size());
-						pos += q.size();
-					}
-				}
-			}
+			// Search highlight ranges for this line in source indices
+			search_hl.Ranges(line, hl_src_ranges);
 			auto src_to_rx = [&](std::size_t upto_src_exclusive) -> std::size_t {
 				std::size_t rx = 0;
 				std::size_t s  = 0;

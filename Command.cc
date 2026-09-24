@@ -12,7 +12,6 @@
 
 #include "Command.h"
 #include "ErrorHandler.h"
-#include "RegexGuard.h"
 #include "RegexEngine.h"
 #include "TermWidth.h"
 #include "syntax/HighlighterRegistry.h"
@@ -928,22 +927,6 @@ static constexpr std::size_t kSearchCountBytesPlain = std::size_t{64} << 20;
 static constexpr std::size_t kSearchCountBytesRegex = std::size_t{4} << 20;
 
 
-using RegexMatcher = kte::Regex; // see RegexEngine.h
-
-
-// Run regex work: std::regex recurses per matched character, so it runs on
-// a large stack (RegexGuard.h); PCRE2 does not recurse on the C stack.
-template<typename Fn>
-static void
-run_regex_work(Fn &&fn)
-{
-	if (std::string_view(kte::Regex::EngineName()) == "PCRE2")
-		fn();
-	else
-		kte::RunWithLargeStack(fn);
-}
-
-
 static std::string_view line_text_view(const Buffer &buf, std::size_t y);
 
 
@@ -1077,7 +1060,7 @@ private:
 // skipped (counted in *skipped); *limited counts lines where the engine hit
 // its match limit (catastrophic backtracking) and gave up.
 static bool
-regex_find(const Buffer &buf, const RegexMatcher &m, std::size_t y0, std::size_t x0, bool forward,
+regex_find(const Buffer &buf, const kte::Regex &m, std::size_t y0, std::size_t x0, bool forward,
            std::size_t line_limit, std::size_t *skipped, std::size_t *limited, SearchHit &hit)
 {
 	const std::size_t nrows = buf.Nrows();
@@ -1139,7 +1122,7 @@ regex_find(const Buffer &buf, const RegexMatcher &m, std::size_t y0, std::size_t
 			}
 		}
 	};
-	run_regex_work(scan);
+	kte::Regex::RunGuarded(scan);
 	return found;
 }
 
@@ -1153,7 +1136,7 @@ struct SearchCount {
 
 
 static SearchCount
-search_count(const Buffer &buf, bool regex, const std::string &q, const RegexMatcher *m, const SearchHit &cur,
+search_count(const Buffer &buf, bool regex, const std::string &q, const kte::Regex *m, const SearchHit &cur,
              std::size_t line_limit)
 {
 	SearchCount c;
@@ -1180,7 +1163,7 @@ search_count(const Buffer &buf, bool regex, const std::string &q, const RegexMat
 	}
 	std::size_t scanned = 0;
 	bool stopped        = false;
-	run_regex_work([&] {
+	kte::Regex::RunGuarded([&] {
 		LineWalker w(buf, 0);
 		for (std::size_t y = 0; y < nrows && !stopped; ++y, w.Next()) {
 			const std::string_view line = w.Line();
@@ -1248,7 +1231,7 @@ run_search(Editor &ed, Buffer &buf, bool regex, SearchStep step, bool incrementa
 		}
 	}
 
-	RegexMatcher m;
+	kte::Regex m;
 	std::string err;
 	SearchHit hit;
 	bool found          = false;
@@ -3655,7 +3638,7 @@ cmd_newline(CommandContext &ctx)
 			const std::size_t all_rows = buf->Nrows();
 			std::string after;
 			bool limited = false;
-			run_regex_work([&] {
+			kte::Regex::RunGuarded([&] {
 				for (std::size_t y = 0; y < all_rows; ++y) {
 					if (y > 0)
 						after.push_back('\n');

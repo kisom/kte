@@ -9,7 +9,7 @@
 #include <string>
 
 #include "TerminalRenderer.h"
-#include "RegexEngine.h"
+#include "SearchHighlight.h"
 #include "TermWidth.h"
 #include "Buffer.h"
 #include "Editor.h"
@@ -57,49 +57,18 @@ TerminalRenderer::Draw(Editor &ed)
 			buf->Highlighter()->PrefetchViewport(*buf, fr, rc, buf->Version());
 		}
 
-		// The search pattern, compiled once per frame (it was compiled for
-		// every row).
-		kte::Regex draw_rx;
-		bool draw_rx_ok = false;
-		if (ed.SearchActive() && !ed.SearchQuery().empty() && ed.PromptActive() &&
-		    (ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
-		     ed.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind)) {
-			std::string rx_err;
-			draw_rx_ok = draw_rx.Compile(ed.SearchQuery(), rx_err);
-		}
+		// Search matches: the pattern is compiled once per frame.
+		const kte::SearchHighlight search_hl(ed);
+		std::vector<std::pair<std::size_t, std::size_t> > ranges; // [start, end)
 		for (int r = 0; r < content_rows; ++r) {
 			move(r, 0);
 			std::size_t li         = rowoffs + static_cast<std::size_t>(r);
 			std::size_t render_col = 0;
 			std::size_t src_i      = 0;
-			// Compute matches for this line if search highlighting is active
-			bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
-			std::vector<std::pair<std::size_t, std::size_t> > ranges; // [start, end)
-			if (search_mode && li < nlines) {
-				std::string sline = buf->GetLineString(li);
-				// If regex search prompt is active (RegexSearch or RegexReplaceFind), use regex to compute highlight ranges
-				if (ed.PromptActive() && (
-					    ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch || ed.
-					    CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind)) {
-					// Very long lines are not highlighted (see
-					// Regex::IncrementalLineLimit); an invalid pattern
-					// highlights nothing (the status shows the error).
-					if (draw_rx_ok && sline.size() <= kte::Regex::IncrementalLineLimit()) {
-						std::size_t from = 0, pos = 0, len = 0;
-						while (from <= sline.size() && draw_rx.Search(sline, from, pos, len)) {
-							ranges.emplace_back(pos, pos + len);
-							from = pos + std::max<std::size_t>(len, 1);
-						}
-					}
-				} else {
-					const std::string &q = ed.SearchQuery();
-					std::size_t pos      = 0;
-					while (!q.empty() && (pos = sline.find(q, pos)) != std::string::npos) {
-						ranges.emplace_back(pos, pos + q.size());
-						pos += q.size();
-					}
-				}
-			}
+			// Per-row copy: GetLineView() would materialize the whole buffer
+			// after every edit.
+			const std::string line = li < nlines ? buf->GetLineString(li) : std::string();
+			search_hl.Ranges(line, ranges);
 			auto is_src_in_hl = [&](std::size_t si) -> bool {
 				if (ranges.empty())
 					return false;
@@ -152,7 +121,6 @@ TerminalRenderer::Draw(Editor &ed)
 			};
 			int written = 0;
 			if (li < nlines) {
-				std::string line                = buf->GetLineString(li);
 				const bool vsel_on_line         = vsel_active && li >= vsel_sy && li <= vsel_ey;
 				const std::size_t vsel_spot_src = vsel_on_line
 					                                  ? std::min(buf->Curx(), line.size())
@@ -333,7 +301,7 @@ TerminalRenderer::Draw(Editor &ed)
 									vsel_on_line && !vsel_spot_is_eol && src_i ==
 									vsel_spot_src;
 								bool in_sel = in_mark || in_vsel;
-								bool in_hl  = search_mode && is_src_in_hl(src_i);
+								bool in_hl  = search_hl.Active() && is_src_in_hl(src_i);
 								bool in_cur =
 									has_current && li == cur_my && src_i >= cur_mx
 									&&
@@ -390,7 +358,7 @@ TerminalRenderer::Draw(Editor &ed)
 						}
 					}
 					bool in_sel = in_mark || in_vsel;
-					bool in_hl  = search_mode && from_src && is_src_in_hl(src_i);
+					bool in_hl  = search_hl.Active() && from_src && is_src_in_hl(src_i);
 					bool in_cur = has_current && li == cur_my && from_src && src_i >= cur_mx &&
 					              src_i < cur_mend;
 					attr_t a = A_NORMAL;

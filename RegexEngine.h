@@ -7,7 +7,7 @@
  * faster than std::regex, no recursion on the C stack, and a match limit
  * that stops catastrophic backtracking (e.g. "^(a+)+$") instead of hanging
  * the editor. Otherwise std::regex (ECMAScript) is used, run on a large
- * stack (see RegexGuard.h). The syntax both accept covers ordinary use;
+ * stack (see RunGuarded). The syntax both accept covers ordinary use;
  * PCRE2 additionally has lookbehind, possessive quantifiers and the like.
  *
  * Replacement strings use ECMAScript syntax with either engine, as
@@ -20,6 +20,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -55,6 +56,13 @@ public:
 
 	// Whether the last Search/ReplaceAll stopped at the engine's match limit.
 	[[nodiscard]] bool LimitHit() const;
+
+	// Run fn, which does regex work that may span long text, where the
+	// engine cannot overflow the stack: std::regex recurses once per matched
+	// character, so fn runs to completion on a thread with a large stack
+	// (RegexGuard.h); PCRE2 does not recurse on the C stack, so fn runs
+	// inline. Exceptions thrown by fn are rethrown.
+	static void RunGuarded(const std::function<void()> &fn);
 
 	// "PCRE2" or "std::regex".
 	static const char *EngineName();
