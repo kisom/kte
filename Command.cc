@@ -457,9 +457,11 @@ compute_mark_region(Buffer &buf, std::size_t &sx, std::size_t &sy, std::size_t &
 // Row access for commands that touch a few rows. Buffer::Rows() rebuilds a
 // string for every line of the file on the first call after any edit, which
 // made every motion and delete O(file size). RowsView fetches rows on demand
-// and caches them for the current buffer version. Strings fetched for an
-// older version are retired, not freed, so a reference obtained before an
-// edit stays valid (if stale) for the lifetime of the view, as with Rows().
+// and caches them for the current buffer version. When the version changes
+// the current cache becomes the previous one (the one before that is freed),
+// so a reference obtained just before an edit stays valid (if stale) across
+// that edit. Keeping every generation grew without bound in loops that edit
+// on each pass (C-u 2000 M-d on a long line used ~2 GB).
 class RowsView {
 public:
 	explicit RowsView(const Buffer &buf) : buf_(&buf) {}
@@ -480,8 +482,7 @@ public:
 	const std::string &operator[](std::size_t row) const
 	{
 		if (buf_->Version() != version_) {
-			if (!cache_.empty())
-				retired_.push_back(std::move(cache_));
+			previous_ = std::move(cache_);
 			cache_.clear();
 			version_ = buf_->Version();
 		}
@@ -495,7 +496,7 @@ private:
 	const Buffer *buf_;
 	mutable std::uint64_t version_ = ~std::uint64_t{0};
 	mutable std::map<std::size_t, std::string> cache_;
-	mutable std::vector<std::map<std::size_t, std::string> > retired_;
+	mutable std::map<std::size_t, std::string> previous_;
 };
 
 

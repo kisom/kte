@@ -29,6 +29,8 @@ constexpr std::size_t kMaxRecordPayload = 0xFFFFFFu;
 constexpr std::uint64_t kGapCheckpointIntervalNs = 1000000000ULL;
 } // namespace
 
+static void remove_journal_unless_held(const std::string &path, bool locked_out);
+
 namespace {
 constexpr std::uint8_t MAGIC[8] = {'K', 'T', 'E', '_', 'S', 'W', 'P', '\0'};
 constexpr std::uint32_t VERSION = 1;
@@ -381,26 +383,28 @@ SwapManager::Detach(Buffer *buf, const bool remove_file)
 
 	Flush(buf);
 	std::string path;
+	bool locked_out = false;
 	{
 		std::lock_guard<std::mutex> lg(mtx_);
 		auto it = journals_.find(buf);
 		if (it != journals_.end()) {
-			path = it->second.path;
+			path       = it->second.path;
+			locked_out = it->second.locked_out;
 			close_ctx(it->second);
 			journals_.erase(it);
 		}
 		recorders_.erase(buf);
 	}
 
-	if (remove_file && !path.empty()) {
-		(void) std::remove(path.c_str());
-	}
+	if (remove_file)
+		remove_journal_unless_held(path, locked_out);
 }
 
 
 void
 SwapManager::ResetJournal(Buffer &buf)
 {
+	bool was_locked_out = false;
 	std::string path;
 	{
 		std::lock_guard<std::mutex> lg(mtx_);
@@ -423,6 +427,7 @@ SwapManager::ResetJournal(Buffer &buf)
 			return;
 		JournalCtx &ctx = it->second;
 		close_ctx(ctx);
+		was_locked_out             = ctx.locked_out;
 		ctx.header_ok              = false;
 		ctx.gap                    = false; // the journal restarts from the saved file
 		ctx.gap_chkpt_request_ns   = 0;
@@ -437,9 +442,7 @@ SwapManager::ResetJournal(Buffer &buf)
 		ctx.suspended              = false;
 	}
 
-	if (!path.empty()) {
-		(void) std::remove(path.c_str());
-	}
+	remove_journal_unless_held(path, was_locked_out);
 }
 
 
@@ -520,7 +523,8 @@ SwapManager::PruneSwapDir()
 				too_old = true;
 		}
 		bool over_limit = (cfg.prune_max_files > 0) && (kept >= cfg.prune_max_files);
-		if (too_old || over_limit) {
+		// Never prune a journal another running session holds.
+		if ((too_old || over_limit) && !JournalInUse(e.path.string())) {
 			std::error_code ec3;
 			fs::remove(e.path, ec3);
 		} else {
@@ -557,7 +561,7 @@ SwapManager::NotifyFilenameChanged(Buffer &buf)
 	// file's swap), that file may be the one the caller is about to replay
 	// for recovery: removing it here lost the recovery.
 	if (!old_path.empty() && old_path != new_path)
-		(void) std::remove(old_path.c_str());
+		remove_journal_unless_held(old_path, ctx.locked_out);
 	ctx.gap                     = false;
 	ctx.gap_chkpt_request_ns    = 0;
 	ctx.gap_unfixable_reported  = false;
@@ -621,10 +625,13 @@ SwapManager::ComputeSidecarPath(const Buffer &buf)
 		return compute_swap_path_for_filename(buf.Filename());
 	}
 
-	// Unnamed buffers: unique within the process.
+	// Unnamed buffers: unique across processes (pid) and within one (counter).
+	// A per-process counter alone let a new session's scratch buffer claim,
+	// and later delete, another running session's unnamed journal.
 	static std::atomic<std::uint64_t> ctr{0};
 	const std::uint64_t n  = ++ctr;
-	const std::string name = "unnamed-" + std::to_string(n) + ".swp";
+	const std::string name = "unnamed-" + std::to_string(static_cast<long>(::getpid())) + "-" +
+	                         std::to_string(n) + ".swp";
 	return (root / name).string();
 }
 
@@ -769,7 +776,12 @@ SwapManager::open_ctx(JournalCtx &ctx, const std::string &path, std::string &err
 			}
 			return false;
 		}
-		(void) ::flock(fd, LOCK_EX | LOCK_NB);
+		if (::flock(fd, LOCK_EX | LOCK_NB) != 0 && errno == EWOULDBLOCK) {
+			kte::syscall::Close(fd);
+			ctx.locked_out = true;
+			err            = "Swap file is in use by another kte process: " + path;
+			return false;
+		}
 		(void) kte::syscall::Fchmod(fd, 0600);
 		st.st_size = 0;
 	}
@@ -819,14 +831,10 @@ SwapManager::compact_to_checkpoint(JournalCtx &ctx, const std::vector<std::uint8
 		return false;
 	}
 
-	// Close existing file before rename.
-	if (ctx.fd >= 0) {
-		(void) kte::syscall::Fsync(ctx.fd);
-		kte::syscall::Close(ctx.fd);
-		ctx.fd = -1;
-	}
-	ctx.header_ok = false;
-
+	// Keep the current (locked) journal fd open until the compacted file has
+	// replaced it, so the journal is never unlocked in between: another
+	// session would otherwise see it as abandoned and offer to recover or
+	// discard it.
 	const std::string tmp_path = ctx.path + ".tmp";
 	// Create the compacted file: header + checkpoint record.
 	if (!ensure_parent_dir(tmp_path)) {
@@ -864,8 +872,10 @@ SwapManager::compact_to_checkpoint(JournalCtx &ctx, const std::vector<std::uint8
 			ok = false;
 		}
 	}
-	kte::syscall::Close(tfd);
+	if (ok)
+		(void) ::flock(tfd, LOCK_EX | LOCK_NB); // new file: nobody else has it
 	if (!ok) {
+		kte::syscall::Close(tfd);
 		if (err.empty()) {
 			err = "Failed to write temp swap file: " + tmp_path;
 		}
@@ -876,11 +886,20 @@ SwapManager::compact_to_checkpoint(JournalCtx &ctx, const std::vector<std::uint8
 	// Atomic replace.
 	if (::rename(tmp_path.c_str(), ctx.path.c_str()) != 0) {
 		int saved_errno = errno;
+		kte::syscall::Close(tfd);
 		err = "Failed to rename temp swap file '" + tmp_path + "' to '" + ctx.path + "': " + std::strerror(
 			      saved_errno);
 		std::remove(tmp_path.c_str());
 		return false;
 	}
+	// The compacted file is the journal now; retire the old descriptor.
+	if (ctx.fd >= 0)
+		kte::syscall::Close(ctx.fd);
+	const int fl = ::fcntl(tfd, F_GETFL);
+	if (fl >= 0)
+		(void) ::fcntl(tfd, F_SETFL, fl | O_APPEND);
+	ctx.fd        = tfd;
+	ctx.header_ok = true;
 
 	// Best-effort: fsync parent dir to persist the rename.
 	try {
@@ -902,10 +921,6 @@ SwapManager::compact_to_checkpoint(JournalCtx &ctx, const std::vector<std::uint8
 	}
 
 	// Re-open for further appends.
-	if (!open_ctx(ctx, ctx.path, err)) {
-		// err already set by open_ctx
-		return false;
-	}
 	ctx.approx_size_bytes = 64 + static_cast<std::uint64_t>(chkpt_record.size());
 	return true;
 }
@@ -1213,23 +1228,22 @@ SwapManager::writer_loop()
 
 		// Throttled fsync: best-effort (grouped)
 		try {
-			std::vector<int> to_sync;
 			std::uint64_t now = now_ns();
-			{
-				std::lock_guard<std::mutex> lg(mtx_);
-				for (auto &kv: journals_) {
-					JournalCtx &ctx = kv.second;
-					if (ctx.fd >= 0) {
-						if (ctx.last_fsync_ns == 0 || (now - ctx.last_fsync_ns) / 1000000ULL >=
-						    cfg_.fsync_interval_ms) {
-							ctx.last_fsync_ns = now;
-							to_sync.push_back(ctx.fd);
-						}
+			// fsync under mtx_: the main thread closes journal fds under the
+			// same lock. Syncing outside it raced with those closes: the fd
+			// could be closed (or reused) mid-fsync, and the in-flight fsync
+			// kept the closed journal's flock alive, so the owner's own
+			// cleanup saw its journal as held by someone else.
+			std::lock_guard<std::mutex> lg(mtx_);
+			for (auto &kv: journals_) {
+				JournalCtx &ctx = kv.second;
+				if (ctx.fd >= 0) {
+					if (ctx.last_fsync_ns == 0 || (now - ctx.last_fsync_ns) / 1000000ULL >=
+					    cfg_.fsync_interval_ms) {
+						ctx.last_fsync_ns = now;
+						(void) kte::syscall::Fsync(ctx.fd);
 					}
 				}
-			}
-			for (int fd: to_sync) {
-				(void) kte::syscall::Fsync(fd);
 			}
 		} catch (const std::exception &e) {
 			report_error(std::string("Exception in fsync operations: ") + e.what());
@@ -1452,6 +1466,18 @@ parse_u32_le(const std::vector<std::uint8_t> &p, std::size_t &off, std::uint32_t
 	      ((std::uint32_t) p[off + 3] << 24);
 	off += 4;
 	return true;
+}
+
+
+// Remove a journal this session is done with, unless another session holds
+// it: a session that was locked out of the journal (or finds it locked) must
+// not unlink the live journal of the session that owns it.
+static void
+remove_journal_unless_held(const std::string &path, bool locked_out)
+{
+	if (path.empty() || locked_out || SwapManager::JournalInUse(path))
+		return;
+	(void) std::remove(path.c_str());
 }
 
 

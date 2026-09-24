@@ -166,21 +166,13 @@ protected:
 						    (ed_->CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
 						     ed_->CurrentPromptKind() ==
 						     Editor::PromptKind::RegexReplaceFind)) {
-							// Long lines are not highlighted: std::regex recursion
-							// could overflow the stack (RegexGuard.h).
+							// std::regex recursion is kept off the main stack for long
+							// lines (RegexGuard.h); very long lines are not highlighted.
 							if (line.size() <= kte::kRegexRenderLineLimit) try {
 								std::regex rx(ed_->SearchQuery());
-								for (auto it = std::sregex_iterator(
-									     line.begin(), line.end(), rx);
-								     it != std::sregex_iterator(); ++it) {
-									const auto &m  = *it;
-									std::size_t sx = static_cast<std::size_t>(m.
-										position());
-									std::size_t ex =
-										sx + static_cast<std::size_t>(m.
-											length());
-									hl_src_ranges.emplace_back(sx, ex);
-								}
+								kte::ForEachRegexMatch(line, rx, [&](std::size_t pos, std::size_t len) {
+									hl_src_ranges.emplace_back(pos, pos + len);
+								});
 							} catch (const std::regex_error &) {
 								// Invalid regex: ignore, status line already shows errors
 							}

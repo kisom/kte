@@ -360,17 +360,13 @@ ImGuiRenderer::Draw(Editor &ed)
 			if (search_mode) {
 				// In regex mode, reuse the compiled regex hoisted above the loop.
 				if (regex_mode) {
-					// Long lines are not highlighted: std::regex recursion
-					// could overflow the stack (RegexGuard.h).
+					// std::regex recursion is kept off the main stack for long
+					// lines (RegexGuard.h); very long lines are not highlighted.
 					if (search_rx_valid && line.size() <= kte::kRegexRenderLineLimit) {
 						try {
-							for (auto it = std::sregex_iterator(line.begin(), line.end(), search_rx);
-							     it != std::sregex_iterator(); ++it) {
-								const auto &m  = *it;
-								std::size_t sx = static_cast<std::size_t>(m.position());
-								std::size_t ex = sx + static_cast<std::size_t>(m.length());
-								hl_src_ranges.emplace_back(sx, ex);
-							}
+							kte::ForEachRegexMatch(line, search_rx, [&](std::size_t pos, std::size_t len) {
+								hl_src_ranges.emplace_back(pos, pos + len);
+							});
 						} catch (const std::regex_error &) {
 							// ignore invalid patterns here; status line already shows the error
 						}
