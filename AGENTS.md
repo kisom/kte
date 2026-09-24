@@ -1,9 +1,9 @@
 # kte
 
-kte (Kyle's Text Editor) is a C++20 text editor with a terminal-first design (ncurses) and optional GUI frontends (ImGui via SDL2/OpenGL/Freetype, or Qt6); it uses a WordStar/VDE-style command model. Standards: none. The Metacircular service standards do not apply here.
+kte (Kyle's Text Editor) is a C++20 text editor with a terminal-first design (ncurses) and an optional ImGui GUI frontend (SDL2/OpenGL/Freetype); it uses a WordStar/VDE-style command model. Standards: none. The Metacircular service standards do not apply here.
 
 ## Bootstrap (run once per checkout, idempotent)
-nix develop (default shell; also provides `terminal` and `qt` devshells) or system SDL2/Freetype/ncurses if not using nix.
+nix develop (default shell; also provides a `terminal` devshell) or system SDL2/Freetype/ncurses if not using nix.
 
 ## Gate (run before saying "done"; must exit 0)
 make gate            # what it runs: configure (cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_GUI=ON -DBUILD_TESTS=ON) -> build (cmake --build build) -> test (./build/kte_tests)
@@ -12,7 +12,7 @@ Also run clang-tidy on changed files via build/compile_commands.json (not part o
 
 ## Run
 Terminal editor: `./build/kte <file>` (always built).
-GUI editor: `./build/kge <file>` (built when `-DBUILD_GUI=ON`; requires SDL2/OpenGL/Freetype, or Qt6 with `-DKTE_USE_QT=ON`).
+GUI editor: `./build/kge <file>` (built when `-DBUILD_GUI=ON`; requires SDL2/OpenGL/Freetype).
 Docker (cross-platform Linux testing): `docker build -t kte-linux . && docker run --rm -v "$(pwd):/kte" kte-linux`.
 
 ## Sensors the harness watches
@@ -42,7 +42,7 @@ None: kte builds and runs locally (or in the Docker/CI Linux image); it has no r
 Three-layer design with strict frontend independence:
 
 ```
-Frontend Layer (Terminal / ImGui / Qt / Test)
+Frontend Layer (Terminal / ImGui / Test)
   InputHandler.h, Renderer.h, Frontend.h interfaces
         ↓
 Command Layer
@@ -69,7 +69,6 @@ Core Model Layer
 Each frontend implements three interfaces (`Frontend.h`, `InputHandler.h`, `Renderer.h`):
 - **Terminal**: ncurses-based (always built)
 - **ImGui**: SDL2+OpenGL+Freetype (built with `-DBUILD_GUI=ON`)
-- **Qt**: Qt6 (built with `-DBUILD_GUI=ON -DKTE_USE_QT=ON`)
 - **Test**: Programmatic frontend for testing (always built, no UI deps)
 
 ### Key CMake Options
@@ -77,7 +76,6 @@ Each frontend implements three interfaces (`Frontend.h`, `InputHandler.h`, `Rend
 | Flag | Default | Purpose |
 |------|---------|---------|
 | `BUILD_GUI` | ON | Build `kge` (ImGui GUI) |
-| `KTE_USE_QT` | OFF | Use Qt6 instead of ImGui for GUI |
 | `BUILD_TESTS` | ON | Build test suite |
 | `ENABLE_ASAN` | OFF | AddressSanitizer |
 | `KTE_STATIC_LINK` | OFF | Static linking (Linux only) |

@@ -25,11 +25,7 @@
 #include "ErrorHandler.h"
 
 #if defined(KTE_BUILD_GUI)
-#if defined(KTE_USE_QT)
-#include "QtFrontend.h"
-#else
 #include "ImGuiFrontend.h"
-#endif
 #endif
 
 

@@ -20,7 +20,7 @@ kte follows a clean separation of concerns with three main layers:
 
 ```
 ┌─────────────────────────────────────────┐
-│  Frontend Layer (Terminal/ImGui/Qt)     │
+│  Frontend Layer (Terminal/ImGui)        │
 │  - TerminalFrontend / ImGuiFrontend     │
 │  - InputHandler + Renderer interfaces   │
 └─────────────────────────────────────────┘
@@ -154,7 +154,6 @@ Implementations:
   `TerminalInputHandler`, `TerminalRenderer`)
 - **ImGui**: Dear ImGui-based (`ImGuiFrontend`, `ImGuiInputHandler`,
   `ImGuiRenderer`)
-- **Qt**: Qt-based (`QtFrontend`, `QtInputHandler`, `QtRenderer`)
 - **Test**: Programmatic testing (`TestFrontend`, `TestInputHandler`,
   `TestRenderer`)
 
@@ -196,7 +195,6 @@ Large files that may need attention:
   into logical groups
 - `Swap.cc` (1300 lines) - Crash recovery system (migrated to direct
   PieceTable operations)
-- `QtFrontend.cc` (985 lines) - Qt integration
 - `ImGuiRenderer.cc` (930 lines) - ImGui rendering
 - `PieceTable.cc` (800 lines) - Core data structure
 - `Buffer.cc` (763 lines) - Document model

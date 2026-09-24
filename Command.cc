@@ -24,27 +24,21 @@
 #include "syntax/CppHighlighter.h"
 #ifdef KTE_BUILD_GUI
 #  include "GUITheme.h"
-#  if !defined(KTE_USE_QT)
-#    include "fonts/FontRegistry.h"
-#    include "imgui.h"
-#  endif
-#  if defined(KTE_USE_QT)
-#    include <QFontDatabase>
-#    include <QStringList>
-#  endif
+#  include "fonts/FontRegistry.h"
+#  include "imgui.h"
 #endif
 
 // Define cross-frontend theme change flags declared in GUITheme.h
 namespace kte {
 bool gThemeChangePending = false;
 std::string gThemeChangeRequest;
-// Qt font change globals
+// Font change request globals
 bool gFontChangePending = false;
 std::string gFontFamilyRequest;
 float gFontSizeRequest = 0.0f;
 std::string gCurrentFontFamily;
 float gCurrentFontSize = 0.0f;
-// Request Qt visual font dialog
+// Request a visual font dialog
 bool gFontDialogRequested = false;
 }
 
@@ -1749,7 +1743,7 @@ cmd_set_option(CommandContext &ctx)
 
 
 // GUI theme cycling commands (available in GUI build; ImGui-only for now)
-#if defined(KTE_BUILD_GUI) && !defined(KTE_USE_QT)
+#if defined(KTE_BUILD_GUI)
 static bool
 cmd_theme_next(CommandContext &ctx)
 {
@@ -1785,7 +1779,7 @@ cmd_theme_prev(CommandContext &ctx)
 
 
 // Theme set by name command
-#if defined(KTE_BUILD_GUI) && !defined(KTE_USE_QT)
+#if defined(KTE_BUILD_GUI)
 static bool
 cmd_theme_set_by_name(const CommandContext &ctx)
 {
@@ -1829,41 +1823,15 @@ cmd_theme_set_by_name(const CommandContext &ctx)
 static bool
 cmd_theme_set_by_name(CommandContext &ctx)
 {
-#  if defined(KTE_BUILD_GUI) && defined(KTE_USE_QT)
-	// Qt GUI build: schedule theme change for frontend
-	std::string name = ctx.arg;
-	// trim spaces
-	auto ltrim = [](std::string &s) {
-		s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
-			return !std::isspace(ch);
-		}));
-	};
-	auto rtrim = [](std::string &s) {
-		s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
-			return !std::isspace(ch);
-		}).base(), s.end());
-	};
-	ltrim(name);
-	rtrim(name);
-	if (name.empty()) {
-		ctx.editor.SetStatus("theme: provide a name (e.g., nord, solarized-dark, gruvbox-light, eink)");
-		return true;
-	}
-	kte::gThemeChangeRequest = name;
-	kte::gThemeChangePending = true;
-	ctx.editor.SetStatus(std::string("Theme requested: ") + name);
-	return true;
-#  else
 	(void) ctx;
 	// No-op in terminal build
 	return true;
-#  endif
 }
 #endif
 
 
 // Font set by name (GUI)
-#if defined(KTE_BUILD_GUI) && !defined(KTE_USE_QT)
+#if defined(KTE_BUILD_GUI)
 static bool
 cmd_font_set_by_name(const CommandContext &ctx)
 {
@@ -1916,7 +1884,7 @@ cmd_font_set_by_name(const CommandContext &ctx)
 static bool
 cmd_font_set_by_name(CommandContext &ctx)
 {
-	// Qt build: queue font family change
+	// Non-GUI build: record the requested font family
 	std::string name = ctx.arg;
 	// trim
 	auto ltrim = [](std::string &s) {
@@ -1947,7 +1915,7 @@ cmd_font_set_by_name(CommandContext &ctx)
 
 
 // Font size set (GUI, ImGui-only for now)
-#if defined(KTE_BUILD_GUI) && !defined(KTE_USE_QT)
+#if defined(KTE_BUILD_GUI)
 static bool
 cmd_font_set_size(const CommandContext &ctx)
 {
@@ -2006,7 +1974,7 @@ cmd_font_set_size(const CommandContext &ctx)
 static bool
 cmd_font_set_size(CommandContext &ctx)
 {
-	// Qt build: parse size and queue change
+	// Non-GUI build: parse size and record the request
 	std::string a = ctx.arg;
 	auto ltrim    = [](std::string &s) {
 		s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
@@ -2081,7 +2049,7 @@ cmd_toggle_edit_mode(const CommandContext &ctx)
 
 
 // Background set command (GUI, ImGui-only for now)
-#if defined(KTE_BUILD_GUI) && !defined(KTE_USE_QT)
+#if defined(KTE_BUILD_GUI)
 static bool
 cmd_background_set(const CommandContext &ctx)
 {
@@ -2254,7 +2222,7 @@ cmd_visual_file_picker_toggle(const CommandContext &ctx)
 }
 
 
-// GUI: request visual font picker (Qt frontend will consume flag)
+// GUI: request visual font picker (sets a flag for the frontend)
 static bool
 cmd_visual_font_picker_toggle(const CommandContext &ctx)
 {
@@ -2570,7 +2538,6 @@ cmd_insert_text(CommandContext &ctx)
 					// Only special-case argument completion for certain commands
 					if (cmd == "theme") {
 #if defined(KTE_BUILD_GUI)
-#  if !defined(KTE_USE_QT)
 						std::vector<std::string> cands;
 						const auto &reg = kte::ThemeRegistry();
 						for (const auto &t: reg) {
@@ -2578,23 +2545,6 @@ cmd_insert_text(CommandContext &ctx)
 							if (argprefix.empty() || n.rfind(argprefix, 0) == 0)
 								cands.push_back(n);
 						}
-#  else
-						// Qt: offer known theme names handled by ApplyQtThemeByName
-						static const char *qt_themes[] = {
-							"nord",
-							"solarized-dark",
-							"solarized-light",
-							"gruvbox-dark",
-							"gruvbox-light",
-							"eink"
-						};
-						std::vector<std::string> cands;
-						for (const char *t: qt_themes) {
-							std::string n(t);
-							if (argprefix.empty() || n.rfind(argprefix, 0) == 0)
-								cands.push_back(n);
-						}
-#  endif
 						if (cands.empty()) {
 							// no change
 						} else if (cands.size() == 1) {
@@ -2626,20 +2576,7 @@ cmd_insert_text(CommandContext &ctx)
 						               [](unsigned char c) {
 							               return (char) std::tolower(c);
 						               });
-#if defined(KTE_BUILD_GUI) && defined(KTE_USE_QT)
-						// Qt: complete against system font families
-						QStringList fams = QFontDatabase::families();
-						for (const auto &fam: fams) {
-							std::string n      = fam.toStdString();
-							std::string nlower = n;
-							std::transform(nlower.begin(), nlower.end(), nlower.begin(),
-							               [](unsigned char c) {
-								               return (char) std::tolower(c);
-							               });
-							if (apfx_lower.empty() || nlower.rfind(apfx_lower, 0) == 0)
-								cands.push_back(n);
-						}
-#elif defined(KTE_BUILD_GUI)
+#if defined(KTE_BUILD_GUI)
 						// ImGui: complete against embedded font registry
 						for (const auto &n : kte::Fonts::FontRegistry::Instance().FontNames()) {
 							if (apfx_lower.empty() || n.rfind(apfx_lower, 0) == 0)

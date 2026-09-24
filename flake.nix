@@ -12,9 +12,8 @@
       packages = eachSystem (system: rec {
         default = kte;
         full = kge;
-        kte = (pkgsFor system).callPackage ./default.nix { graphical = false; graphical-qt = false; };
-        kge = (pkgsFor system).callPackage ./default.nix { graphical = true;  graphical-qt = false; };
-        qt  = (pkgsFor system).callPackage ./default.nix { graphical = true;  graphical-qt = true;  };
+        kte = (pkgsFor system).callPackage ./default.nix { graphical = false; };
+        kge = (pkgsFor system).callPackage ./default.nix { graphical = true; };
       });
 
       devShells = eachSystem (system:
@@ -26,10 +25,6 @@
           };
           terminal = pkgs.mkShell {
             inputsFrom = [ self.packages.${system}.kte ];
-          };
-          qt = pkgs.mkShell {
-            inputsFrom = [ self.packages.${system}.qt ];
-            packages = with pkgs; [ gdb valgrind ];
           };
         }
       );

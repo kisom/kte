@@ -12,7 +12,7 @@
 
 // Verbose k-prefix suffix logging for debugging macOS/SDL key translation
 // issues. Default to off; enable by defining IMGUI_IH_DEBUG=1 at compile
-// time. Mirrors QtInputHandler.cc's QT_IH_DEBUG gate.
+// time.
 #ifndef IMGUI_IH_DEBUG
 #define IMGUI_IH_DEBUG 0
 #endif

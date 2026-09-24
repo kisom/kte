@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-# Fix up a macOS .app bundle by copying non-Qt dylibs into
+# Fix up a macOS .app bundle by copying non-system dylibs into
 # Contents/Frameworks and rewriting install names to use @rpath/@loader_path.
 #
 # Usage:
@@ -29,9 +29,8 @@ set(DIRS
 )
 
 # Note: We pass empty plugin list so fixup_bundle scans the executable and all
-# libs it references recursively. Qt frameworks already live in the bundle after
-# macdeployqt; this step is primarily for non-Qt dylibs (glib, icu, pcre2, zstd,
-# dbus, etc.).
+# libs it references recursively, copying every non-system dylib (e.g. Homebrew
+# SDL2, freetype, pcre2) into Contents/Frameworks; SDL3 is handled below.
 # fixup_bundle often fails if copied libraries are read-only.
 # We also try to use the system install_name_tool and otool to avoid issues with Anaconda's version.
 # Note: BundleUtilities uses find_program(gp_otool "otool") internally, so we might need to set it differently.

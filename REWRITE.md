@@ -938,7 +938,7 @@ pub enum CommandError {
 **Current C++ Implementation:**
 
 - `Frontend` trait with Init/Step/Shutdown lifecycle
-- Three implementations: Terminal (ncurses), ImGui (SDL2/OpenGL), Qt
+- Two implementations: Terminal (ncurses), ImGui (SDL2/OpenGL)
 - Step() does one iteration: poll input, dispatch commands, render
 - Each frontend owns InputHandler and Renderer instances
 
@@ -986,7 +986,7 @@ pub enum FrontendError {
 - `InputHandler` trait with Poll() returning `MappedInput`
 - `MappedInput`: hasCommand bool, CommandId, arg string, count
 - Terminal: ncurses-based, translates keys to commands
-- ImGui/Qt: event-based, handles text input differently
+- ImGui: event-based, handles text input differently
 - Keymap lookups via `KKeymap` functions (KCommand, Ctrl, Esc)
 
 **Rust Design:**
@@ -1075,7 +1075,7 @@ impl InputHandler for TerminalInputHandler {
 
 - `Renderer` trait with single Draw(Editor&) method
 - Terminal: ncurses-based, manual cursor positioning
-- ImGui/Qt: retained mode GUI, draw calls within Begin/End blocks
+- ImGui: immediate mode GUI, draw calls within Begin/End blocks
 - Syntax highlighting integrated via Buffer::Highlighter()
 
 **Rust Design:**
@@ -1200,7 +1200,7 @@ impl Frontend for TerminalFrontend {
 
 #### 9.2 GUI Frontend (egui-based)
 
-For GUI, consider replacing ImGui/Qt with `egui` (pure Rust, immediate
+For GUI, consider replacing ImGui with `egui` (pure Rust, immediate
 mode):
 
 ```rust

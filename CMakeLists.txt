@@ -9,7 +9,6 @@ set(KTE_VERSION "1.12.0")
 # Default to terminal-only build to avoid SDL/OpenGL dependency by default.
 # Enable with -DBUILD_GUI=ON when SDL2/OpenGL/Freetype are available.
 set(BUILD_GUI ON CACHE BOOL "Enable building the graphical version.")
-set(KTE_USE_QT OFF CACHE BOOL "Build the QT frontend instead of ImGui.")
 set(BUILD_TESTS ON CACHE BOOL "Enable building test programs.")
 set(KTE_FONT_SIZE "18.0" CACHE STRING "Default font size for GUI")
 option(KTE_UNDO_DEBUG "Enable undo instrumentation logs" OFF)
@@ -163,25 +162,13 @@ if (BUILD_GUI)
     set(GUI_SOURCES
             GUIConfig.cc
     )
-    if (KTE_USE_QT)
-        find_package(Qt6 COMPONENTS Widgets REQUIRED)
-        set(GUI_SOURCES
-                ${GUI_SOURCES}
-                QtFrontend.cc
-                QtInputHandler.cc
-                QtRenderer.cc
-        )
-        # Expose preprocessor switch so sources can exclude ImGui-specific code
-        add_compile_definitions(KTE_USE_QT)
-    else ()
-        set(GUI_SOURCES
-                ${GUI_SOURCES}
-                ${FONT_SOURCES}
-                ImGuiFrontend.cc
-                ImGuiInputHandler.cc
-                ImGuiRenderer.cc
-        )
-    endif ()
+    set(GUI_SOURCES
+            ${GUI_SOURCES}
+            ${FONT_SOURCES}
+            ImGuiFrontend.cc
+            ImGuiInputHandler.cc
+            ImGuiRenderer.cc
+    )
 endif ()
 
 set(COMMON_SOURCES
@@ -311,24 +298,15 @@ if (BUILD_GUI)
             GUIConfig.h
     )
 
-    if (KTE_USE_QT)
-        set(GUI_HEADERS
-                ${GUI_HEADERS}
-                QtFrontend.h
-                QtInputHandler.h
-                QtRenderer.h
-        )
-    else ()
-        set(GUI_HEADERS
-                ${GUI_HEADERS}
-                ${THEME_HEADERS}
-                ${FONT_HEADERS}
-                ImGuiFrontend.h
-                ImGuiInputHandler.h
-                ImGuiRenderer.h
-                fonts/BerkeleyMono.h
-        )
-    endif ()
+    set(GUI_HEADERS
+            ${GUI_HEADERS}
+            ${THEME_HEADERS}
+            ${FONT_HEADERS}
+            ImGuiFrontend.h
+            ImGuiInputHandler.h
+            ImGuiRenderer.h
+            fonts/BerkeleyMono.h
+    )
 endif ()
 
 # kte (terminal-first) executable
@@ -473,17 +451,10 @@ if (BUILD_GUI)
 
     )
     target_compile_definitions(kge PRIVATE KTE_BUILD_GUI=1 KTE_DEFAULT_GUI=1 KTE_FONT_SIZE=${KTE_FONT_SIZE})
-    if (KTE_USE_QT)
-        target_compile_definitions(kge PRIVATE KTE_USE_QT=1)
-    endif ()
     if (KTE_UNDO_DEBUG)
         target_compile_definitions(kge PRIVATE KTE_UNDO_DEBUG=1)
     endif ()
-    if (KTE_USE_QT)
-        target_link_libraries(kge ${CURSES_LIBRARIES} Qt6::Widgets)
-    else ()
-        target_link_libraries(kge ${CURSES_LIBRARIES} imgui)
-    endif ()
+    target_link_libraries(kge ${CURSES_LIBRARIES} imgui)
 
     # Static linking on Linux only (macOS does not support static linking of system libraries)
     if (NOT APPLE AND KTE_STATIC_LINK)
@@ -565,7 +536,8 @@ if (BUILD_GUI)
 
     # Optional post-build bundle fixup (can also be run from scripts).
     # This provides a CMake target to run BundleUtilities' fixup_bundle on the
-    # built app, useful after macdeployqt to ensure non-Qt dylibs are internalized.
+    # built app, copying non-system dylibs (e.g. Homebrew SDL2/SDL3, freetype,
+    # pcre2) into the bundle so it runs on machines without them installed.
     if (APPLE AND TARGET kge)
         get_target_property(IS_BUNDLE kge MACOSX_BUNDLE)
         if (IS_BUNDLE)
@@ -573,7 +545,7 @@ if (BUILD_GUI)
                     COMMAND ${CMAKE_COMMAND}
                     -DAPP_BUNDLE=${CMAKE_CURRENT_BINARY_DIR}/$<TARGET_PROPERTY:kge,MACOSX_BUNDLE_BUNDLE_NAME>.app
                     -P ${CMAKE_CURRENT_LIST_DIR}/cmake/fix_bundle.cmake
-                    COMMENT "Running fixup_bundle on kge.app to internalize non-Qt dylibs"
+                    COMMENT "Running fixup_bundle on kge.app to internalize non-system dylibs"
                     VERBATIM)
             add_dependencies(kge_fixup_bundle kge)
         endif ()
