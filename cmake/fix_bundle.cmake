@@ -44,6 +44,34 @@ execute_process(COMMAND chmod -R u+w "${APP_DIR}/Contents/Frameworks")
 
 fixup_bundle("${APP_DIR}" "" "${DIRS}")
 
+# Homebrew's sdl2 is sdl2-compat, which dlopen()s SDL3 at startup instead of
+# linking it, so fixup_bundle never sees it. Without SDL3 in the bundle kge
+# stops at launch with "Failed loading SDL3 library". sdl2-compat looks for
+# @loader_path/libSDL3.dylib first; put SDL3 there.
+set(SDL2_IN_BUNDLE "${APP_DIR}/Contents/Frameworks/libSDL2-2.0.0.dylib")
+if (EXISTS "${SDL2_IN_BUNDLE}")
+    file(STRINGS "${SDL2_IN_BUNDLE}" SDL2_COMPAT_REFS REGEX "libSDL3\\.dylib")
+    if (SDL2_COMPAT_REFS)
+        find_file(SDL3_DYLIB NAMES libSDL3.0.dylib libSDL3.dylib
+                PATHS "/opt/homebrew/opt/sdl3/lib" "/opt/homebrew/lib" "/usr/local/opt/sdl3/lib" "/usr/local/lib"
+                NO_DEFAULT_PATH)
+        if (NOT SDL3_DYLIB)
+            message(FATAL_ERROR "libSDL2 in the bundle is sdl2-compat, which needs SDL3 at run time, "
+                    "but libSDL3 was not found (brew install sdl3)")
+        endif ()
+        file(REAL_PATH "${SDL3_DYLIB}" SDL3_REAL)
+        set(SDL3_IN_BUNDLE "${APP_DIR}/Contents/Frameworks/libSDL3.dylib")
+        message(STATUS "Bundling SDL3 for sdl2-compat: ${SDL3_REAL}")
+        file(COPY_FILE "${SDL3_REAL}" "${SDL3_IN_BUNDLE}")
+        execute_process(COMMAND chmod u+w "${SDL3_IN_BUNDLE}")
+        execute_process(COMMAND /usr/bin/install_name_tool -id "@loader_path/libSDL3.dylib" "${SDL3_IN_BUNDLE}"
+                RESULT_VARIABLE SDL3_ID_RESULT)
+        if (NOT SDL3_ID_RESULT EQUAL 0)
+            message(FATAL_ERROR "install_name_tool -id failed on ${SDL3_IN_BUNDLE}")
+        endif ()
+    endif ()
+endif ()
+
 # On Apple Silicon (and modern macOS in general), modifications by fixup_bundle
 # invalidate code signatures. We must re-sign the bundle (at least ad-hoc)
 # for it to be allowed to run.
