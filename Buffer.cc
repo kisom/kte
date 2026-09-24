@@ -170,19 +170,20 @@ write_in_place(const std::string &path, const char *data, std::size_t len, std::
 }
 
 
-// Create `path` (which must not exist) with the content, fsynced.
+// Create a new file named from `tmpl` (a mkstemp template, which receives
+// the chosen name) holding the content, fsynced.
 static bool
-write_new_file(const std::string &path, const char *data, std::size_t len, std::string &err)
+write_new_file(std::string &tmpl, const char *data, std::size_t len, std::string &err)
 {
-	int flags = O_WRONLY | O_CREAT | O_EXCL;
-#ifdef O_CLOEXEC
-	flags |= O_CLOEXEC;
-#endif
-	const int fd = kte::syscall::Open(path.c_str(), flags, 0600);
+	std::vector<char> name(tmpl.begin(), tmpl.end());
+	name.push_back('\0');
+	const int fd = kte::syscall::Mkstemp(name.data());
 	if (fd < 0) {
-		err = "Failed to create " + path + ": " + std::strerror(errno);
+		err = "Failed to create " + tmpl + ": " + std::strerror(errno);
 		return false;
 	}
+	tmpl.assign(name.data());
+	const std::string &path = tmpl;
 	bool ok = write_all_fd(fd, data, len, err);
 	if (ok && kte::syscall::Fsync(fd) != 0) {
 		err = std::string("fsync failed: ") + std::strerror(errno);
@@ -220,15 +221,19 @@ atomic_write_file(const std::string &path_in, const char *data, std::size_t len,
 	// names would keep the old content.
 	if (dst_exists && S_ISREG(dst_st.st_mode) && dst_st.st_nlink > 1) {
 		// Truncating in place risks the only copy if the write then fails
-		// (ENOSPC, EIO, crash), so first write and sync a copy beside it.
-		const std::string copy = path + ".kte-save";
-		if (!write_new_file(copy, data, len, err))
-			return false;
+		// (ENOSPC, EIO, crash), so first write and sync a copy beside it. If
+		// no copy can be made (directory not writable, name too long), write
+		// in place anyway rather than refuse to save.
+		std::string copy = path + ".kte-save.XXXXXX";
+		std::string copy_err;
+		const bool have_copy = write_new_file(copy, data, len, copy_err);
 		if (!write_in_place(path, data, len, err)) {
-			err += " (the new content is in " + copy + ")";
+			if (have_copy)
+				err += " (the new content is in " + copy + ")";
 			return false;
 		}
-		(void) ::unlink(copy.c_str());
+		if (have_copy)
+			(void) ::unlink(copy.c_str());
 		best_effort_fsync_dir(path);
 		return true;
 	}
@@ -255,8 +260,16 @@ atomic_write_file(const std::string &path_in, const char *data, std::size_t len,
 	};
 
 	if (!kte::RetryOnTransientError(mkstemp_fn, kte::RetryPolicy::Aggressive(), err)) {
+		const int saved_errno = errno;
+		// No temp file in the directory (e.g. the file is writable but its
+		// directory is not): an existing regular file can still be written in
+		// place, as editors traditionally do.
+		if (fd < 0 && dst_exists && S_ISREG(dst_st.st_mode)) {
+			err.clear();
+			return write_in_place(path, data, len, err);
+		}
 		if (fd < 0) {
-			err = std::string("Failed to create temp file for save: ") + std::strerror(errno) + err;
+			err = std::string("Failed to create temp file for save: ") + std::strerror(saved_errno) + err;
 		}
 		return false;
 	}
@@ -618,9 +631,20 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		return false;
 	}
 	(void) kte::syscall::Close(fd);
-	content_.Clear();
-	if (!data.empty())
-		content_.Append(data.data(), data.size());
+	// Build the new content aside and swap it in only once complete: if the
+	// copy runs out of memory, the buffer keeps its old text (clearing first
+	// left an empty buffer that a later save wrote over the file).
+	PieceTable fresh;
+	try {
+		if (!data.empty())
+			fresh.Append(data.data(), data.size());
+		std::string().swap(data);
+	} catch (const std::bad_alloc &) {
+		err = "File too large to load: " + norm;
+		kte::ErrorHandler::Instance().Error("Buffer", err, norm);
+		return false;
+	}
+	content_ = std::move(fresh);
 	rows_cache_dirty_ = true;
 	nrows_            = 0; // not used under PieceTable
 	filename_         = norm;

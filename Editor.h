@@ -568,6 +568,11 @@ public:
 	// Returns true if a file was opened during this call.
 	bool ProcessPendingOpens();
 
+private:
+	bool process_pending_opens_();
+
+public:
+
 	[[nodiscard]] bool HasPendingOpens() const;
 
 	// Swap recovery confirmation state. When non-None, a `PromptKind::Confirm`
