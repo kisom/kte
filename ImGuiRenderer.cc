@@ -66,7 +66,9 @@ ImGuiRenderer::Draw(Editor &ed)
 	if (!buf) {
 		ImGui::TextUnformatted("[no buffer]");
 	} else {
-		const auto &lines   = buf->Rows();
+		// Per-row access only: Rows() rebuilds a string for every line of the
+		// file after each edit, which made every frame O(file size).
+		const std::size_t nlines = buf->Nrows();
 		std::size_t cy      = buf->Cury();
 		std::size_t cx      = buf->Curx();
 		const float line_h  = ImGui::GetTextLineHeight();
@@ -175,7 +177,7 @@ ImGuiRenderer::Draw(Editor &ed)
 		// Compute the visible row range and skip rendering work for off-screen
 		// lines. ImGui clips drawing, but string allocation, tab expansion,
 		// syntax-highlight lookups, and width measurement are not free.
-		const std::size_t total_rows = lines.size();
+		const std::size_t total_rows = nlines;
 		std::size_t first_vis = 0;
 		std::size_t last_vis  = total_rows; // exclusive
 		if (row_h > 0.0f && total_rows > 0) {
@@ -221,14 +223,14 @@ ImGuiRenderer::Draw(Editor &ed)
 			if (by_l < 0)
 				by_l = 0;
 			std::size_t by = static_cast<std::size_t>(by_l);
-			if (by >= lines.size())
-				by = lines.empty() ? 0 : (lines.size() - 1);
+			if (by >= nlines)
+				by = (nlines == 0) ? 0 : (nlines - 1);
 
-			if (lines.empty())
+			if (nlines == 0)
 				return {0, 0};
 
 			// Expand tabs for the clicked line
-			std::string line_clicked = static_cast<std::string>(lines[by]);
+			std::string line_clicked = buf->GetLineString(by);
 			const std::size_t tabw   = 8;
 			std::string click_expanded;
 			click_expanded.reserve(line_clicked.size() + 16);
@@ -322,7 +324,7 @@ ImGuiRenderer::Draw(Editor &ed)
 		for (std::size_t i = first_vis; i < last_vis; ++i) {
 			// Capture the screen position before drawing the line
 			ImVec2 line_pos  = ImGui::GetCursorScreenPos();
-			std::string line = static_cast<std::string>(lines[i]);
+			std::string line = buf->GetLineString(i);
 
 			// Expand tabs to spaces with width=8
 			const std::size_t tabw = 8;
@@ -607,8 +609,8 @@ ImGuiRenderer::Draw(Editor &ed)
 
 			// Horizontal scroll: ensure cursor is visible (pixel-based for proportional fonts)
 			float cursor_px_abs = 0.0f;
-			if (cy < lines.size()) {
-				std::string cur_line   = static_cast<std::string>(lines[cy]);
+			if (cy < nlines) {
+				std::string cur_line   = buf->GetLineString(cy);
 				const std::size_t tabw = 8;
 				// Expand tabs for cursor line to measure pixel position
 				std::string cur_expanded;
@@ -791,7 +793,7 @@ ImGuiRenderer::Draw(Editor &ed)
 				left += " *";
 			// Append total line count as "<n>L"
 			{
-				unsigned long lcount = static_cast<unsigned long>(buf->Rows().size());
+				unsigned long lcount = static_cast<unsigned long>(buf->Nrows());
 				left                 += " ";
 				left                 += std::to_string(lcount);
 				left                 += "L";

@@ -42,7 +42,9 @@ TerminalRenderer::Draw(Editor &ed)
 
 	int saved_cur_y = -1, saved_cur_x = -1; // logical cursor position within content area
 	if (buf) {
-		const auto &lines   = buf->Rows();
+		// Per-row access only: Rows() rebuilds a string for every line of the
+		// file after each edit, which made every frame O(file size).
+		const std::size_t nlines = buf->Nrows();
 		std::size_t rowoffs = buf->Rowoffs();
 		std::size_t coloffs = buf->Coloffs();
 
@@ -62,8 +64,8 @@ TerminalRenderer::Draw(Editor &ed)
 			// Compute matches for this line if search highlighting is active
 			bool search_mode = ed.SearchActive() && !ed.SearchQuery().empty();
 			std::vector<std::pair<std::size_t, std::size_t> > ranges; // [start, end)
-			if (search_mode && li < lines.size()) {
-				std::string sline = static_cast<std::string>(lines[li]);
+			if (search_mode && li < nlines) {
+				std::string sline = buf->GetLineString(li);
 				// If regex search prompt is active (RegexSearch or RegexReplaceFind), use regex to compute highlight ranges
 				if (ed.PromptActive() && (
 					    ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch || ed.
@@ -140,8 +142,8 @@ TerminalRenderer::Draw(Editor &ed)
 				return true;
 			};
 			int written = 0;
-			if (li < lines.size()) {
-				std::string line                = static_cast<std::string>(lines[li]);
+			if (li < nlines) {
+				std::string line                = buf->GetLineString(li);
 				const bool vsel_on_line         = vsel_active && li >= vsel_sy && li <= vsel_ey;
 				const std::size_t vsel_spot_src = vsel_on_line
 					                                  ? std::min(buf->Curx(), line.size())
@@ -389,8 +391,8 @@ TerminalRenderer::Draw(Editor &ed)
 		std::size_t cx            = buf->Curx();
 		int cur_y                 = static_cast<int>(cy) - static_cast<int>(buf->Rowoffs());
 		std::size_t rx_recomputed = 0;
-		if (cy < lines.size()) {
-			const std::string line_for_cursor = static_cast<std::string>(lines[cy]);
+		if (cy < nlines) {
+			const std::string line_for_cursor = buf->GetLineString(cy);
 			std::size_t src_i_cur             = 0;
 			std::size_t render_col_cur        = 0;
 			while (src_i_cur < line_for_cursor.size() && src_i_cur < cx) {
@@ -541,7 +543,7 @@ TerminalRenderer::Draw(Editor &ed)
 			left += " [RO]";
 		// Append total line count as "<n>L"
 		if (b) {
-			unsigned long lcount = static_cast<unsigned long>(b->Rows().size());
+			unsigned long lcount = static_cast<unsigned long>(b->Nrows());
 			left                 += " ";
 			left                 += std::to_string(lcount);
 			left                 += "L";

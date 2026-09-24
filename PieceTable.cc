@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstring>
 #include <utility>
 #include <limits>
 #include <ostream>
@@ -359,6 +360,42 @@ PieceTable::InvalidateLineIndex() const
 
 
 void
+PieceTable::lineIndexOnInsert(std::size_t offset, const char *text, std::size_t len) const
+{
+	std::lock_guard<std::mutex> lock(mutex_);
+	if (line_index_dirty_)
+		return;
+	// Line starts after the insertion point move right; a start exactly at
+	// the insertion point stays (the text joins that line).
+	auto first_after = std::upper_bound(line_index_.begin(), line_index_.end(), offset);
+	for (auto it = first_after; it != line_index_.end(); ++it)
+		*it += len;
+	std::vector<std::size_t> added;
+	const char *end = text + len;
+	for (const char *p = text; (p = static_cast<const char *>(std::memchr(p, '\n', end - p))) != nullptr; ++p)
+		added.push_back(offset + static_cast<std::size_t>(p - text) + 1);
+	if (!added.empty())
+		line_index_.insert(first_after, added.begin(), added.end());
+}
+
+
+void
+PieceTable::lineIndexOnDelete(std::size_t offset, std::size_t len) const
+{
+	std::lock_guard<std::mutex> lock(mutex_);
+	if (line_index_dirty_)
+		return;
+	// Starts in (offset, offset+len] followed a deleted newline: drop them.
+	// Later starts move left.
+	auto lo = std::upper_bound(line_index_.begin(), line_index_.end(), offset);
+	auto hi = std::upper_bound(lo, line_index_.end(), offset + len);
+	for (auto it = hi; it != line_index_.end(); ++it)
+		*it -= len;
+	line_index_.erase(lo, hi);
+}
+
+
+void
 PieceTable::RebuildLineIndex() const
 {
 	std::lock_guard<std::mutex> lock(mutex_);
@@ -405,7 +442,7 @@ PieceTable::Insert(std::size_t byte_offset, const char *text, std::size_t len)
 		pieces_.push_back(Piece{Source::Add, add_start, len});
 		total_size_ += len;
 		dirty_      = true;
-		InvalidateLineIndex();
+		lineIndexOnInsert(byte_offset, add_.data() + add_start, len);
 		maybeConsolidate();
 		version_++;
 		range_cache_ = {};
@@ -419,7 +456,7 @@ PieceTable::Insert(std::size_t byte_offset, const char *text, std::size_t len)
 		pieces_.push_back(Piece{Source::Add, add_start, len});
 		total_size_ += len;
 		dirty_      = true;
-		InvalidateLineIndex();
+		lineIndexOnInsert(byte_offset, add_.data() + add_start, len);
 		coalesceNeighbors(pieces_.size() - 1);
 		maybeConsolidate();
 		version_++;
@@ -447,7 +484,7 @@ PieceTable::Insert(std::size_t byte_offset, const char *text, std::size_t len)
 
 	total_size_ += len;
 	dirty_      = true;
-	InvalidateLineIndex();
+	lineIndexOnInsert(byte_offset, add_.data() + add_start, len);
 	// Try coalescing around the inserted position (the inserted piece is at idx + (inner>0 ? 1 : 0))
 	std::size_t ins_index = idx + (inner > 0 ? 1 : 0);
 	coalesceNeighbors(ins_index);
@@ -517,7 +554,7 @@ PieceTable::Delete(std::size_t byte_offset, std::size_t len)
 
 	total_size_ -= len;
 	dirty_      = true;
-	InvalidateLineIndex();
+	lineIndexOnDelete(byte_offset, len);
 	if (idx < pieces_.size())
 		coalesceNeighbors(idx);
 	if (idx > 0)

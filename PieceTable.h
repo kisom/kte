@@ -175,6 +175,12 @@ private:
 	// Line index support (rebuilt lazily on demand)
 	void InvalidateLineIndex() const;
 
+	// Keep a valid line index in step with an edit instead of rescanning the
+	// whole buffer on the next query. No-ops if the index is already dirty.
+	void lineIndexOnInsert(std::size_t offset, const char *text, std::size_t len) const;
+
+	void lineIndexOnDelete(std::size_t offset, std::size_t len) const;
+
 	void RebuildLineIndex() const;
 
 	// Underlying storages

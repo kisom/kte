@@ -11,6 +11,8 @@
 #include "UndoTree.h"
 
 #include <chrono>
+#include <random>
+#include <vector>
 #include <clocale>
 #include <memory>
 #include <string>
@@ -439,4 +441,43 @@ TEST(Audit_B6_HorizontalScroll_CountsCells)
 	std::setlocale(LC_CTYPE, saved.c_str());
 	// 200 cells wide on an 80-column screen: the cursor cell is 200.
 	ASSERT_EQ(coloffs, (std::size_t) (200 - 80 + 1));
+}
+
+
+// P2: the line index is updated in place by Insert/Delete. Query it after
+// every edit (so it is never dirty) and compare with a plain string model.
+TEST(Audit_P2_IncrementalLineIndex_MatchesModel)
+{
+	std::mt19937 rng(20260923u);
+	PieceTable t;
+	std::string model;
+	const char alphabet[] = "ab\nc\n\nd";
+	for (int step = 0; step < 3000; ++step) {
+		const bool do_insert = model.empty() || (rng() % 3 != 0);
+		if (do_insert) {
+			const std::size_t off = model.empty() ? 0 : rng() % (model.size() + 1);
+			std::string text;
+			const std::size_t n = 1 + rng() % 6;
+			for (std::size_t i = 0; i < n; ++i)
+				text.push_back(alphabet[rng() % (sizeof(alphabet) - 1)]);
+			t.Insert(off, text.data(), text.size());
+			model.insert(off, text);
+		} else {
+			const std::size_t off = rng() % model.size();
+			const std::size_t n   = 1 + rng() % 5;
+			t.Delete(off, n);
+			model.erase(off, n);
+		}
+		// Reference line starts.
+		std::vector<std::size_t> starts{0};
+		for (std::size_t i = 0; i < model.size(); ++i)
+			if (model[i] == '\n')
+				starts.push_back(i + 1);
+		ASSERT_EQ(t.LineCount(), starts.size());
+		for (std::size_t l = 0; l < starts.size(); ++l) {
+			const auto [s, e] = t.GetLineRange(l);
+			ASSERT_EQ(s, starts[l]);
+			ASSERT_EQ(e, (l + 1 < starts.size()) ? starts[l + 1] : model.size());
+		}
+	}
 }
