@@ -10,6 +10,7 @@
 
 #include "ImGuiRenderer.h"
 #include "SearchHighlight.h"
+#include "TermWidth.h"
 #include "Highlight.h"
 #include "GUITheme.h"
 #include "Buffer.h"
@@ -220,7 +221,7 @@ ImGuiRenderer::Draw(Editor &ed)
 
 			// Expand tabs for the clicked line
 			std::string line_clicked = buf->GetLineString(by);
-			const std::size_t tabw   = 8;
+			const std::size_t tabw   = kte::kTabWidth;
 			std::string click_expanded;
 			click_expanded.reserve(line_clicked.size() + 16);
 			std::size_t click_rx = 0;
@@ -315,48 +316,52 @@ ImGuiRenderer::Draw(Editor &ed)
 			ImVec2 line_pos  = ImGui::GetCursorScreenPos();
 			std::string line = buf->GetLineString(i);
 
-			// Expand tabs to spaces with width=8
-			const std::size_t tabw = 8;
+			// Expand tabs to spaces with width=8, recording each source
+			// byte's rendered column (rx_of[line.size()] is the line's width).
+			const std::size_t tabw = kte::kTabWidth;
 			std::string expanded;
 			expanded.reserve(line.size() + 16);
-			std::size_t rx_abs_draw = 0;
+			std::vector<std::size_t> rx_of(line.size() + 1);
 			for (std::size_t src = 0; src < line.size(); ++src) {
-				char c = line[src];
-				if (c == '\t') {
-					std::size_t adv = (tabw - (rx_abs_draw % tabw));
-					expanded.append(adv, ' ');
-					rx_abs_draw += adv;
-				} else {
-					expanded.push_back(c);
-					rx_abs_draw += 1;
-				}
+				rx_of[src] = expanded.size();
+				if (line[src] == '\t')
+					expanded.append(tabw - (expanded.size() % tabw), ' ');
+				else
+					expanded.push_back(line[src]);
 			}
+			rx_of[line.size()] = expanded.size();
+			auto src_to_rx = [&](std::size_t src) -> std::size_t {
+				return rx_of[std::min(src, line.size())];
+			};
 
-			// Helper: convert a rendered column position to an absolute
-			// pixel x offset from the start of the line.  ImGui's scroll
-			// handles viewport clipping so we measure from column 0.
+			// Rendered column -> pixel offset from the start of the line.
+			// Measuring from column 0 for every span was quadratic in line
+			// length; measure on from the nearest earlier position already
+			// measured (only character boundaries are kept, so a multi-byte
+			// character is never measured in pieces).
+			std::vector<std::pair<std::size_t, float> > px_marks{{0, 0.0f}}; // unrounded
 			auto rx_to_px = [&](std::size_t rx_col) -> float {
-				std::size_t end = std::min(expanded.size(), rx_col);
-				if (end == 0)
-					return 0.0f;
-				return ImGui::CalcTextSize(expanded.c_str(),
-				                           expanded.c_str() + end).x;
+				const std::size_t end = std::min(expanded.size(), rx_col);
+				auto it = std::upper_bound(px_marks.begin(), px_marks.end(), end,
+				                           [](std::size_t v, const std::pair<std::size_t, float> &m) {
+					                           return v < m.first;
+				                           });
+				--it; // px_marks[0] is column 0
+				float px = it->second;
+				if (it->first != end) {
+					px += ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, 0.0f,
+					                                      expanded.c_str() + it->first,
+					                                      expanded.c_str() + end).x;
+					if (end == expanded.size() || (static_cast<unsigned char>(expanded[end]) & 0xC0) != 0x80)
+						px_marks.insert(it + 1, {end, px});
+				}
+				// Rounded up as ImGui::CalcTextSize does (sums of rounded
+				// pieces would drift).
+				return end == 0 ? 0.0f : static_cast<float>(static_cast<int>(px + 0.99999f));
 			};
 
 			// Search highlight ranges for this line in source indices
 			search_hl.Ranges(line, hl_src_ranges);
-			auto src_to_rx = [&](std::size_t upto_src_exclusive) -> std::size_t {
-				std::size_t rx = 0;
-				std::size_t s  = 0;
-				while (s < upto_src_exclusive && s < line.size()) {
-					if (line[s] == '\t')
-						rx += (tabw - (rx % tabw));
-					else
-						rx += 1;
-					++s;
-				}
-				return rx;
-			};
 			// Draw background highlights (under text)
 			if (search_mode && !hl_src_ranges.empty()) {
 				// Current match emphasis
@@ -461,18 +466,9 @@ ImGuiRenderer::Draw(Editor &ed)
 					return a.s < b.s;
 				});
 
-				// Helper to convert a src column to expanded rx position
-				auto src_to_rx_full = [&](std::size_t sidx) -> std::size_t {
-					std::size_t rx = 0;
-					for (std::size_t k = 0; k < sidx && k < line.size(); ++k) {
-						rx += (line[k] == '\t') ? (tabw - (rx % tabw)) : 1;
-					}
-					return rx;
-				};
-
 				for (const auto &sp: spans) {
-					std::size_t rx_s = src_to_rx_full(sp.s);
-					std::size_t rx_e = src_to_rx_full(sp.e);
+					std::size_t rx_s = src_to_rx(sp.s);
+					std::size_t rx_e = src_to_rx(sp.e);
 					std::size_t draw_start = rx_s;
 					if (draw_start >= expanded.size())
 						continue;
@@ -515,7 +511,7 @@ ImGuiRenderer::Draw(Editor &ed)
 			// measured per frame; if the user scrolls or edits, the cache is
 			// refreshed accordingly.
 			if (!expanded.empty()) {
-				float line_w = ImGui::CalcTextSize(expanded.c_str()).x;
+				const float line_w = rx_to_px(expanded.size());
 				if (line_w > max_width_px_)
 					max_width_px_ = line_w;
 			}
@@ -575,7 +571,7 @@ ImGuiRenderer::Draw(Editor &ed)
 			float cursor_px_abs = 0.0f;
 			if (cy < nlines) {
 				std::string cur_line   = buf->GetLineString(cy);
-				const std::size_t tabw = 8;
+				const std::size_t tabw = kte::kTabWidth;
 				// Expand tabs for cursor line to measure pixel position
 				std::string cur_expanded;
 				cur_expanded.reserve(cur_line.size() + 16);

@@ -49,7 +49,7 @@ TerminalRenderer::Draw(Editor &ed)
 		std::size_t rowoffs = buf->Rowoffs();
 		std::size_t coloffs = buf->Coloffs();
 
-		const int tabw = 8;
+		const int tabw = static_cast<int>(kte::kTabWidth);
 		// Phase 3: prefetch visible viewport highlights (current terminal area)
 		if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
 			int fr = static_cast<int>(rowoffs);
@@ -147,7 +147,7 @@ TerminalRenderer::Draw(Editor &ed)
 							wch_len = static_cast<int>(res);
 						}
 						if (wch == L'\t') {
-							constexpr std::size_t tab_width = 8;
+							constexpr std::size_t tab_width = kte::kTabWidth;
 							const std::size_t next_tab      = tab_width - (rc % tab_width);
 							rc                              += next_tab;
 						} else {

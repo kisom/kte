@@ -140,33 +140,6 @@ line_view(const std::string &l)
 }
 
 
-// Keep buffer viewport offsets so that the cursor stays within the visible
-// window based on the editor's current dimensions. The bottom row is reserved
-// for the status line.
-// Decode the character at line[i]: its byte length and display width in cells
-// (tabs expand to the next multiple of tabw from column rx). Measures the way
-// TerminalRenderer draws: invalid bytes are one cell each.
-static void
-measure_char(std::string_view line, std::size_t i, std::size_t rx, std::size_t tabw, std::size_t &len,
-             std::size_t &width)
-{
-	std::mbstate_t state{};
-	wchar_t wch   = 0;
-	const auto rc = std::mbrtowc(&wch, line.data() + i, line.size() - i, &state);
-	if (rc == static_cast<std::size_t>(-1) || rc == static_cast<std::size_t>(-2) || rc == 0) {
-		// Invalid byte or NUL: the renderer draws the byte value itself.
-		wch = static_cast<unsigned char>(line[i]);
-		len = 1;
-	} else {
-		len = rc;
-	}
-	if (wch == L'\t')
-		width = tabw - (rx % tabw);
-	else
-		width = static_cast<std::size_t>(kte::CellWidth(wch));
-}
-
-
 // Display column of byte offset curx, in terminal cells.
 static std::size_t
 compute_render_x(std::string_view line, const std::size_t curx, const std::size_t tabw)
@@ -175,7 +148,7 @@ compute_render_x(std::string_view line, const std::size_t curx, const std::size_
 	std::size_t i  = 0;
 	while (i < curx && i < line.size()) {
 		std::size_t len = 1, width = 1;
-		measure_char(line, i, rx, tabw, len, width);
+		kte::MeasureChar(line, i, rx, len, width, tabw);
 		rx += width;
 		i += len;
 	}
@@ -219,6 +192,9 @@ clamp_cursor_to_buffer(Buffer &buf)
 }
 
 
+// Keep buffer viewport offsets so that the cursor stays within the visible
+// window based on the editor's current dimensions. The bottom row is reserved
+// for the status line.
 static void
 ensure_cursor_visible(const Editor &ed, Buffer &buf)
 {
@@ -256,7 +232,7 @@ ensure_cursor_visible(const Editor &ed, Buffer &buf)
 	if (cury < total_rows) {
 		// GetLineView would materialize the whole buffer after an edit; copying
 		// the one line is cheaper.
-		rx = compute_render_x(buf.GetLineString(cury), curx, 8);
+		rx = compute_render_x(buf.GetLineString(cury), curx, kte::kTabWidth);
 	}
 	if (rx < coloffs) {
 		coloffs = rx;
@@ -802,7 +778,7 @@ inverse_render_to_source_col(const std::string &line, std::size_t rx_target, std
 		if (i >= line.size() || rx >= rx_target)
 			break;
 		std::size_t len = 1, width = 1;
-		measure_char(line, i, rx, tabw, len, width);
+		kte::MeasureChar(line, i, rx, len, width, tabw);
 		rx += width;
 		i += len;
 	}
@@ -854,7 +830,7 @@ cmd_move_cursor_to(CommandContext &ctx)
 						by = lines2.size() - 1;
 					std::string line2     = static_cast<std::string>(lines2[by]);
 					std::size_t rx_target = bco + vx;
-					std::size_t sx        = inverse_render_to_source_col(line2, rx_target, 8);
+					std::size_t sx        = inverse_render_to_source_col(line2, rx_target, kte::kTabWidth);
 					row                   = by;
 					col                   = sx;
 				} else {
