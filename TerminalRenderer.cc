@@ -170,11 +170,13 @@ TerminalRenderer::Draw(Editor &ed)
 				// Called left to right while drawing: walk the spans with a
 				// cursor (rescanning from the first span for every byte was
 				// quadratic on long highlighted lines).
-				std::size_t span_i = 0;
+				std::size_t span_i  = 0;
+				int last_token_si   = -1;
 				auto token_at = [&](std::size_t src_index) -> kte::TokenKind {
 					const int si = static_cast<int>(src_index);
-					if (span_i > 0 && span_i <= sane_spans.size() && si < sane_spans[span_i - 1].col_start)
-						span_i = 0; // moved backwards: restart
+					if (si < last_token_si)
+						span_i = 0; // asked about an earlier byte: restart
+					last_token_si = si;
 					while (span_i < sane_spans.size() && sane_spans[span_i].col_end <= si)
 						++span_i;
 					if (span_i < sane_spans.size() && sane_spans[span_i].col_start <= si)
