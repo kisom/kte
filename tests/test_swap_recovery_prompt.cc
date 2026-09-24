@@ -520,3 +520,66 @@ TEST(SwapJournal_Reload_ResetsJournal)
 	ASSERT_TRUE(kte::SwapManager::ReplayFile(check, kte::SwapManager::ComputeSwapPathForTests(*cur), rerr));
 	ASSERT_EQ(buffer_bytes_via_views(check), live);
 }
+
+
+// A journal whose base file changed on disk afterwards is not replayed onto
+// the new content; the user is offered to delete it instead.
+TEST(SwapRecoveryPrompt_StaleJournal_NotReplayed)
+{
+	ktet::InstallDefaultCommandsOnce();
+	XdgSandbox sb("stale");
+	const std::string file = (sb.root / "work" / "s.txt").string();
+	write_file_bytes(file, "base\n");
+	std::string expected;
+	(void) make_journal(file, [](Buffer &b) {
+		b.insert_text(0, 0, std::string("A"));
+	}, expected);
+	write_file_bytes(file, "completely different content\n"); // changed after the crash
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+	ed.AddBuffer(Buffer());
+	ed.RequestOpenFile(file);
+	(void) ed.ProcessPendingOpens();
+	ASSERT_EQ(ed.PendingRecoveryPrompt(), Editor::RecoveryPromptKind::DeleteCorruptSwap);
+	answer(ed, "y");
+	ASSERT_EQ(buffer_bytes_via_views(*ed.CurrentBuffer()), std::string("completely different content\n"));
+}
+
+
+// A journal held by another live session is neither replayed, removed nor
+// written to by a second session opening the same file.
+TEST(SwapRecoveryPrompt_LiveJournalOfOtherSession_LeftAlone)
+{
+	ktet::InstallDefaultCommandsOnce();
+	XdgSandbox sb("live");
+	const std::string file = (sb.root / "work" / "l.txt").string();
+	write_file_bytes(file, "base\n");
+
+	// "Other process": a session with the journal open (and locked).
+	Buffer other;
+	std::string err;
+	ASSERT_TRUE(other.OpenFromFile(file, err));
+	kte::SwapManager other_sm;
+	other_sm.Attach(&other);
+	other.SetSwapRecorder(other_sm.RecorderFor(&other));
+	other.insert_text(0, 0, std::string("O"));
+	other_sm.Flush(&other);
+	const std::string swp = kte::SwapManager::ComputeSwapPathForTests(other);
+	ASSERT_TRUE(kte::SwapManager::JournalInUse(swp));
+	const std::string before = read_file_bytes(swp);
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+	ed.AddBuffer(Buffer());
+	ed.RequestOpenFile(file);
+	(void) ed.ProcessPendingOpens();
+	ASSERT_EQ(ed.PendingRecoveryPrompt(), Editor::RecoveryPromptKind::None);
+	ASSERT_EQ(buffer_bytes_via_views(*ed.CurrentBuffer()), std::string("base\n"));
+	ed.CurrentBuffer()->insert_text(0, 0, std::string("X"));
+	ed.Swap()->Flush(ed.CurrentBuffer());
+	ASSERT_EQ(read_file_bytes(swp), before);
+
+	other.SetSwapRecorder(nullptr);
+	other_sm.Detach(&other, true);
+}

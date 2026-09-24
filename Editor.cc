@@ -512,6 +512,31 @@ Editor::ProcessPendingOpens()
 		} catch (...) {
 			swp_exists = false;
 		}
+		if (swp_exists && kte::SwapManager::JournalInUse(swp)) {
+			// Another running kte is editing this file: its journal is live.
+			// Open without recovery and leave the journal alone; this
+			// session will not journal the file.
+			std::string err;
+			if (!OpenFile(req.path, err)) {
+				SetStatus(err);
+				continue;
+			}
+			apply_pending_line(*this, req.line1);
+			SetStatus(req.path + " is open in another kte; this copy has no crash recovery");
+			return true;
+		}
+		if (swp_exists && !kte::SwapManager::JournalMatchesFile(swp, req.path)) {
+			// The file changed (or was removed) after the journal started, so
+			// its position-based edits no longer apply.
+			pending_recovery_prompt_     = RecoveryPromptKind::DeleteCorruptSwap;
+			pending_recovery_open_       = req;
+			pending_recovery_swap_path_  = swp;
+			pending_recovery_replay_err_ = "stale";
+			StartPrompt(PromptKind::Confirm, "Swap", "");
+			SetStatus("Swap file for " + req.path +
+			          " predates changes to the file on disk and cannot be applied. Delete it? (y/N, C-g cancel)");
+			return opened_any;
+		}
 		if (swp_exists) {
 			Buffer tmp;
 			std::string oerr;
