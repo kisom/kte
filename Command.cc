@@ -243,6 +243,29 @@ ensure_cursor_visible(const Editor &ed, Buffer &buf)
 }
 
 
+// Shorten prefix to the part it shares with s (completion).
+static void
+keep_common_prefix(std::string &prefix, std::string_view s)
+{
+	std::size_t j = 0;
+	while (j < prefix.size() && j < s.size() && prefix[j] == s[j])
+		++j;
+	prefix.resize(j);
+}
+
+
+// Leave search mode entirely: no active search, query, match or origin.
+static void
+end_search(Editor &ed)
+{
+	ed.SetSearchActive(false);
+	ed.SetSearchQuery("");
+	ed.SetSearchMatch(0, 0, 0);
+	ed.ClearSearchOrigin();
+	ed.SetSearchIndex(-1);
+}
+
+
 static bool
 cmd_new_window(CommandContext &ctx)
 {
@@ -1512,11 +1535,7 @@ cmd_refresh(CommandContext &ctx)
 				buf->SetCursor(ctx.editor.SearchOrigX(), ctx.editor.SearchOrigY());
 				buf->SetOffsets(ctx.editor.SearchOrigRowoffs(), ctx.editor.SearchOrigColoffs());
 			}
-			ctx.editor.SetSearchActive(false);
-			ctx.editor.SetSearchQuery("");
-			ctx.editor.SetSearchMatch(0, 0, 0);
-			ctx.editor.ClearSearchOrigin();
-			ctx.editor.SetSearchIndex(-1);
+			end_search(ctx.editor);
 		}
 		// Clear any pending close/overwrite state associated with prompts
 		ctx.editor.SetCloseConfirmPending(false);
@@ -1534,11 +1553,7 @@ cmd_refresh(CommandContext &ctx)
 			buf->SetCursor(ctx.editor.SearchOrigX(), ctx.editor.SearchOrigY());
 			buf->SetOffsets(ctx.editor.SearchOrigRowoffs(), ctx.editor.SearchOrigColoffs());
 		}
-		ctx.editor.SetSearchActive(false);
-		ctx.editor.SetSearchQuery("");
-		ctx.editor.SetSearchMatch(0, 0, 0);
-		ctx.editor.ClearSearchOrigin();
-		ctx.editor.SetSearchIndex(-1);
+		end_search(ctx.editor);
 		ctx.editor.SetStatus("Find canceled");
 		return true;
 	}
@@ -2416,15 +2431,8 @@ cmd_insert_text(CommandContext &ctx)
 				} else {
 					// extend to longest common prefix
 					std::string lcp = cands[0].first;
-					for (std::size_t i = 1; i < cands.size(); ++i) {
-						const std::string &s = cands[i].first;
-						std::size_t j        = 0;
-						while (j < lcp.size() && j < s.size() && lcp[j] == s[j])
-							++j;
-						lcp.resize(j);
-						if (lcp.empty())
-							break;
-					}
+					for (std::size_t i = 1; i < cands.size() && !lcp.empty(); ++i)
+						keep_common_prefix(lcp, cands[i].first);
 					if (!lcp.empty() && lcp != ctx.editor.PromptText())
 						ctx.editor.SetPromptText(lcp);
 				}
@@ -2493,16 +2501,9 @@ cmd_insert_text(CommandContext &ctx)
 					ctx.editor.SetPromptText(cands[0]);
 				} else {
 					// Longest common prefix of display strings
-					auto lcp = cands[0];
-					for (size_t i = 1; i < cands.size(); ++i) {
-						const auto &s = cands[i];
-						size_t j      = 0;
-						while (j < lcp.size() && j < s.size() && lcp[j] == s[j])
-							++j;
-						lcp.resize(j);
-						if (lcp.empty())
-							break;
-					}
+					std::string lcp = cands[0];
+					for (std::size_t i = 1; i < cands.size() && !lcp.empty(); ++i)
+						keep_common_prefix(lcp, cands[i]);
 					if (!lcp.empty() && lcp != ctx.editor.PromptText()) {
 						ctx.editor.SetPromptText(lcp);
 					} else {
@@ -3094,11 +3095,7 @@ cmd_newline(CommandContext &ctx)
 			if (buf->IsReadOnly()) {
 				ctx.editor.SetStatus("Read-only buffer");
 				// Clear search UI state
-				ctx.editor.SetSearchActive(false);
-				ctx.editor.SetSearchQuery("");
-				ctx.editor.SetSearchMatch(0, 0, 0);
-				ctx.editor.ClearSearchOrigin();
-				ctx.editor.SetSearchIndex(-1);
+				end_search(ctx.editor);
 				return true;
 			}
 			const std::string find = ctx.editor.ReplaceFindTmp();
@@ -3107,11 +3104,7 @@ cmd_newline(CommandContext &ctx)
 			if (find.empty()) {
 				ctx.editor.SetStatus("Replace canceled (empty find)");
 				// Clear search UI state
-				ctx.editor.SetSearchActive(false);
-				ctx.editor.SetSearchQuery("");
-				ctx.editor.SetSearchMatch(0, 0, 0);
-				ctx.editor.ClearSearchOrigin();
-				ctx.editor.SetSearchIndex(-1);
+				end_search(ctx.editor);
 				return true;
 			}
 			// Save original cursor to restore after operations
@@ -3154,11 +3147,7 @@ cmd_newline(CommandContext &ctx)
 			std::snprintf(msg, sizeof(msg), "Replaced %zu occurrence%s", total, (total == 1 ? "" : "s"));
 			ctx.editor.SetStatus(msg);
 			// Clear search-highlighting state after replace completes
-			ctx.editor.SetSearchActive(false);
-			ctx.editor.SetSearchQuery("");
-			ctx.editor.SetSearchMatch(0, 0, 0);
-			ctx.editor.ClearSearchOrigin();
-			ctx.editor.SetSearchIndex(-1);
+			end_search(ctx.editor);
 			return true;
 		} else if (kind == Editor::PromptKind::OpenFile) {
 			// Expand "~" to the user's home directory
@@ -3530,11 +3519,7 @@ cmd_newline(CommandContext &ctx)
 			if (buf->IsReadOnly()) {
 				ctx.editor.SetStatus("Read-only buffer");
 				// Clear search UI state
-				ctx.editor.SetSearchActive(false);
-				ctx.editor.SetSearchQuery("");
-				ctx.editor.SetSearchMatch(0, 0, 0);
-				ctx.editor.ClearSearchOrigin();
-				ctx.editor.SetSearchIndex(-1);
+				end_search(ctx.editor);
 				return true;
 			}
 			const std::string patt = ctx.editor.ReplaceFindTmp();
@@ -3542,11 +3527,7 @@ cmd_newline(CommandContext &ctx)
 			ctx.editor.SetReplaceWithTmp(repl);
 			if (patt.empty()) {
 				ctx.editor.SetStatus("Regex replace canceled (empty pattern)");
-				ctx.editor.SetSearchActive(false);
-				ctx.editor.SetSearchQuery("");
-				ctx.editor.SetSearchMatch(0, 0, 0);
-				ctx.editor.ClearSearchOrigin();
-				ctx.editor.SetSearchIndex(-1);
+				end_search(ctx.editor);
 				return true;
 			}
 			kte::Regex rx;
@@ -3554,11 +3535,7 @@ cmd_newline(CommandContext &ctx)
 			if (!rx.Compile(patt, rx_err)) {
 				ctx.editor.SetStatus("Regex error: " + rx_err);
 				// Clear search UI state
-				ctx.editor.SetSearchActive(false);
-				ctx.editor.SetSearchQuery("");
-				ctx.editor.SetSearchMatch(0, 0, 0);
-				ctx.editor.ClearSearchOrigin();
-				ctx.editor.SetSearchIndex(-1);
+				end_search(ctx.editor);
 				return true;
 			}
 			std::size_t changed = 0;
@@ -3597,11 +3574,7 @@ cmd_newline(CommandContext &ctx)
 			ctx.editor.SetStatus("Regex replaced in " + std::to_string(changed) + " line(s)" +
 			                     (limited ? " (pattern too complex on some lines; those left as they were)" : ""));
 			// Clear search UI state
-			ctx.editor.SetSearchActive(false);
-			ctx.editor.SetSearchQuery("");
-			ctx.editor.SetSearchMatch(0, 0, 0);
-			ctx.editor.ClearSearchOrigin();
-			ctx.editor.SetSearchIndex(-1);
+			end_search(ctx.editor);
 			if (auto *b = ctx.editor.CurrentBuffer())
 				ensure_cursor_visible(ctx.editor, *b);
 			return true;
@@ -4763,6 +4736,87 @@ is_word_char(unsigned char c)
 }
 
 
+// One word back from (x, y), y < rows.size(): past whitespace (across line
+// ends), then to the start of the word. False at the start of the buffer.
+static bool
+word_back(const RowsView &rows, std::size_t &x, std::size_t &y)
+{
+	// If at start of line and not first line, move to end of previous line
+	if (x == 0) {
+		if (y == 0)
+			return false;
+		--y;
+		x = rows[y].size();
+	}
+	// Move left one first
+	if (x > 0)
+		--x;
+	// Skip any whitespace leftwards
+	while (y < rows.size() && (x > 0 || (x == 0 && y > 0))) {
+		if (x == 0) {
+			--y;
+			x = rows[y].size();
+			if (x == 0)
+				continue;
+		}
+		unsigned char c = x > 0 ? static_cast<unsigned char>(rows[y][x - 1]) : 0;
+		if (!std::isspace(c))
+			break;
+		--x;
+	}
+	// Skip word characters leftwards
+	while (y < rows.size() && (x > 0 || (x == 0 && y > 0))) {
+		if (x == 0)
+			break;
+		unsigned char c = static_cast<unsigned char>(rows[y][x - 1]);
+		if (!is_word_char(c))
+			break;
+		--x;
+	}
+	return true;
+}
+
+
+// One word forward from (x, y): to the end of the word under the cursor,
+// then past non-word characters (across line ends) to the next word.
+static void
+word_forward(const RowsView &rows, std::size_t &x, std::size_t &y)
+{
+	// First, if currently on a word, skip to its end
+	while (y < rows.size()) {
+		if (x < rows[y].size() && is_word_char(static_cast<unsigned char>(rows[y][x]))) {
+			++x;
+			continue;
+		}
+		if (x >= rows[y].size()) {
+			if (y + 1 >= rows.size())
+				break;
+			++y;
+			x = 0;
+			continue;
+		}
+		break;
+	}
+	// Then, skip any non-word characters (including punctuation and whitespace)
+	while (y < rows.size()) {
+		if (x < rows[y].size()) {
+			unsigned char c = static_cast<unsigned char>(rows[y][x]);
+			if (is_word_char(c))
+				break;
+			++x;
+			continue;
+		}
+		if (x >= rows[y].size()) {
+			if (y + 1 >= rows.size())
+				break;
+			++y;
+			x = 0;
+			continue;
+		}
+	}
+}
+
+
 static bool
 cmd_word_prev(CommandContext &ctx)
 {
@@ -4781,38 +4835,8 @@ cmd_word_prev(CommandContext &ctx)
 			y = rows.empty() ? 0 : rows.size() - 1;
 			x = rows[y].size();
 		}
-		// If at start of line and not first line, move to end of previous line
-		if (x == 0) {
-			if (y == 0)
-				break;
-			--y;
-			x = rows[y].size();
-		}
-		// Move left one first
-		if (x > 0)
-			--x;
-		// Skip any whitespace leftwards
-		while (y < rows.size() && (x > 0 || (x == 0 && y > 0))) {
-			if (x == 0) {
-				--y;
-				x = rows[y].size();
-				if (x == 0)
-					continue;
-			}
-			unsigned char c = x > 0 ? static_cast<unsigned char>(rows[y][x - 1]) : 0;
-			if (!std::isspace(c))
-				break;
-			--x;
-		}
-		// Skip word characters leftwards
-		while (y < rows.size() && (x > 0 || (x == 0 && y > 0))) {
-			if (x == 0)
-				break;
-			unsigned char c = static_cast<unsigned char>(rows[y][x - 1]);
-			if (!is_word_char(c))
-				break;
-			--x;
-		}
+		if (!word_back(rows, x, y))
+			break;
 	}
 	buf->SetCursor(x, y);
 	ensure_cursor_visible(ctx.editor, *buf);
@@ -4836,38 +4860,7 @@ cmd_word_next(CommandContext &ctx)
 	while (repeat-- > 0) {
 		if (y >= rows.size())
 			break;
-		// First, if currently on a word, skip to its end
-		while (y < rows.size()) {
-			if (x < rows[y].size() && is_word_char(static_cast<unsigned char>(rows[y][x]))) {
-				++x;
-				continue;
-			}
-			if (x >= rows[y].size()) {
-				if (y + 1 >= rows.size())
-					break;
-				++y;
-				x = 0;
-				continue;
-			}
-			break;
-		}
-		// Then, skip any non-word characters (including punctuation and whitespace)
-		while (y < rows.size()) {
-			if (x < rows[y].size()) {
-				unsigned char c = static_cast<unsigned char>(rows[y][x]);
-				if (is_word_char(c))
-					break;
-				++x;
-				continue;
-			}
-			if (x >= rows[y].size()) {
-				if (y + 1 >= rows.size())
-					break;
-				++y;
-				x = 0;
-				continue;
-			}
-		}
+		word_forward(rows, x, y);
 	}
 	buf->SetCursor(x, y);
 	ensure_cursor_visible(ctx.editor, *buf);
@@ -4888,7 +4881,7 @@ cmd_delete_word_prev(CommandContext &ctx)
 	std::size_t y = buf->Cury();
 	std::size_t x = buf->Curx();
 	int repeat    = ctx.count > 0 ? ctx.count : 1;
-	std::string killed_total;
+	std::vector<std::string> killed;
 	UndoGroupGuard guard(buf->Undo());
 	for (int i = 0; i < repeat; ++i) {
 		if (y >= rows.size()) {
@@ -4897,44 +4890,17 @@ cmd_delete_word_prev(CommandContext &ctx)
 		}
 		std::size_t start_y = y;
 		std::size_t start_x = x;
-		// If at start of line and not first line, move to end of previous line
-		if (x == 0) {
-			if (y == 0)
-				break;
-			--y;
-			x = rows[y].size();
-		}
-		// Move left one first
-		if (x > 0)
-			--x;
-		// Skip any whitespace leftwards
-		while (y < rows.size() && (x > 0 || (x == 0 && y > 0))) {
-			if (x == 0) {
-				--y;
-				x = rows[y].size();
-				if (x == 0)
-					continue;
-			}
-			unsigned char c = x > 0 ? static_cast<unsigned char>(rows[y][x - 1]) : 0;
-			if (!std::isspace(c))
-				break;
-			--x;
-		}
-		// Skip word characters leftwards
-		while (y < rows.size() && (x > 0 || (x == 0 && y > 0))) {
-			if (x == 0)
-				break;
-			unsigned char c = static_cast<unsigned char>(rows[y][x - 1]);
-			if (!is_word_char(c))
-				break;
-			--x;
-		}
+		if (!word_back(rows, x, y))
+			break;
 		// Now delete from (x, y) to (start_x, start_y) using PieceTable
-		std::string deleted = extract_region_text(*buf, x, y, start_x, start_y);
+		killed.push_back(extract_region_text(*buf, x, y, start_x, start_y));
 		delete_region(*buf, x, y, start_x, start_y, buf->Undo());
-		// Prepend to killed_total (since we're deleting backwards)
-		killed_total = deleted + killed_total;
 	}
+	// Deleted backwards: the last piece comes first (joined once; prepending
+	// each piece was quadratic in the repeat count).
+	std::string killed_total;
+	for (auto it = killed.rbegin(); it != killed.rend(); ++it)
+		killed_total += *it;
 	buf->SetCursor(x, y);
 	buf->SetDirty(true);
 	ensure_cursor_visible(ctx.editor, *buf);
@@ -4969,38 +4935,7 @@ cmd_delete_word_next(CommandContext &ctx)
 			break;
 		std::size_t start_y = y;
 		std::size_t start_x = x;
-		// First, if currently on a word, skip to its end
-		while (y < rows.size()) {
-			if (x < rows[y].size() && is_word_char(static_cast<unsigned char>(rows[y][x]))) {
-				++x;
-				continue;
-			}
-			if (x >= rows[y].size()) {
-				if (y + 1 >= rows.size())
-					break;
-				++y;
-				x = 0;
-				continue;
-			}
-			break;
-		}
-		// Then, skip any non-word characters (including punctuation and whitespace)
-		while (y < rows.size()) {
-			if (x < rows[y].size()) {
-				unsigned char c = static_cast<unsigned char>(rows[y][x]);
-				if (is_word_char(c))
-					break;
-				++x;
-				continue;
-			}
-			if (x >= rows[y].size()) {
-				if (y + 1 >= rows.size())
-					break;
-				++y;
-				x = 0;
-				continue;
-			}
-		}
+		word_forward(rows, x, y);
 		// Now delete from (start_x, start_y) to (x, y) using PieceTable
 		std::string deleted = extract_region_text(*buf, start_x, start_y, x, y);
 		delete_region(*buf, start_x, start_y, x, y, buf->Undo());
