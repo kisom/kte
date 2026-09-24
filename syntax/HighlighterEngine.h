@@ -6,9 +6,6 @@
 #include <unordered_map>
 #include <vector>
 #include <mutex>
-#include <condition_variable>
-#include <atomic>
-#include <thread>
 
 #include "../Highlight.h"
 #include "LanguageHighlighter.h"
@@ -39,9 +36,11 @@ public:
 	}
 
 
-	// Phase 3: viewport-first prefetch and background warming
-	// Compute only the visible range now, and enqueue a background warm-around task.
-	// warm_margin: how many extra lines above/below to warm in the background.
+	// Compute highlights for the visible range so drawing hits the cache.
+	// There is deliberately no background warming: a worker thread would read
+	// the Buffer while the main thread edits it (and could outlive a moved
+	// Buffer), and the PieceTable is not safe for concurrent read and write.
+	// warm_margin is accepted for source compatibility and ignored.
 	void PrefetchViewport(const Buffer &buf, int first_row, int row_count, std::uint64_t buf_version,
 	                      int warm_margin = 200) const;
 
@@ -62,29 +61,7 @@ private:
 	// Track best known contiguous state row for a given version to avoid O(n) scans
 	mutable std::unordered_map<std::uint64_t, int> state_last_contig_;
 
-	// Thread-safety for caches and background worker state
+	// Guards the caches above.
 	mutable std::mutex mtx_;
-
-	// Background warmer
-	struct WarmRequest {
-		const Buffer *buf{nullptr};
-		std::uint64_t version{0};
-		int start_row{0};
-		int end_row{0}; // inclusive
-		// Visible rows to skip touching in the background (inclusive range).
-		// These are computed synchronously by PrefetchViewport.
-		int skip_first{0};
-		int skip_last{-1};
-	};
-
-	mutable std::condition_variable cv_;
-	mutable std::thread worker_;
-	mutable std::atomic<bool> worker_running_{false};
-	mutable bool has_request_{false};
-	mutable WarmRequest pending_{};
-
-	void ensure_worker_started() const;
-
-	void worker_loop() const;
 };
 } // namespace kte
