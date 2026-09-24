@@ -614,6 +614,47 @@ delete_region(Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::
 }
 
 
+// The buffer's full text (rows joined by '\n', which reproduces the bytes).
+static std::string
+buffer_text(const Buffer &buf)
+{
+	std::string out;
+	const std::size_t nrows = buf.Nrows();
+	for (std::size_t y = 0; y < nrows; ++y) {
+		if (y > 0)
+			out.push_back('\n');
+		out += buf.GetLineString(y);
+	}
+	return out;
+}
+
+
+// Replace the whole buffer's text as one undo group (one delete, one insert).
+static void
+replace_buffer_text(Buffer &buf, const std::string &old_text, const std::string &new_text, UndoSystem *u)
+{
+	UndoGroupGuard group(u);
+	if (!old_text.empty()) {
+		buf.delete_text(0, 0, old_text.size());
+		if (u) {
+			buf.SetCursor(0, 0);
+			u->Begin(UndoType::Delete);
+			u->Append(std::string_view(old_text));
+			u->commit();
+		}
+	}
+	if (!new_text.empty()) {
+		buf.insert_text(0, 0, new_text);
+		if (u) {
+			buf.SetCursor(0, 0);
+			u->Begin(UndoType::Insert);
+			u->Append(std::string_view(new_text));
+			u->commit();
+		}
+	}
+}
+
+
 // Replace the text of rows [y, y + old_text lines) in place with new_text,
 // where old_text is those rows joined by '\n' (no trailing newline). Unlike
 // delete_row/insert_row this never adds or removes the newline after the
@@ -662,40 +703,18 @@ insert_text_at_cursor(Buffer &buf, const std::string &text)
 	}
 
 	std::size_t cur_y = y;
-	std::size_t cur_x = x;
+	std::size_t cur_x = std::min(x, buf.GetLineString(cur_y).size());
 
-	std::string remain = text;
-	while (true) {
-		auto pos = remain.find('\n');
-		if (pos == std::string::npos) {
-			// insert remaining into current line
-			nrows = buf.Nrows();
-			if (cur_y >= nrows) {
-				buf.insert_row(static_cast<int>(nrows), "");
-			}
-			const auto &rows = rows_of(buf);
-			if (cur_x > rows[cur_y].size())
-				cur_x = rows[cur_y].size();
-			buf.insert_text(static_cast<int>(cur_y), static_cast<int>(cur_x), remain);
-			cur_x += remain.size();
-			break;
-		}
-		// insert segment before newline
-		std::string seg = remain.substr(0, pos);
-		{
-			const auto &rows = rows_of(buf);
-			if (cur_x > rows[cur_y].size())
-				cur_x = rows[cur_y].size();
-		}
-		buf.insert_text(static_cast<int>(cur_y), static_cast<int>(cur_x), seg);
-		// split line at cur_x + seg.size()
-		cur_x += seg.size();
-		buf.split_line(static_cast<int>(cur_y), static_cast<int>(cur_x));
-		// move to start of next line
-		cur_y += 1;
-		cur_x = 0;
-		// advance remain after newline
-		remain.erase(0, pos + 1);
+	// One insert: the piece table takes newlines directly. Inserting and
+	// splitting line by line (re-trimming the remaining text each time) was
+	// quadratic in the number of lines yanked.
+	buf.insert_text(static_cast<int>(cur_y), static_cast<int>(cur_x), text);
+	const std::size_t last_nl = text.rfind('\n');
+	if (last_nl == std::string::npos) {
+		cur_x += text.size();
+	} else {
+		cur_y += static_cast<std::size_t>(std::count(text.begin(), text.end(), '\n'));
+		cur_x = text.size() - last_nl - 1;
 	}
 
 	buf.SetCursor(cur_x, cur_y);
@@ -841,6 +860,13 @@ search_compute_matches_regex(const Buffer &buf, const std::string &pattern, std:
 		// std::regex recurses per matched character; see RegexGuard.h.
 		kte::RunWithLargeStack([&] {
 			for (std::size_t y = 0; y < rows.size(); ++y) {
+				// This runs on every prompt keystroke, and std::regex can be
+				// quadratic in line length for ordinary patterns (".*q" on a
+				// 40 KB minified line took over a minute, uninterruptibly), so
+				// incremental search skips very long lines. Regex replace, an
+				// explicit one-shot command, still processes every line.
+				if (rows[y].size() > kte::kRegexIncrementalLineLimit)
+					continue;
 				std::string line = static_cast<std::string>(rows[y]);
 				for (auto it = std::sregex_iterator(line.begin(), line.end(), rx);
 				     it != std::sregex_iterator(); ++it) {
@@ -2461,6 +2487,14 @@ cmd_insert_text(CommandContext &ctx)
 	int repeat     = ctx.count > 0 ? ctx.count : 1;
 	std::size_t cx = x;
 	std::size_t cy = y;
+	{
+		constexpr std::size_t kMaxInsertBytes = std::size_t{256} << 20;
+		const std::size_t lines = buf->VisualLineActive() ? (buf->VisualLineEndY() - buf->VisualLineStartY() + 1) : 1;
+		if (ctx.arg.size() * static_cast<std::size_t>(repeat) * lines > kMaxInsertBytes) {
+			ctx.editor.SetStatus("Insert too large");
+			return false;
+		}
+	}
 
 	// Visual-line mode: broadcast inserts to each selected line at the same column.
 	if (buf->VisualLineActive()) {
@@ -2520,12 +2554,20 @@ cmd_insert_text(CommandContext &ctx)
 	}
 	// Apply edits to the underlying PieceTable through Buffer::insert_text,
 	// not directly to the legacy rows_ cache. This ensures Save() persists text.
-	for (int i = 0; i < repeat; ++i) {
-		buf->insert_text(static_cast<int>(y), static_cast<int>(x), std::string_view(ctx.arg));
-		if (u)
-			u->Append(std::string_view(ctx.arg));
-		x += ctx.arg.size();
+	// A repeat count inserts the repeated text in one edit (one edit per
+	// repetition made C-u 1000000 x take minutes on a large file).
+	std::string ins;
+	if (repeat == 1) {
+		ins = ctx.arg;
+	} else {
+		ins.reserve(ctx.arg.size() * static_cast<std::size_t>(repeat));
+		for (int i = 0; i < repeat; ++i)
+			ins += ctx.arg;
 	}
+	buf->insert_text(static_cast<int>(y), static_cast<int>(x), std::string_view(ins));
+	if (u)
+		u->Append(std::string_view(ins));
+	x += ins.size();
 	buf->SetDirty(true);
 	buf->SetCursor(x, y);
 	ensure_cursor_visible(ctx.editor, *buf);
@@ -2862,48 +2904,30 @@ cmd_newline(CommandContext &ctx)
 			UndoSystem *u      = buf->Undo();
 			if (u)
 				u->commit(); // end any pending batch
-			{
-				// One undo step for the whole replace-all; EndGroup also commits the
-				// final node so later typing cannot coalesce into it.
-				UndoGroupGuard group(u);
-				// The prompt input is single-line, so the row count is stable. Keep a
-				// local copy of each line in step with the edits instead of
-				// re-fetching (and rebuilding) Rows() after every replacement.
-				const std::size_t nrows = buf->Nrows();
-				for (std::size_t y = 0; y < nrows && !find.empty(); ++y) {
-					std::string line = buf->GetLineString(y);
-					std::size_t pos  = 0;
-					while (true) {
-						std::size_t p = line.find(find, pos);
-						if (p == std::string::npos)
-							break;
-						// Delete matched segment from the piece table
-						buf->delete_text(static_cast<int>(y), static_cast<int>(p), find.size());
-						if (u) {
-							buf->SetCursor(p, y);
-							u->Begin(UndoType::Delete);
-							u->Append(std::string_view(find));
-						}
-						// Insert replacement if provided
-						if (!with.empty()) {
-							buf->insert_text(static_cast<int>(y), static_cast<int>(p),
-							                 std::string_view(with));
-							if (u) {
-								buf->SetCursor(p, y);
-								u->Begin(UndoType::Insert);
-								u->Append(std::string_view(with));
-							}
-						}
-						line.replace(p, find.size(), with);
-						// Resume just past the replacement. For an empty replacement that
-						// is `p` itself (not p+1), which catches adjacent matches, e.g.
-						// "aaaa" -> "" replacing "aa".
-						pos = p + with.size();
-						++total;
-					}
+			if (!find.empty()) {
+				// Build the replaced text in one pass and apply it as a single
+				// edit: one piece-table edit per match cost O(file) each, so
+				// replace-all was quadratic (298 s for 249k matches in 12 MB).
+				const std::string before = buffer_text(*buf);
+				std::string after;
+				after.reserve(before.size());
+				std::size_t pos = 0;
+				while (true) {
+					// Matches never span lines: the prompt text has no newline.
+					const std::size_t p = before.find(find, pos);
+					if (p == std::string::npos)
+						break;
+					after.append(before, pos, p - pos);
+					after += with;
+					pos = p + find.size();
+					++total;
 				}
+				after.append(before, pos, std::string::npos);
+				if (total > 0)
+					replace_buffer_text(*buf, before, after, u);
 			}
-			buf->SetDirty(true);
+			if (total > 0)
+				buf->SetDirty(true);
 			// Restore original cursor, clamped: replacements may have shortened the line.
 			if (orig_y < buf->Nrows())
 				buf->SetCursor(orig_x, orig_y);
@@ -3335,22 +3359,29 @@ cmd_newline(CommandContext &ctx)
 			std::size_t nrows = buf->Nrows();
 			if (nrows > 1 && buf->GetLineString(nrows - 1).empty())
 				--nrows;
-			// std::regex recurses per matched character; see RegexGuard.h. The
-			// caller waits for the worker, so the buffer is never shared.
+			// Build the new text line by line and apply it as one edit (one
+			// edit per changed line was quadratic on big files). std::regex
+			// recurses per matched character, so match on a large stack
+			// (RegexGuard.h).
+			const std::size_t all_rows = buf->Nrows();
+			std::string after;
 			kte::RunWithLargeStack([&] {
-				for (std::size_t y = 0; y < nrows; ++y) {
-					const std::string before = buf->GetLineString(y);
-					const std::string after  = std::regex_replace(before, rx, repl);
-					if (after != before) {
-						replace_rows_text(*buf, y, before, after, ru);
-						// A replacement containing newlines adds rows; skip past them.
-						const auto added = static_cast<std::size_t>(std::count(after.begin(), after.end(), '\n'));
-						y                += added;
-						nrows            += added;
-						++changed;
+				for (std::size_t y = 0; y < all_rows; ++y) {
+					if (y > 0)
+						after.push_back('\n');
+					const std::string before_line = buf->GetLineString(y);
+					if (y >= nrows) {
+						after += before_line; // the empty row after a final '\n'
+						continue;
 					}
+					const std::string replaced = std::regex_replace(before_line, rx, repl);
+					if (replaced != before_line)
+						++changed;
+					after += replaced;
 				}
 			});
+			if (changed > 0)
+				replace_buffer_text(*buf, buffer_text(*buf), after, ru);
 			clamp_cursor_to_buffer(*buf);
 			buf->SetDirty(true);
 			ctx.editor.SetStatus("Regex replaced in " + std::to_string(changed) + " line(s)");
