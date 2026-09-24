@@ -2,7 +2,9 @@
   lib,
   stdenv,
   cmake,
+  pkg-config,
   ncurses,
+  pcre2,
   SDL2,
   libGL,
   xorg,
@@ -30,6 +32,7 @@ stdenv.mkDerivation {
 
   nativeBuildInputs = [
     cmake
+    pkg-config
     installShellFiles
   ] ++ lib.optionals graphical [
     copyDesktopItems
@@ -39,6 +42,7 @@ stdenv.mkDerivation {
 
   buildInputs = [
     ncurses
+    pcre2 # regex engine (optional; std::regex without it)
   ] ++ lib.optionals graphical [
     SDL2
     libGL

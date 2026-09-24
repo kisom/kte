@@ -1246,12 +1246,12 @@ SwapManager::maybe_request_checkpoint(Buffer &buf, const std::size_t approx_edit
 		if (ctx.last_chkpt_ns == 0)
 			ctx.last_chkpt_ns = now;
 		// A checkpoint writes the whole buffer. For a large one, checkpoint
-		// after edits amounting to half its size (and on the timer only
-		// once edits reach a sixteenth), so the bytes written stay in
-		// proportion to the bytes edited; retry a gap less often too.
+		// after edits amounting to its size (and on the timer only once
+		// edits reach a sixteenth), so the bytes written stay in proportion
+		// to the bytes edited; retry a gap less often too.
 		const std::size_t size        = buf.ContentBytes();
 		const bool large              = size > kLargeCheckpointBytes;
-		const std::size_t bytes_limit = std::max<std::size_t>(cfg.checkpoint_bytes, size / 2);
+		const std::size_t bytes_limit = std::max<std::size_t>(cfg.checkpoint_bytes, large ? size : 0);
 		const bool bytes_hit          = (cfg.checkpoint_bytes > 0) && ctx.edit_bytes_since_chkpt >= bytes_limit;
 		const bool time_hit = (cfg.checkpoint_interval_ms > 0) &&
 		                      (((now - ctx.last_chkpt_ns) / 1000000ULL) >= cfg.checkpoint_interval_ms) &&
@@ -1324,6 +1324,13 @@ SwapManager::RecordCheckpoint(Buffer &buf, const bool urgent_flush)
 		auto it = journals_.find(&buf);
 		if (it == journals_.end() || it->second.suspended)
 			return;
+		// One queued checkpoint at a time: records queued after it apply on
+		// top of it, so a second one adds nothing but another full copy of
+		// the buffer in memory (several whole-file edits in a row on a large
+		// buffer queued one each).
+		if (it->second.chkpt_queued)
+			return;
+		it->second.chkpt_queued = true;
 	}
 
 	// Any size: the writer frames large checkpoints as several records.
@@ -1416,6 +1423,13 @@ SwapManager::process_one(const Pending &p)
 {
 	if (!p.buf)
 		return;
+	if (p.type == SwapRecType::CHKPT) {
+		// Being handled now: a later request queues a new checkpoint.
+		std::lock_guard<std::mutex> lg(mtx_);
+		auto it = journals_.find(p.buf);
+		if (it != journals_.end())
+			it->second.chkpt_queued = false;
+	}
 
 	// Any record that is not written leaves a gap in the journal.
 	auto mark_gap = [&]() {

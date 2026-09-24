@@ -236,6 +236,7 @@ private:
 		// drop them until a checkpoint re-establishes the full content.
 		bool gap{false};
 		bool gap_notified{false}; // the user was told about the current gap
+		bool chkpt_queued{false}; // a checkpoint is queued and not yet being written
 		bool lockout_notified{false}; // told about the lock; kept across ResetJournal
 		std::uint64_t gap_chkpt_request_ns{0};
 		bool gap_unfixable_reported{false}; // gap on a buffer too large to checkpoint

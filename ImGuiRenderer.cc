@@ -7,10 +7,9 @@
 #include <string>
 
 #include <imgui.h>
-#include <regex>
 
 #include "ImGuiRenderer.h"
-#include "RegexGuard.h"
+#include "RegexEngine.h"
 #include "Highlight.h"
 #include "GUITheme.h"
 #include "Buffer.h"
@@ -164,15 +163,11 @@ ImGuiRenderer::Draw(Editor &ed)
 		const bool regex_mode  = search_mode && ed.PromptActive() && (
 			ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
 			ed.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind);
-		std::regex search_rx;
+		kte::Regex search_rx; // RegexEngine.h
 		bool search_rx_valid = false;
 		if (regex_mode) {
-			try {
-				search_rx       = std::regex(ed.SearchQuery());
-				search_rx_valid = true;
-			} catch (const std::regex_error &) {
-				search_rx_valid = false;
-			}
+			std::string rx_err;
+			search_rx_valid = search_rx.Compile(ed.SearchQuery(), rx_err);
 		}
 
 		// Compute the visible row range and skip rendering work for off-screen
@@ -360,15 +355,13 @@ ImGuiRenderer::Draw(Editor &ed)
 			if (search_mode) {
 				// In regex mode, reuse the compiled regex hoisted above the loop.
 				if (regex_mode) {
-					// std::regex recursion is kept off the main stack for long
-					// lines (RegexGuard.h); very long lines are not highlighted.
-					if (search_rx_valid && line.size() <= kte::kRegexRenderLineLimit) {
-						try {
-							kte::ForEachRegexMatch(line, search_rx, [&](std::size_t pos, std::size_t len) {
-								hl_src_ranges.emplace_back(pos, pos + len);
-							});
-						} catch (const std::regex_error &) {
-							// ignore invalid patterns here; status line already shows the error
+					// Very long lines are not highlighted (see
+					// Regex::IncrementalLineLimit).
+					if (search_rx_valid && line.size() <= kte::Regex::IncrementalLineLimit()) {
+						std::size_t from = 0, pos = 0, len = 0;
+						while (from <= line.size() && search_rx.Search(line, from, pos, len)) {
+							hl_src_ranges.emplace_back(pos, pos + len);
+							from = pos + std::max<std::size_t>(len, 1);
 						}
 					}
 				} else {

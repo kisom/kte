@@ -544,9 +544,24 @@ before the fix (unless noted).
   thread (it was skipped), so a touched but unchanged large file no
   longer makes its journal unusable for recovery.
 
+**Follow-up: regex engine**
+- kte::Regex (RegexEngine.h) wraps PCRE2 with its JIT when libpcre2-8
+  is found (KTE_USE_PCRE2, default ON), std::regex otherwise. Search,
+  regex replace-all and the terminal and ImGui renderers use it (the Qt
+  frontend's highlighting still calls std::regex). PCRE2 has a match
+  limit, so catastrophic backtracking ("^(a+)+$") stops with a status
+  note instead of hanging, and does not recurse on the C stack, so its
+  per-keystroke line limit is 1 MiB instead of 2,000 bytes. Replacement
+  strings keep std::regex_replace semantics with either engine.
+- On 26 MB: regex keystroke 1.6 -> 0.14 ms, next 62 -> 6 ms,
+  replace-all 929 -> 438 ms; a rarely matching regex over 105 MB:
+  1.55 s -> 0.10 s per keystroke.
+- Only one checkpoint per journal is queued at a time; whole-file edits
+  in a row on a large buffer each queued a full copy of it.
+
 **Known limitations (not fixed)**
-- Catastrophic regex backtracking (e.g. `(a*)*b`) can still take very
-  long; std::regex has no time limit.
+- Without PCRE2 (std::regex builds), catastrophic regex backtracking
+  can still take very long; std::regex has no limit.
 - Typing in a multi-megabyte single line costs O(line length) per
   keystroke (cursor column computed by scanning the line).
 - GUI-only items B7, B8, B10 and highlighter edge cases B13 are
@@ -555,5 +570,5 @@ before the fix (unless noted).
 - Journals are created at the first edit, so a second kte that opens
   the file before the first one edits it is not warned at open; the
   session that is locked out is told at its first edit instead.
-- A regex that matches rarely or not at all still scans the whole
-  buffer with std::regex (1.6 s on 105 MB).
+- A regex that matches rarely or not at all scans the whole buffer
+  (0.1 s on 105 MB with PCRE2, 1.6 s with std::regex).

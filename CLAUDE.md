@@ -36,6 +36,7 @@ The test binary runs all tests, or only those whose names contain one of its arg
 | `ENABLE_ASAN` | OFF | AddressSanitizer |
 | `KTE_STATIC_LINK` | OFF | Static linking (Linux only) |
 | `KTE_ENABLE_TREESITTER` | OFF | Tree-sitter syntax highlighting |
+| `KTE_USE_PCRE2` | ON | Regex search/replace via PCRE2 when `libpcre2-8` is found (std::regex otherwise; see `RegexEngine.h`) |
 
 ### Nix
 

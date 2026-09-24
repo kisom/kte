@@ -12,13 +12,14 @@
 #include <string>
 
 namespace kte {
-// Renderers highlight regex matches only on lines up to this many bytes, and
-// search-as-you-type skips longer lines (an explicit search does not):
+// Used where std::regex is still called directly (the Qt frontend's match
+// highlighting; search and the other renderers use RegexEngine.h, whose
+// Regex::IncrementalLineLimit() applies the same limits for std::regex).
+// Regex matches are highlighted only on lines up to this many bytes:
 // std::regex can take time quadratic in line length even for ordinary
 // patterns (".*q" on a 20 KB line: 12 s), with no way to interrupt it, and
 // these run on every frame or keystroke.
-constexpr std::size_t kRegexRenderLineLimit      = 2000;
-constexpr std::size_t kRegexIncrementalLineLimit = 2000;
+constexpr std::size_t kRegexRenderLineLimit = 2000;
 
 // Run fn to completion on a thread with a large stack (address space is
 // reserved, pages are committed only as used), so regex work over long lines
