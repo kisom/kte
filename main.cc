@@ -1,4 +1,5 @@
 #include <clocale>
+#include <langinfo.h>
 #include <cctype>
 #include <cerrno>
 #include <cstdio>
@@ -113,10 +114,33 @@ RunStressHighlighter(unsigned seconds)
 }
 
 
+// kte edits UTF-8 text. With LANG unset (common in containers and ssh
+// sessions) the C locale cannot decode or encode non-ASCII characters, and
+// typed or pasted non-ASCII text was dropped (with the rest of the paste).
+// Use a UTF-8 character-type locale when the environment does not give one.
+static void
+ensure_utf8_ctype()
+{
+	auto is_utf8 = [] {
+		std::string cs = nl_langinfo(CODESET);
+		for (auto &c: cs)
+			c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+		return cs == "utf-8" || cs == "utf8";
+	};
+	if (is_utf8())
+		return;
+	for (const char *name: {"C.UTF-8", "C.utf8", "en_US.UTF-8", "en_US.utf8"}) {
+		if (std::setlocale(LC_CTYPE, name) && is_utf8())
+			return;
+	}
+}
+
+
 int
 main(int argc, char *argv[])
 {
 	std::setlocale(LC_ALL, "");
+	ensure_utf8_ctype();
 
 	// Ensure the error handler (and its log file) is initialised early.
 	kte::ErrorHandler::Instance();

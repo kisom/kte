@@ -21,7 +21,7 @@ private:
 	// horizontal scroll offset), cached per screen row. Scanning a very long
 	// line from column 0 on every frame made each redraw O(line length).
 	struct SkipCache {
-		const void *buf       = nullptr;
+		std::uint64_t buf_id  = 0; // Buffer::Id(); addresses get reused
 		std::uint64_t version = 0;
 		std::size_t row       = 0;
 		std::size_t coloffs   = 0;
@@ -34,7 +34,7 @@ private:
 
 	// Render column of the cursor, cached the same way.
 	struct CursorCache {
-		const void *buf       = nullptr;
+		std::uint64_t buf_id  = 0; // Buffer::Id(); addresses get reused
 		std::uint64_t version = 0;
 		std::size_t row       = 0;
 		std::size_t cx        = 0;

@@ -5383,6 +5383,13 @@ cmd_reflow_paragraph(CommandContext &ctx)
 }
 
 
+// Pending reload confirmation: the buffer (by Id(), since addresses are
+// reused once a buffer is closed) and its version when it was armed. Any
+// other command cancels it (see Execute).
+static std::uint64_t reload_confirm_id      = 0;
+static std::uint64_t reload_confirm_version = 0;
+
+
 static bool
 cmd_reload_buffer(CommandContext &ctx)
 {
@@ -5404,15 +5411,13 @@ cmd_reload_buffer(CommandContext &ctx)
 	}
 	// Reload discards unsaved edits (and their undo history and journal), so
 	// a dirty buffer needs a second C-k l with no edit in between.
-	static const Buffer *confirm_buf     = nullptr;
-	static std::uint64_t confirm_version = 0;
-	if (buf->Dirty() && !(confirm_buf == buf && confirm_version == buf->Version())) {
-		confirm_buf     = buf;
-		confirm_version = buf->Version();
+	if (buf->Dirty() && !(reload_confirm_id == buf->Id() && reload_confirm_version == buf->Version())) {
+		reload_confirm_id      = buf->Id();
+		reload_confirm_version = buf->Version();
 		ctx.editor.SetStatus("Unsaved changes will be lost. C-k l again to reload anyway");
 		return true;
 	}
-	confirm_buf = nullptr;
+	reload_confirm_id = 0;
 	std::string err;
 	if (!buf->OpenFromFile(filename, err)) {
 		ctx.editor.SetStatus(std::string("Reload failed: ") + err);
@@ -5749,6 +5754,9 @@ Execute(Editor &ed, CommandId id, const std::string &arg, int count)
 	if (ed.QuitConfirmPending() && id != CommandId::Quit && id != CommandId::KPrefix) {
 		ed.SetQuitConfirmPending(false);
 	}
+	// Likewise a pending reload confirmation.
+	if (id != CommandId::ReloadBuffer && id != CommandId::KPrefix)
+		reload_confirm_id = 0;
 	// Reset kill chain unless this is a kill-like command (so consecutive kills append)
 	if (id != CommandId::KillToEOL && id != CommandId::KillLine && id != CommandId::KillRegion && id !=
 	    CommandId::CopyRegion && id != CommandId::DeleteWordPrev && id != CommandId::DeleteWordNext) {
