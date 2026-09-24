@@ -59,6 +59,7 @@ PieceTable::operator=(const PieceTable &other)
 	version_      = other.version_;
 	range_cache_  = {};
 	find_cache_   = {};
+	last_deleted_ = {};
 	InvalidateLineIndex();
 	return *this;
 }
@@ -98,6 +99,8 @@ PieceTable::operator=(PieceTable &&other) noexcept
 	version_          = other.version_;
 	range_cache_      = {};
 	find_cache_       = {};
+	last_deleted_     = {};
+	other.last_deleted_ = {};
 	InvalidateLineIndex();
 	return *this;
 }
@@ -204,8 +207,9 @@ PieceTable::Clear()
 	line_index_.clear();
 	line_index_dirty_ = true;
 	version_++;
-	range_cache_ = {};
-	find_cache_  = {};
+	range_cache_  = {};
+	find_cache_   = {};
+	last_deleted_ = {};
 }
 
 
@@ -437,6 +441,7 @@ PieceTable::Insert(std::size_t byte_offset, const char *text, std::size_t len)
 		byte_offset = total_size_;
 	}
 
+	last_deleted_ = {};
 	const std::size_t add_start = add_.size();
 	add_.append(text, len);
 
@@ -510,6 +515,16 @@ PieceTable::Delete(std::size_t byte_offset, std::size_t len)
 		len = total_size_ - byte_offset;
 	}
 
+	// Remember what a large deletion removed, so undo can refer to the
+	// stored bytes instead of keeping its own copy (see TakeDeletedSpans).
+	last_deleted_ = {};
+	if (len >= kCaptureDeletedMin) {
+		last_deleted_.spans  = SpansInRange(byte_offset, len);
+		last_deleted_.offset = byte_offset;
+		last_deleted_.len    = len;
+		last_deleted_.valid  = true;
+	}
+
 	auto [idx, inner]     = locate(byte_offset);
 	std::size_t remaining = len;
 
@@ -565,6 +580,104 @@ PieceTable::Delete(std::size_t byte_offset, std::size_t len)
 	version_++;
 	range_cache_ = {};
 	find_cache_  = {};
+}
+
+
+// ===== Span access =====
+
+std::vector<TextSpan>
+PieceTable::SpansInRange(std::size_t byte_offset, std::size_t len) const
+{
+	std::vector<TextSpan> out;
+	if (byte_offset >= total_size_ || len == 0)
+		return out;
+	len               = std::min(len, total_size_ - byte_offset);
+	auto [idx, inner] = locate(byte_offset);
+	while (len > 0 && idx < pieces_.size()) {
+		const Piece &p         = pieces_[idx];
+		const std::size_t take = std::min(p.len - inner, len);
+		out.push_back(TextSpan{p.src == Source::Add, p.start + inner, take});
+		len   -= take;
+		inner = 0;
+		++idx;
+	}
+	return out;
+}
+
+
+bool
+PieceTable::SpansEqual(const std::vector<TextSpan> &spans, std::string_view text) const
+{
+	std::size_t pos = 0;
+	bool equal      = true;
+	VisitSpans(spans, [&](const char *data, std::size_t n) {
+		if (!equal || pos + n > text.size() || std::memcmp(data, text.data() + pos, n) != 0)
+			equal = false;
+		pos += n;
+	});
+	return equal && pos == text.size();
+}
+
+
+void
+PieceTable::InsertSpans(std::size_t byte_offset, const std::vector<TextSpan> &spans)
+{
+	if (byte_offset > total_size_)
+		byte_offset = total_size_;
+	std::vector<Piece> ins;
+	std::size_t len = 0;
+	for (const TextSpan &sp: spans) {
+		const std::string &src = sp.add ? add_ : original_;
+		if (sp.len == 0 || sp.start + sp.len > src.size())
+			continue;
+		ins.push_back(Piece{sp.add ? Source::Add : Source::Original, sp.start, sp.len});
+		len += sp.len;
+	}
+	if (len == 0)
+		return;
+
+	std::size_t at = pieces_.size();
+	if (byte_offset < total_size_) {
+		auto [idx, inner] = locate(byte_offset);
+		if (inner > 0) {
+			// Split the piece containing the insertion point.
+			const Piece target = pieces_[idx];
+			pieces_[idx].len   = inner;
+			pieces_.insert(pieces_.begin() + static_cast<std::ptrdiff_t>(idx + 1),
+			               Piece{target.src, target.start + inner, target.len - inner});
+			at = idx + 1;
+		} else {
+			at = idx;
+		}
+	}
+	pieces_.insert(pieces_.begin() + static_cast<std::ptrdiff_t>(at), ins.begin(), ins.end());
+	total_size_ += len;
+	dirty_      = true;
+	std::size_t off = byte_offset;
+	for (const Piece &p: ins) {
+		const std::string &src = p.src == Source::Add ? add_ : original_;
+		lineIndexOnInsert(off, src.data() + p.start, p.len);
+		off += p.len;
+	}
+	coalesceNeighbors(std::min(at + ins.size(), pieces_.size() - 1));
+	if (at > 0)
+		coalesceNeighbors(at - 1);
+	maybeConsolidate();
+	version_++;
+	range_cache_  = {};
+	find_cache_   = {};
+	last_deleted_ = {};
+}
+
+
+std::vector<TextSpan>
+PieceTable::TakeDeletedSpans(std::size_t byte_offset, std::size_t len)
+{
+	std::vector<TextSpan> out;
+	if (last_deleted_.valid && last_deleted_.offset == byte_offset && last_deleted_.len == len)
+		out = std::move(last_deleted_.spans);
+	last_deleted_ = {};
+	return out;
 }
 
 

@@ -499,6 +499,20 @@ before the fix (unless noted).
   agreed. Redo-all after heavy branching can end on an older branch of
   the undo tree (a state that did exist), as before.
 
+**Follow-up: undo memory**
+- Undo texts of 4 KiB or more are held as references to the piece
+  table's (append-only) storage instead of copies, verified byte for
+  byte when converted; undo/redo re-splice the stored bytes instead of
+  copying them into storage again. A replace-all session on a 26 MB file
+  ends at 181 MB instead of 332 MB; undo/redo cycles of a 6.6 MB kill
+  stay at 75 MB instead of growing by 6.6 MB each.
+- History has a byte budget (default max(64 MiB, twice the buffer)):
+  over it, branches off the current path, then the oldest edits (whole
+  undo groups), then the redo line are dropped. If the saved state goes,
+  the buffer stays modified until the next save.
+- replace_all_bytes clears undo history (it was recorded against, and
+  may reference, the previous content).
+
 **Known limitations (not fixed)**
 - Catastrophic regex backtracking (e.g. `(a*)*b`) can still take very
   long; std::regex has no time limit.
@@ -511,9 +525,7 @@ before the fix (unless noted).
   the file before the first one edits it is not warned at open; the
   session that is locked out is told at its first edit instead.
 - Regex search runs std::regex over the whole buffer per keystroke
-  (about 0.4 s on 26 MB); replace-all on a file with matches spread
-  throughout records nearly the whole file in the undo tree, which has
-  no size limit.
+  (about 0.4 s on 26 MB).
 - A journal whose buffer exceeds 16 MiB cannot be checkpointed; after a
   lost record such a journal stays incomplete until the file is saved
   (reported to the user).

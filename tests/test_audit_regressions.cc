@@ -21,6 +21,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <random>
+#include <set>
 #include <vector>
 #include <clocale>
 #include <memory>
@@ -1729,4 +1730,142 @@ TEST(Audit_RowRangeEdits_Scale)
 	const auto secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
 	ASSERT_EQ(h.Text(), text);
 	ASSERT_TRUE(secs < 20.0);
+}
+
+
+// Large undo texts are held as references to the buffer's storage: a
+// replace-all over a large buffer keeps almost nothing in history, and undo,
+// redo and the journal still reproduce the text.
+TEST(Undo_LargeTextsHeldAsSpans)
+{
+	TempDir d("undo_spans");
+	const std::string path = (d.path / "big.txt").string();
+	std::string text;
+	for (int i = 0; i < 20000; ++i)
+		text += "alpha " + std::to_string(i) + " beta\n";
+	{
+		std::ofstream o(path, std::ios::binary);
+		o << text;
+	}
+	std::remove(kte::SwapManager::ComputeSwapPathForFilename(path).c_str());
+	TestHarness h;
+	std::string err;
+	ASSERT_TRUE(h.EditorRef().OpenFile(path, err));
+	Buffer &b = h.Buf();
+	regex_replace_all(h, "alpha", "gamma");
+	std::string after = text;
+	for (std::size_t p = after.find("alpha"); p != std::string::npos; p = after.find("alpha", p + 5))
+		after.replace(p, 5, "gamma");
+	ASSERT_EQ(h.Text(), after);
+	// Two nodes (delete + insert) of ~400 KB each, held as spans.
+	ASSERT_TRUE(b.Undo()->HistoryBytes() < 16384);
+	const UndoNode *ins = b.Undo()->TreeForTests().current;
+	ASSERT_TRUE(ins && ins->HasSpans());
+	ASSERT_TRUE(ins->parent && ins->parent->HasSpans());
+
+	// Kill a large region (a Delete node held as spans) and yank it back.
+	b.SetCursor(0, 100);
+	ASSERT_TRUE(h.Exec(CommandId::ToggleMark));
+	b.SetCursor(0, 5000);
+	ASSERT_TRUE(h.Exec(CommandId::KillRegion));
+	const std::string killed = h.Text();
+	ASSERT_TRUE(b.Undo()->HistoryBytes() < 32768);
+
+	for (int i = 0; i < 3; ++i) {
+		ASSERT_TRUE(h.Undo());
+		ASSERT_TRUE(h.Undo());
+		ASSERT_EQ(h.Text(), text);
+		ASSERT_TRUE(h.Redo());
+		ASSERT_EQ(h.Text(), after);
+		ASSERT_TRUE(h.Redo());
+		ASSERT_EQ(h.Text(), killed);
+	}
+	// The journal (fed from spans on undo/redo) replays to the same text.
+	h.EditorRef().Swap()->Flush(&b);
+	const std::string copy = (d.path / "crash.swp").string();
+	{
+		std::ofstream o(copy, std::ios::binary | std::ios::trunc);
+		o << slurp(kte::SwapManager::ComputeSwapPathForTests(b));
+	}
+	Buffer b2;
+	ASSERT_TRUE(b2.OpenFromFile(path, err));
+	ASSERT_TRUE(kte::SwapManager::ReplayFile(b2, copy, err));
+	ASSERT_EQ(b2.BytesForTests(), killed);
+	b.SetDirty(false);
+}
+
+
+// Undo history has a byte budget: over it, branches off the current path and
+// then the oldest edits go. History never lands on a state that did not
+// exist, and once the saved state is gone the buffer stays modified.
+TEST(Undo_ByteBudgetPrunesOldestAndBranches)
+{
+	TestHarness h;
+	Buffer &b     = h.Buf();
+	UndoSystem *u = b.Undo();
+	u->SetByteBudget(64 * 1024);
+	b.insert_text(0, 0, "base\n");
+	u->mark_saved();
+	b.SetDirty(false);
+
+	// A branch: an edit, undone, then a different edit.
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, std::string(2000, 'b')));
+	ASSERT_TRUE(h.Exec(CommandId::MoveLeft));
+	ASSERT_TRUE(h.Undo());
+	std::set<std::string> seen{h.Text()};
+	// Many distinct edits, each its own node with ~1 KB of text.
+	for (int i = 0; i < 400; ++i) {
+		ASSERT_TRUE(h.Exec(CommandId::InsertText, std::string(1000, static_cast<char>('a' + i % 26))));
+		seen.insert(h.Text());
+		ASSERT_TRUE(h.Exec(CommandId::Newline));
+		seen.insert(h.Text());
+		ASSERT_TRUE(u->HistoryBytes() <= 64 * 1024);
+	}
+	const std::string tip = h.Text();
+	// Undo everything that is left: the oldest edits (and the branch) are
+	// gone, so this does not reach the saved text, and the buffer knows it.
+	for (int i = 0; i < 2000; ++i)
+		(void) Execute(h.EditorRef(), CommandId::Undo);
+	ASSERT_TRUE(h.Text() != std::string("base\n"));
+	ASSERT_TRUE(seen.count(h.Text()) == 1);
+	ASSERT_TRUE(b.Dirty());
+	for (int i = 0; i < 2000; ++i)
+		(void) Execute(h.EditorRef(), CommandId::Redo);
+	ASSERT_EQ(h.Text(), tip);
+	ASSERT_TRUE(b.Dirty());
+	u->mark_saved();
+	ASSERT_TRUE(!b.Dirty());
+}
+
+
+// Pruning drops an undo group whole.
+TEST(Undo_ByteBudgetKeepsGroupsWhole)
+{
+	// The replace's delete node (~1.3 KB) is large next to the gap between
+	// budget and prune target, its insert node small: across filler sizes,
+	// pruning would stop between the two unless groups are kept whole.
+	std::string base;
+	for (int i = 0; i < 300; ++i)
+		base += "one ";
+	base += "\n";
+	for (int fill = 40; fill < 400; fill += 9) {
+		TestHarness h;
+		Buffer &b = h.Buf();
+		b.Undo()->SetByteBudget(4096);
+		b.insert_text(0, 0, base);
+		std::set<std::string> seen{h.Text()};
+		regex_replace_all(h, "one ", "x"); // a group: delete + insert
+		seen.insert(h.Text());
+		for (int i = 0; i < 12; ++i) {
+			ASSERT_TRUE(h.Exec(CommandId::InsertText, std::string(static_cast<std::size_t>(fill), 'z')));
+			seen.insert(h.Text());
+			ASSERT_TRUE(h.Exec(CommandId::Newline));
+			seen.insert(h.Text());
+		}
+		// Undo everything left, checking every state on the way.
+		for (int i = 0; i < 100; ++i) {
+			(void) Execute(h.EditorRef(), CommandId::Undo);
+			ASSERT_TRUE(seen.count(h.Text()) == 1);
+		}
+	}
 }

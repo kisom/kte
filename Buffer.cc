@@ -972,7 +972,51 @@ Buffer::replace_all_bytes(const std::string_view bytes)
 	if (!bytes.empty())
 		content_.Append(bytes.data(), bytes.size());
 	rows_cache_dirty_ = true;
+	if (undo_sys_)
+		undo_sys_->clear();
 	MarkContentChanged();
+}
+
+
+void
+Buffer::insert_spans(int row, int col, const std::vector<TextSpan> &spans)
+{
+	if (row < 0)
+		row = 0;
+	if (col < 0)
+		col = 0;
+	const std::size_t off = content_.LineColToByteOffset(static_cast<std::size_t>(row),
+	                                                     static_cast<std::size_t>(col));
+	content_.InsertSpans(off, spans);
+	rows_cache_dirty_ = true;
+	edited_at_(row);
+	if (swap_rec_) {
+		// The journal needs the bytes as one record (see insert_row).
+		std::string text;
+		content_.VisitSpans(spans, [&](const char *d, std::size_t n) {
+			text.append(d, n);
+		});
+		if (!text.empty())
+			swap_rec_->OnInsert(row, col, text);
+	}
+}
+
+
+std::vector<TextSpan>
+Buffer::SpansAt(int row, int col, std::size_t len) const
+{
+	const std::size_t off = content_.LineColToByteOffset(static_cast<std::size_t>(std::max(row, 0)),
+	                                                     static_cast<std::size_t>(std::max(col, 0)));
+	return content_.SpansInRange(off, len);
+}
+
+
+std::vector<TextSpan>
+Buffer::TakeDeletedSpans(int row, int col, std::size_t len)
+{
+	const std::size_t off = content_.LineColToByteOffset(static_cast<std::size_t>(std::max(row, 0)),
+	                                                     static_cast<std::size_t>(std::max(col, 0)));
+	return content_.TakeDeletedSpans(off, len);
 }
 
 

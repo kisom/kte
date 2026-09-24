@@ -90,6 +90,21 @@ public:
 
 	void UpdateBufferReference(Buffer &new_buf);
 
+	// History memory budget in bytes (node texts, spans and nodes). When
+	// committed history exceeds it, branches off the current path and then
+	// the oldest edits are dropped. 0 (the default) means max(64 MiB, twice
+	// the buffer's size).
+	void SetByteBudget(std::size_t bytes)
+	{
+		budget_ = bytes;
+	}
+
+
+	[[nodiscard]] std::size_t HistoryBytes() const
+	{
+		return bytes_;
+	}
+
 #if defined(KTE_TESTS)
 	// Test-only introspection hook.
 	const UndoTree &TreeForTests() const
@@ -118,6 +133,21 @@ private:
 	static bool is_descendant(UndoNode *root, const UndoNode *target);
 
 	void update_dirty_flag();
+
+	// Hold a large committed text as storage spans (see UndoNode::spans).
+	void try_convert_to_spans(UndoNode *node);
+
+	// Enforce the byte budget (outside groups).
+	void maybe_prune();
+
+	void prune_to(std::size_t target);
+
+	// The saved state's node is being dropped: no state in history matches
+	// the file any more.
+	void forget_saved_state();
+
+	std::size_t bytes_  = 0; // approximate bytes held by committed history
+	std::size_t budget_ = 0;
 
 	PendingAppendMode pending_mode_ = PendingAppendMode::Append;
 

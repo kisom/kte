@@ -43,6 +43,9 @@
 #include <vector>
 #include <limits>
 #include <mutex>
+#include <string_view>
+
+#include "TextSpan.h"
 
 
 class PieceTable {
@@ -139,6 +142,36 @@ public:
 	// Stream out content without materializing the entire buffer
 	void WriteToStream(std::ostream &out) const;
 
+	// ===== Span access (see TextSpan.h) =====
+	// The storage spans backing [byte_offset, byte_offset + len).
+	[[nodiscard]] std::vector<TextSpan> SpansInRange(std::size_t byte_offset, std::size_t len) const;
+
+	// Call fn(const char *data, std::size_t len) for each span's bytes, in order.
+	template<typename Fn>
+	void VisitSpans(const std::vector<TextSpan> &spans, Fn &&fn) const
+	{
+		for (const TextSpan &sp: spans) {
+			const std::string &src = sp.add ? add_ : original_;
+			if (sp.len > 0 && sp.start + sp.len <= src.size())
+				fn(src.data() + sp.start, sp.len);
+		}
+	}
+
+
+	// Whether the spans hold exactly `text`.
+	[[nodiscard]] bool SpansEqual(const std::vector<TextSpan> &spans, std::string_view text) const;
+
+	// Insert the spans' bytes at byte_offset without copying them into
+	// storage again (the new pieces reference the existing bytes).
+	void InsertSpans(std::size_t byte_offset, const std::vector<TextSpan> &spans);
+
+	// Deletions of at least kCaptureDeletedMin bytes remember the spans they
+	// removed; this returns them if the most recent deletion was exactly
+	// [byte_offset, byte_offset + len), else nothing. Consumes the capture.
+	static constexpr std::size_t kCaptureDeletedMin = 4096;
+
+	[[nodiscard]] std::vector<TextSpan> TakeDeletedSpans(std::size_t byte_offset, std::size_t len);
+
 	// Heuristic configuration
 	void SetConsolidationParams(std::size_t piece_limit,
 	                            std::size_t small_piece_threshold,
@@ -219,6 +252,13 @@ private:
 		std::size_t start  = 0;
 		std::size_t result = std::numeric_limits<std::size_t>::max();
 	};
+
+	struct DeletedCapture {
+		bool valid            = false;
+		std::size_t offset    = 0;
+		std::size_t len       = 0;
+		std::vector<TextSpan> spans;
+	} last_deleted_;
 
 	mutable RangeCache range_cache_;
 	mutable FindCache find_cache_;
