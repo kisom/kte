@@ -1294,10 +1294,14 @@ TEST(Audit_RegexSearch_LongLineFoundByNext)
 	ASSERT_EQ(h.Buf().Curx(), (std::size_t) 25000);
 	ASSERT_TRUE(h.Exec(CommandId::Refresh));
 	ASSERT_TRUE(!ed.PromptActive());
-	// The replace prompt has no next/previous; its Enter searches all lines.
+	// The regex replace prompt steps through matches the same way.
+	h.Buf().SetCursor(0, 0);
 	ASSERT_TRUE(h.Exec(CommandId::RegexpReplace));
 	ASSERT_TRUE(h.Exec(CommandId::InsertText, "NEE+DLE"));
-	ASSERT_TRUE(ed.Status().find("Enter searches all") != std::string::npos);
+	ASSERT_TRUE(ed.Status().find("Left/Right search all") != std::string::npos);
+	ASSERT_TRUE(h.Exec(CommandId::MoveRight));
+	ASSERT_EQ(h.Buf().Cury(), (std::size_t) 1);
+	ASSERT_EQ(h.Buf().Curx(), (std::size_t) 25000);
 }
 
 
@@ -1868,4 +1872,143 @@ TEST(Undo_ByteBudgetKeepsGroupsWhole)
 			ASSERT_TRUE(seen.count(h.Text()) == 1);
 		}
 	}
+}
+
+
+// Search stops at the first match after the search origin (it collected
+// every match in the buffer on every keystroke); the count is capped.
+TEST(Search_FindsFromOriginAndCapsCount)
+{
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	h.Buf().insert_text(0, 0, "foo\nbar\nfoo\nbar\nfoo\n");
+	h.Buf().SetCursor(0, 1); // after the first foo
+	ASSERT_TRUE(h.Exec(CommandId::FindStart));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "fo"));
+	ASSERT_EQ(h.Buf().Cury(), (std::size_t) 2);
+	ASSERT_TRUE(ed.Status().find("2/3") != std::string::npos);
+	// Extending the query keeps the current match while it still matches.
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "o"));
+	ASSERT_EQ(h.Buf().Cury(), (std::size_t) 2);
+	// Next, then wrap to the first.
+	ASSERT_TRUE(h.Exec(CommandId::MoveRight));
+	ASSERT_EQ(h.Buf().Cury(), (std::size_t) 4);
+	ASSERT_TRUE(h.Exec(CommandId::MoveRight));
+	ASSERT_EQ(h.Buf().Cury(), (std::size_t) 0);
+	ASSERT_TRUE(ed.Status().find("1/3") != std::string::npos);
+	// Previous wraps back to the last.
+	ASSERT_TRUE(h.Exec(CommandId::MoveLeft));
+	ASSERT_EQ(h.Buf().Cury(), (std::size_t) 4);
+	ASSERT_TRUE(h.Exec(CommandId::Refresh));
+
+	TestHarness g;
+	std::string many;
+	for (int i = 0; i < 3000; ++i)
+		many += "x\n";
+	g.Buf().insert_text(0, 0, many);
+	g.Buf().SetCursor(0, 0);
+	ASSERT_TRUE(g.Exec(CommandId::FindStart));
+	ASSERT_TRUE(g.Exec(CommandId::InsertText, "x"));
+	ASSERT_TRUE(g.EditorRef().Status().find("1/1000+") != std::string::npos);
+	ASSERT_TRUE(g.Exec(CommandId::Refresh));
+}
+
+
+// Next/Previous visit exactly the matches a per-line scan finds, in order
+// and wrapping, for plain and regex queries (including zero-width ones).
+TEST(Search_NextPrevVisitReferenceMatches)
+{
+	std::mt19937 rng(11);
+	const char alphabet[] = {'a', 'b', '\n', 'a', ' ', 'b'};
+	const char *regexes[] = {"a+", "^", "b$", "ab|ba", "a*", "\\bb"};
+	for (int iter = 0; iter < 60; ++iter) {
+		std::string text;
+		const int n = 20 + static_cast<int>(rng() % 120);
+		for (int i = 0; i < n; ++i)
+			text.push_back(alphabet[rng() % sizeof(alphabet)]);
+		const bool regex    = iter % 2 == 1;
+		const std::string q = regex ? regexes[(iter / 2) % 6] : ((iter / 2) % 2 ? "ab" : "a");
+		// Reference: per line, non-overlapping, empty matches advance by one.
+		std::vector<std::pair<std::size_t, std::size_t> > want;
+		{
+			std::size_t y = 0, start = 0;
+			const std::regex rx(regex ? q : std::string("x"));
+			while (true) {
+				const std::size_t nl   = text.find('\n', start);
+				const std::string line = text.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
+				if (!regex) {
+					for (std::size_t p = line.find(q); p != std::string::npos; p = line.find(q, p + q.size()))
+						want.emplace_back(y, p);
+				} else {
+					std::size_t from = 0;
+					std::cmatch m;
+					while (from <= line.size() &&
+					       std::regex_search(line.data() + from, line.data() + line.size(), m, rx,
+					                         from ? std::regex_constants::match_prev_avail
+					                              : std::regex_constants::match_default)) {
+						const std::size_t pos = from + static_cast<std::size_t>(m.position(0));
+						want.emplace_back(y, pos);
+						from = pos + std::max<std::size_t>(static_cast<std::size_t>(m.length(0)), 1);
+					}
+				}
+				if (nl == std::string::npos)
+					break;
+				start = nl + 1;
+				++y;
+			}
+		}
+		TestHarness h;
+		h.Buf().insert_text(0, 0, text);
+		h.Buf().SetCursor(0, 0);
+		ASSERT_TRUE(h.Exec(regex ? CommandId::RegexFindStart : CommandId::FindStart));
+		ASSERT_TRUE(h.Exec(CommandId::InsertText, q));
+		if (want.empty()) {
+			ASSERT_EQ(h.EditorRef().SearchIndex(), -1);
+			ASSERT_TRUE(h.Exec(CommandId::Refresh));
+			continue;
+		}
+		const std::size_t k = want.size();
+		for (std::size_t i = 0; i <= k; ++i) { // one full cycle, wrapping
+			ASSERT_EQ(h.Buf().Cury(), want[i % k].first);
+			ASSERT_EQ(h.Buf().Curx(), want[i % k].second);
+			ASSERT_TRUE(h.Exec(CommandId::MoveRight));
+		}
+		// Now at want[1 % k]; step back around.
+		for (std::size_t i = 0; i <= k; ++i) {
+			ASSERT_TRUE(h.Exec(CommandId::MoveLeft));
+			const std::size_t j = (1 + 2 * k - 1 - i) % k;
+			ASSERT_EQ(h.Buf().Cury(), want[j].first);
+			ASSERT_EQ(h.Buf().Curx(), want[j].second);
+		}
+		ASSERT_TRUE(h.Exec(CommandId::Refresh));
+	}
+}
+
+
+// Previous-match search scans backwards in 1 MiB blocks; matches straddling
+// and next to block boundaries are all found, in order.
+TEST(Search_PrevAcrossBlocks)
+{
+	const std::size_t mib = std::size_t{1} << 20;
+	std::string text(3 * mib + 100, 'x');
+	for (std::size_t i = 64; i < text.size(); i += 65)
+		text[i] = '\n';
+	std::vector<std::size_t> at = {5, mib - 2, mib, 2 * mib - 1, 2 * mib + 3, 3 * mib + 50};
+	for (std::size_t p: at)
+		text.replace(p, 2, "QZ"); // may overwrite a newline: fine, offsets still match
+	std::vector<std::size_t> want;
+	for (std::size_t p = text.find("QZ"); p != std::string::npos; p = text.find("QZ", p + 2))
+		want.push_back(p);
+	TestHarness h;
+	h.Buf().insert_text(0, 0, text);
+	h.Buf().SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::FindStart));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "QZ"));
+	for (std::size_t i = 0; i < want.size(); ++i) {
+		ASSERT_TRUE(h.Exec(CommandId::MoveLeft));
+		const std::size_t j   = want.size() - 1 - i;
+		const std::size_t off = h.Buf().RowColToOffset(h.Buf().Cury(), h.Buf().Curx());
+		ASSERT_EQ(off, want[j]);
+	}
+	ASSERT_TRUE(h.Exec(CommandId::Refresh));
 }

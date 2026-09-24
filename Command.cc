@@ -907,150 +907,344 @@ line_text_view(const Buffer &buf, const std::size_t y)
 	return v;
 }
 
-static std::vector<std::pair<std::size_t, std::size_t> >
-search_compute_matches(const Buffer &buf, const std::string &q)
-{
-	std::vector<std::pair<std::size_t, std::size_t> > out;
-	if (q.empty())
-		return out;
-	// Views into the materialized buffer (one copy, kept until the next
-	// edit): Rows() built a string per line, and kept them all, on every
-	// search keystroke after an edit.
-	// Matches never span lines (the query is matched within each line).
-	if (q.find('\n') != std::string::npos)
-		return out;
-	const std::size_t nrows = buf.Nrows();
-	if (nrows == 0)
-		return out;
-	// One scan of the whole text (find is much faster over one large range
-	// than restarted per line), mapping each hit to its row as we go.
-	const char *base       = buf.GetLineView(0).data();
-	const auto last        = buf.GetLineView(nrows - 1);
-	const std::string_view text(base, static_cast<std::size_t>(last.data() + last.size() - base));
-	std::size_t y          = 0;
-	std::size_t line_start = 0;
-	std::size_t next_nl    = text.find('\n');
-	std::size_t pos        = 0;
-	while ((pos = text.find(q, pos)) != std::string_view::npos) {
-		while (next_nl < pos) {
-			++y;
-			line_start = next_nl + 1;
-			next_nl    = text.find('\n', line_start);
+
+
+// ===== Incremental search engine =====
+// Finding a match stops at the first one after the current position (it
+// used to collect every match in the buffer on every keystroke and every
+// next/previous); the "i/N" count is capped (see search_count).
+
+struct SearchHit {
+	std::size_t y   = 0;
+	std::size_t x   = 0;
+	std::size_t len = 0;
+};
+
+// Count caps: stop at this many matches, and after scanning this many bytes
+// (the regex budget is lower: std::regex is far slower than find).
+static constexpr std::size_t kSearchCountCap        = 1000;
+static constexpr std::size_t kSearchCountBytesPlain = std::size_t{64} << 20;
+static constexpr std::size_t kSearchCountBytesRegex = std::size_t{4} << 20;
+
+
+class RegexMatcher {
+public:
+	bool Compile(const std::string &pattern, std::string &err)
+	{
+		err.clear();
+		try {
+			rx_ = std::regex(pattern);
+			return true;
+		} catch (const std::regex_error &e) {
+			err = e.what();
+			return false;
 		}
-		out.emplace_back(y, pos - line_start);
-		pos += q.size();
 	}
-	return out;
-}
 
 
-// Regex-based matches (per-line), capturing match length for highlighting
-struct RegexMatch {
-	std::size_t y;
-	std::size_t x;
-	std::size_t len;
+	// First match in `line` starting at byte >= from.
+	bool Find(std::string_view line, std::size_t from, std::size_t &pos, std::size_t &len) const
+	{
+		if (from > line.size())
+			return false;
+		std::cmatch m;
+		const auto flags = from > 0 ? std::regex_constants::match_prev_avail
+		                            : std::regex_constants::match_default;
+		if (!std::regex_search(line.data() + from, line.data() + line.size(), m, rx_, flags))
+			return false;
+		pos = from + static_cast<std::size_t>(m.position(0));
+		len = static_cast<std::size_t>(m.length(0));
+		return true;
+	}
+
+private:
+	std::regex rx_;
 };
 
 
-static std::vector<RegexMatch>
-search_compute_matches_regex(const Buffer &buf, const std::string &pattern, std::string &err_out,
-                             std::size_t line_limit = static_cast<std::size_t>(-1), std::size_t *skipped = nullptr)
+static std::string_view line_text_view(const Buffer &buf, std::size_t y);
+
+
+// The whole text as one view into the materialized buffer.
+static std::string_view
+buffer_text_view(const Buffer &buf)
 {
-	if (skipped)
-		*skipped = 0;
-	std::vector<RegexMatch> out;
-	err_out.clear();
-	if (pattern.empty())
-		return out;
-	try {
-		const std::regex rx(pattern);
-		const std::size_t nrows = buf.Nrows();
-		// std::regex recurses per matched character; see RegexGuard.h.
-		kte::RunWithLargeStack([&] {
-			for (std::size_t y = 0; y < nrows; ++y) {
-				const std::string_view line = line_text_view(buf, y);
-				// std::regex can be quadratic in line length for ordinary
-				// patterns (".*q" on a 40 KB minified line took over a
-				// minute, uninterruptibly), so the per-keystroke caller
-				// passes a limit; moving to the next/previous match
-				// (Left/Right in the prompt) searches every line.
-				if (line.size() > line_limit) {
-					if (skipped)
-						++*skipped;
-					continue;
+	const std::size_t nrows = buf.Nrows();
+	if (nrows == 0)
+		return {};
+	const char *base = buf.GetLineView(0).data();
+	const auto last  = buf.GetLineView(nrows - 1);
+	return {base, static_cast<std::size_t>(last.data() + last.size() - base)};
+}
+
+
+// The last occurrence of q starting before `end`. string_view::rfind scans
+// backwards a byte at a time (half a second over 100 MB); forward find is
+// vectorized, so scan blocks forward, moving back one block at a time.
+static std::size_t
+rfind_before(std::string_view text, std::string_view q, std::size_t end)
+{
+	constexpr std::size_t kBlock = std::size_t{1} << 20;
+	end                          = std::min(end, text.size());
+	while (end > 0) {
+		const std::size_t start = end > kBlock ? end - kBlock : 0;
+		// Matches starting in [start, end); they may run past `end`.
+		const std::string_view block = text.substr(start, std::min(text.size() - start, end - start + q.size() - 1));
+		std::size_t last = std::string_view::npos;
+		for (std::size_t p = block.find(q); p != std::string_view::npos && start + p < end; p = block.find(q, p + 1))
+			last = p;
+		if (last != std::string_view::npos)
+			return start + last;
+		end = start;
+	}
+	return std::string_view::npos;
+}
+
+
+// Plain text: the first match at or after (y, x) (forward), or the last one
+// starting before it (backward), wrapping around the buffer.
+static bool
+plain_find(const Buffer &buf, const std::string &q, std::size_t y, std::size_t x, bool forward, SearchHit &hit)
+{
+	if (q.empty() || q.find('\n') != std::string::npos)
+		return false; // matches never span lines
+	const std::string_view text = buffer_text_view(buf);
+	const std::size_t off       = std::min(buf.RowColToOffset(y, x), text.size());
+	std::size_t p               = std::string_view::npos;
+	if (forward) {
+		p = text.find(q, off);
+		if (p == std::string_view::npos) {
+			p = text.find(q);
+			if (p >= off)
+				p = std::string_view::npos;
+		}
+	} else {
+		p = rfind_before(text, q, off);
+		if (p == std::string_view::npos) {
+			p = rfind_before(text, q, text.size());
+			if (p != std::string_view::npos && p < off)
+				p = std::string_view::npos;
+		}
+	}
+	if (p == std::string_view::npos)
+		return false;
+	const auto [ry, rx] = buf.OffsetToRowCol(p);
+	hit                 = SearchHit{ry, rx, q.size()};
+	return true;
+}
+
+
+// Regex: like plain_find, line by line. Lines longer than line_limit are
+// skipped (counted in *skipped).
+static bool
+regex_find(const Buffer &buf, const RegexMatcher &m, std::size_t y0, std::size_t x0, bool forward,
+           std::size_t line_limit, std::size_t *skipped, SearchHit &hit)
+{
+	const std::size_t nrows = buf.Nrows();
+	if (nrows == 0)
+		return false;
+	y0         = std::min(y0, nrows - 1);
+	bool found = false;
+	kte::RunWithLargeStack([&] {
+		// nrows + 1 visits: the start row is visited again after wrapping,
+		// for the part on the other side of x0.
+		for (std::size_t i = 0; i <= nrows && !found; ++i) {
+			const std::size_t y = forward ? (y0 + i) % nrows : (y0 + nrows - i % nrows) % nrows;
+			const std::string_view line = line_text_view(buf, y);
+			if (line.size() > line_limit) {
+				if (skipped && i < nrows)
+					++*skipped;
+				continue;
+			}
+			const bool first = i == 0, again = i == nrows;
+			std::size_t pos = 0, len = 0;
+			if (forward) {
+				const std::size_t from = first ? x0 : 0;
+				if (m.Find(line, from, pos, len) && (!again || pos < x0)) {
+					hit   = SearchHit{y, pos, len};
+					found = true;
 				}
-				for (auto it = std::cregex_iterator(line.data(), line.data() + line.size(), rx);
-				     it != std::cregex_iterator(); ++it) {
-					const auto &m = *it;
-					out.push_back(RegexMatch{
-						y, static_cast<std::size_t>(m.position()), static_cast<std::size_t>(m.length())
-					});
+			} else {
+				// The last match in the line before x0 (first visit), at or
+				// after it (after wrapping), or anywhere (other rows).
+				bool have        = false;
+				SearchHit best{};
+				std::size_t from = 0;
+				while (from <= line.size() && m.Find(line, from, pos, len)) {
+					if (first && pos >= x0)
+						break;
+					if (!again || pos >= x0) {
+						best = SearchHit{y, pos, len};
+						have = true;
+					}
+					from = pos + std::max<std::size_t>(len, 1);
+				}
+				if (have) {
+					hit   = best;
+					found = true;
 				}
 			}
-		});
-	} catch (const std::regex_error &e) {
-		err_out = e.what();
-		// Return empty results on error
-	}
-	return out;
+		}
+	});
+	return found;
 }
 
 
-static void
-search_apply_match_regex(Editor &ed, Buffer &buf, const std::vector<RegexMatch> &matches)
+struct SearchCount {
+	std::size_t before = 0; // matches before the current one
+	std::size_t total  = 0;
+	bool reached       = false; // the scan got as far as the current match
+	bool complete      = false; // every match was counted
+};
+
+
+static SearchCount
+search_count(const Buffer &buf, bool regex, const std::string &q, const RegexMatcher *m, const SearchHit &cur,
+             std::size_t line_limit)
 {
-	const std::string &q = ed.SearchQuery();
-	if (matches.empty()) {
+	SearchCount c;
+	const std::size_t nrows = buf.Nrows();
+	if (!regex) {
+		const std::string_view all  = buffer_text_view(buf);
+		const std::string_view text = all.substr(0, kSearchCountBytesPlain);
+		const std::size_t cur_off   = buf.RowColToOffset(cur.y, cur.x);
+		std::size_t p               = 0;
+		while (c.total < kSearchCountCap && (p = text.find(q, p)) != std::string_view::npos) {
+			if (p < cur_off)
+				++c.before;
+			else
+				c.reached = true;
+			++c.total;
+			p += q.size();
+		}
+		if (p != std::string_view::npos && p >= cur_off)
+			c.reached = true;
+		c.complete = p == std::string_view::npos && text.size() == all.size();
+		if (c.complete)
+			c.reached = true;
+		return c;
+	}
+	std::size_t scanned = 0;
+	bool stopped        = false;
+	kte::RunWithLargeStack([&] {
+		for (std::size_t y = 0; y < nrows && !stopped; ++y) {
+			const std::string_view line = line_text_view(buf, y);
+			if (line.size() > line_limit)
+				continue;
+			scanned += line.size() + 1;
+			std::size_t from = 0, pos = 0, len = 0;
+			while (from <= line.size() && m->Find(line, from, pos, len)) {
+				if (y < cur.y || (y == cur.y && pos < cur.x))
+					++c.before;
+				else
+					c.reached = true;
+				if (++c.total >= kSearchCountCap) {
+					stopped = true;
+					break;
+				}
+				from = pos + std::max<std::size_t>(len, 1);
+			}
+			if (y >= cur.y)
+				c.reached = true;
+			if (scanned > kSearchCountBytesRegex && y + 1 < nrows) {
+				stopped = true;
+				break;
+			}
+		}
+	});
+	c.complete = !stopped;
+	if (c.complete)
+		c.reached = true;
+	return c;
+}
+
+
+enum class SearchStep { Here, Next, Prev };
+
+
+// Run the search for the editor's query and show the result: move the
+// cursor to the match (or back to the origin if there is none) and set the
+// status. Here: from the current match (so it stays while the extended query
+// still matches there) or the search origin; Next/Prev: after/before the
+// current match. incremental limits regex to lines up to
+// kRegexIncrementalLineLimit (search-as-you-type).
+static void
+run_search(Editor &ed, Buffer &buf, bool regex, SearchStep step, bool incremental)
+{
+	const std::string q      = ed.SearchQuery();
+	const std::string prefix = regex ? "Regex: " : "Find: ";
+	const bool have_cur      = ed.SearchIndex() >= 0;
+	std::size_t y = buf.Cury(), x = buf.Curx();
+	if (have_cur) {
+		y = ed.SearchMatchY();
+		x = ed.SearchMatchX();
+	} else if (step == SearchStep::Here && ed.SearchOriginSet()) {
+		y = ed.SearchOrigY();
+		x = ed.SearchOrigX();
+	}
+	if (step == SearchStep::Next && have_cur) {
+		const std::size_t len = std::max<std::size_t>(ed.SearchMatchLen(), 1);
+		x += len;
+		if (x > line_text_view(buf, y).size() && y + 1 < buf.Nrows()) {
+			++y;
+			x = 0;
+		}
+	}
+
+	RegexMatcher m;
+	std::string err;
+	SearchHit hit;
+	bool found          = false;
+	std::size_t skipped = 0;
+	const std::size_t line_limit = (regex && incremental) ? kte::kRegexIncrementalLineLimit
+	                                                      : static_cast<std::size_t>(-1);
+	if (!q.empty()) {
+		if (!regex)
+			found = plain_find(buf, q, y, x, step != SearchStep::Prev, hit);
+		else if (m.Compile(q, err))
+			found = regex_find(buf, m, y, x, step != SearchStep::Prev, line_limit, &skipped, hit);
+	}
+
+	if (!found) {
 		ed.SetSearchMatch(0, 0, 0);
-		// Restore cursor to origin if present
 		if (ed.SearchOriginSet()) {
 			buf.SetCursor(ed.SearchOrigX(), ed.SearchOrigY());
 			buf.SetOffsets(ed.SearchOrigRowoffs(), ed.SearchOrigColoffs());
 		}
 		ed.SetSearchIndex(-1);
-		ed.SetStatus("Regex: " + q);
+		std::string status = prefix + q;
+		if (!err.empty())
+			status += "  [error: " + err + "]";
+		else if (skipped > 0)
+			status += "  [" + std::to_string(skipped) + " long line(s) skipped; Left/Right search all]";
+		ed.SetStatus(status);
 		return;
 	}
-	int idx = ed.SearchIndex();
-	if (idx < 0 || idx >= static_cast<int>(matches.size()))
-		idx = 0;
-	const auto &m = matches[static_cast<std::size_t>(idx)];
-	ed.SetSearchMatch(m.y, m.x, m.len);
-	buf.SetCursor(m.x, m.y);
+
+	ed.SetSearchMatch(hit.y, hit.x, hit.len);
+	buf.SetCursor(hit.x, hit.y);
 	ensure_cursor_visible(ed, buf);
-	char tmp[64];
-	snprintf(tmp, sizeof(tmp), "%d/%zu", idx + 1, matches.size());
-	ed.SetStatus(std::string("Regex: ") + q + "  " + tmp);
-	ed.SetSearchIndex(idx);
+	const SearchCount c = search_count(buf, regex, q, regex ? &m : nullptr, hit, line_limit);
+	ed.SetSearchIndex(static_cast<int>(c.reached ? c.before : 0));
+	std::string where;
+	if (c.complete)
+		where = std::to_string(c.before + 1) + "/" + std::to_string(c.total);
+	else if (c.reached)
+		where = std::to_string(c.before + 1) + "/" + std::to_string(c.total) + "+";
+	else
+		where = std::to_string(c.total) + "+ matches";
+	std::string status = prefix + q + "  " + where;
+	if (skipped > 0)
+		status += "  [" + std::to_string(skipped) + " long line(s) skipped; Left/Right search all]";
+	ed.SetStatus(status);
 }
 
 
-static void
-search_apply_match(Editor &ed, Buffer &buf, const std::vector<std::pair<std::size_t, std::size_t> > &matches)
+static bool
+regex_prompt(const Editor &ed)
 {
-	const std::string &q = ed.SearchQuery();
-	if (matches.empty()) {
-		ed.SetSearchMatch(0, 0, 0);
-		// Restore cursor to origin if present
-		if (ed.SearchOriginSet()) {
-			buf.SetCursor(ed.SearchOrigX(), ed.SearchOrigY());
-			buf.SetOffsets(ed.SearchOrigRowoffs(), ed.SearchOrigColoffs());
-		}
-		ed.SetSearchIndex(-1);
-		ed.SetStatus("Find: " + q);
-		return;
-	}
-	int idx = ed.SearchIndex();
-	if (idx < 0 || idx >= static_cast<int>(matches.size()))
-		idx = 0;
-	auto [y, x] = matches[static_cast<std::size_t>(idx)];
-	ed.SetSearchMatch(y, x, q.size());
-	buf.SetCursor(x, y);
-	ensure_cursor_visible(ed, buf);
-	char tmp[64];
-	snprintf(tmp, sizeof(tmp), "%d/%zu", idx + 1, matches.size());
-	ed.SetStatus(std::string("Find: ") + q + "  " + tmp);
-	ed.SetSearchIndex(idx);
+	return ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
+	       ed.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind;
 }
 
 
@@ -2519,33 +2713,7 @@ cmd_insert_text(CommandContext &ctx)
 		    ctx.editor.CurrentPromptKind() == Editor::PromptKind::ReplaceFind ||
 		    ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind) {
 			ctx.editor.SetSearchQuery(ctx.editor.PromptText());
-			if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
-			    ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind) {
-				std::string err;
-				std::size_t skipped = 0;
-				auto rmatches       = search_compute_matches_regex(*buf, ctx.editor.SearchQuery(), err,
-				                                                   kte::kRegexIncrementalLineLimit, &skipped);
-				if (!err.empty()) {
-					ctx.editor.SetStatus(
-						std::string("Regex: ") + ctx.editor.PromptText() + "  [error: " + err +
-						"]");
-				}
-				if (ctx.editor.SearchIndex() >= static_cast<int>(rmatches.size()))
-					ctx.editor.SetSearchIndex(rmatches.empty() ? -1 : 0);
-				search_apply_match_regex(ctx.editor, *buf, rmatches);
-				if (skipped > 0 && err.empty())
-					ctx.editor.SetStatus(ctx.editor.Status() + "  [" + std::to_string(skipped) +
-					                     " long line(s) skipped; " +
-					                     (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch
-						                      ? "Left/Right search all]"
-						                      : "Enter searches all]"));
-			} else {
-				auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
-				// Keep index stable unless out of range
-				if (ctx.editor.SearchIndex() >= static_cast<int>(matches.size()))
-					ctx.editor.SetSearchIndex(matches.empty() ? -1 : 0);
-				search_apply_match(ctx.editor, *buf, matches);
-			}
+			run_search(ctx.editor, *buf, regex_prompt(ctx.editor), SearchStep::Here, true);
 		} else {
 			// For other prompts, just echo label:text in status
 			ctx.editor.SetStatus(ctx.editor.PromptLabel() + ": " + ctx.editor.PromptText());
@@ -2558,30 +2726,7 @@ cmd_insert_text(CommandContext &ctx)
 		q             += ctx.arg; // arg already printable text
 		ctx.editor.SetSearchQuery(q);
 
-		// Recompute matches and move cursor to current index
-		const auto matches = search_compute_matches(*buf, q);
-		if (matches.empty()) {
-			ctx.editor.SetSearchMatch(0, 0, 0);
-			// Restore to origin if available
-			if (ctx.editor.SearchOriginSet()) {
-				buf->SetCursor(ctx.editor.SearchOrigX(), ctx.editor.SearchOrigY());
-				buf->SetOffsets(ctx.editor.SearchOrigRowoffs(), ctx.editor.SearchOrigColoffs());
-			}
-			ctx.editor.SetSearchIndex(-1);
-			ctx.editor.SetStatus("Find: " + q);
-		} else {
-			int idx = ctx.editor.SearchIndex();
-			if (idx < 0 || idx >= static_cast<int>(matches.size()))
-				idx = 0;
-			auto [y, x] = matches[static_cast<std::size_t>(idx)];
-			ctx.editor.SetSearchMatch(y, x, q.size());
-			buf->SetCursor(x, y);
-			ensure_cursor_visible(ctx.editor, *buf);
-			char tmp[64];
-			snprintf(tmp, sizeof(tmp), "%d/%zu", idx + 1, matches.size());
-			ctx.editor.SetStatus(std::string("Find: ") + q + "  " + tmp);
-			ctx.editor.SetSearchIndex(idx);
-		}
+		run_search(ctx.editor, *buf, false, SearchStep::Here, true);
 		return true;
 	}
 	// Disallow newlines in InsertText; they should come via Newline
@@ -2957,10 +3102,8 @@ cmd_newline(CommandContext &ctx)
 			// Keep search highlights active using the collected find string
 			ctx.editor.SetSearchActive(true);
 			ctx.editor.SetSearchQuery(value);
-			if (Buffer *b = ctx.editor.CurrentBuffer()) {
-				auto matches = search_compute_matches(*b, ctx.editor.SearchQuery());
-				search_apply_match(ctx.editor, *b, matches);
-			}
+			if (Buffer *b = ctx.editor.CurrentBuffer())
+				run_search(ctx.editor, *b, false, SearchStep::Here, false);
 			ctx.editor.StartPrompt(Editor::PromptKind::ReplaceWith, "Replace: with", "");
 			ctx.editor.SetStatus("Replace: with: ");
 			return true;
@@ -3395,14 +3538,8 @@ cmd_newline(CommandContext &ctx)
 			// Keep search highlights active using the collected regex pattern
 			ctx.editor.SetSearchActive(true);
 			ctx.editor.SetSearchQuery(value);
-			if (Buffer *b = ctx.editor.CurrentBuffer()) {
-				std::string err;
-				auto rm = search_compute_matches_regex(*b, ctx.editor.SearchQuery(), err);
-				if (!err.empty()) {
-					ctx.editor.SetStatus(std::string("Regex: ") + value + "  [error: " + err + "]");
-				}
-				search_apply_match_regex(ctx.editor, *b, rm);
-			}
+			if (Buffer *b = ctx.editor.CurrentBuffer())
+				run_search(ctx.editor, *b, true, SearchStep::Here, false);
 			ctx.editor.StartPrompt(Editor::PromptKind::RegexReplaceWith, "Regex replace: with", "");
 			ctx.editor.SetStatus("Regex replace: with: ");
 			return true;
@@ -3649,29 +3786,7 @@ cmd_backspace(CommandContext &ctx)
 			Buffer *buf2 = ctx.editor.CurrentBuffer();
 			if (buf2) {
 				ctx.editor.SetSearchQuery(ctx.editor.PromptText());
-				if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
-				    ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind) {
-					std::string err;
-					std::size_t skipped = 0;
-					auto rm             = search_compute_matches_regex(
-						*buf2, ctx.editor.SearchQuery(), err, kte::kRegexIncrementalLineLimit,
-						&skipped);
-					if (!err.empty()) {
-						ctx.editor.SetStatus(
-							std::string("Regex: ") + ctx.editor.PromptText() + "  [error: "
-							+ err + "]");
-					}
-					search_apply_match_regex(ctx.editor, *buf2, rm);
-					if (skipped > 0 && err.empty())
-						ctx.editor.SetStatus(ctx.editor.Status() + "  [" + std::to_string(skipped) +
-						                     " long line(s) skipped; " +
-					                     (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch
-						                      ? "Left/Right search all]"
-						                      : "Enter searches all]"));
-				} else {
-					auto matches = search_compute_matches(*buf2, ctx.editor.SearchQuery());
-					search_apply_match(ctx.editor, *buf2, matches);
-				}
+				run_search(ctx.editor, *buf2, regex_prompt(ctx.editor), SearchStep::Here, true);
 			}
 		} else {
 			ctx.editor.SetStatus(ctx.editor.PromptLabel() + ": " + ctx.editor.PromptText());
@@ -3685,11 +3800,8 @@ cmd_backspace(CommandContext &ctx)
 			q.pop_back();
 			ctx.editor.SetSearchQuery(q);
 		}
-		Buffer *buf2 = ctx.editor.CurrentBuffer();
-		if (buf2) {
-			auto matches = search_compute_matches(*buf2, ctx.editor.SearchQuery());
-			search_apply_match(ctx.editor, *buf2, matches);
-		}
+		if (Buffer *buf2 = ctx.editor.CurrentBuffer())
+			run_search(ctx.editor, *buf2, false, SearchStep::Here, true);
 		return true;
 	}
 	Buffer *buf = ctx.editor.CurrentBuffer();
@@ -4314,54 +4426,18 @@ cmd_move_left(CommandContext &ctx)
 	if (auto *u = buf->Undo())
 		u->commit();
 	// If a prompt is active and it's search, go to previous match
+	// In a search prompt (or search mode), Left/Right step to the previous/
+	// next match.
 	if (ctx.editor.PromptActive() &&
 	    (ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search ||
 	     ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
-	     ctx.editor.CurrentPromptKind() == Editor::PromptKind::ReplaceFind)) {
-		if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch) {
-			std::string err;
-			auto rmatches = search_compute_matches_regex(*buf, ctx.editor.SearchQuery(), err);
-			if (!err.empty()) {
-				ctx.editor.SetStatus(
-					std::string("Regex: ") + ctx.editor.PromptText() + "  [error: " + err + "]");
-			}
-			if (!rmatches.empty()) {
-				int idx = ctx.editor.SearchIndex();
-				if (idx < 0)
-					idx = 0;
-				idx = (idx - 1 + static_cast<int>(rmatches.size())) % static_cast<int>(rmatches.size());
-				ctx.editor.SetSearchIndex(idx);
-				search_apply_match_regex(ctx.editor, *buf, rmatches);
-			} else {
-				search_apply_match_regex(ctx.editor, *buf, rmatches);
-			}
-		} else {
-			auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
-			if (!matches.empty()) {
-				int idx = ctx.editor.SearchIndex();
-				if (idx < 0)
-					idx = 0;
-				idx = (idx - 1 + static_cast<int>(matches.size())) % static_cast<int>(matches.size());
-				ctx.editor.SetSearchIndex(idx);
-				search_apply_match(ctx.editor, *buf, matches);
-			} else {
-				search_apply_match(ctx.editor, *buf, matches);
-			}
-		}
+	     ctx.editor.CurrentPromptKind() == Editor::PromptKind::ReplaceFind ||
+	     ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind)) {
+		run_search(ctx.editor, *buf, regex_prompt(ctx.editor), SearchStep::Prev, false);
 		return true;
 	}
 	if (ctx.editor.SearchActive()) {
-		auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
-		if (!matches.empty()) {
-			int idx = ctx.editor.SearchIndex();
-			if (idx < 0)
-				idx = 0;
-			idx = (idx - 1 + static_cast<int>(matches.size())) % static_cast<int>(matches.size());
-			ctx.editor.SetSearchIndex(idx);
-			search_apply_match(ctx.editor, *buf, matches);
-		} else {
-			search_apply_match(ctx.editor, *buf, matches);
-		}
+		run_search(ctx.editor, *buf, false, SearchStep::Prev, false);
 		return true;
 	}
 	ensure_at_least_one_line(*buf);
@@ -4399,54 +4475,18 @@ cmd_move_right(CommandContext &ctx)
 		return false;
 	if (auto *u = buf->Undo())
 		u->commit();
+	// In a search prompt (or search mode), Left/Right step to the previous/
+	// next match.
 	if (ctx.editor.PromptActive() &&
 	    (ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search ||
 	     ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
-	     ctx.editor.CurrentPromptKind() == Editor::PromptKind::ReplaceFind)) {
-		if (ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexSearch) {
-			std::string err;
-			auto rmatches = search_compute_matches_regex(*buf, ctx.editor.SearchQuery(), err);
-			if (!err.empty()) {
-				ctx.editor.SetStatus(
-					std::string("Regex: ") + ctx.editor.PromptText() + "  [error: " + err + "]");
-			}
-			if (!rmatches.empty()) {
-				int idx = ctx.editor.SearchIndex();
-				if (idx < 0)
-					idx = 0;
-				idx = (idx + 1) % static_cast<int>(rmatches.size());
-				ctx.editor.SetSearchIndex(idx);
-				search_apply_match_regex(ctx.editor, *buf, rmatches);
-			} else {
-				search_apply_match_regex(ctx.editor, *buf, rmatches);
-			}
-		} else {
-			auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
-			if (!matches.empty()) {
-				int idx = ctx.editor.SearchIndex();
-				if (idx < 0)
-					idx = 0;
-				idx = (idx + 1) % static_cast<int>(matches.size());
-				ctx.editor.SetSearchIndex(idx);
-				search_apply_match(ctx.editor, *buf, matches);
-			} else {
-				search_apply_match(ctx.editor, *buf, matches);
-			}
-		}
+	     ctx.editor.CurrentPromptKind() == Editor::PromptKind::ReplaceFind ||
+	     ctx.editor.CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind)) {
+		run_search(ctx.editor, *buf, regex_prompt(ctx.editor), SearchStep::Next, false);
 		return true;
 	}
 	if (ctx.editor.SearchActive()) {
-		auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
-		if (!matches.empty()) {
-			int idx = ctx.editor.SearchIndex();
-			if (idx < 0)
-				idx = 0;
-			idx = (idx + 1) % static_cast<int>(matches.size());
-			ctx.editor.SetSearchIndex(idx);
-			search_apply_match(ctx.editor, *buf, matches);
-		} else {
-			search_apply_match(ctx.editor, *buf, matches);
-		}
+		run_search(ctx.editor, *buf, false, SearchStep::Next, false);
 		return true;
 	}
 	ensure_at_least_one_line(*buf);
@@ -4480,18 +4520,9 @@ cmd_move_up(CommandContext &ctx)
 		u->commit();
 	if ((ctx.editor.PromptActive() && ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search) || ctx.editor.
 	    SearchActive()) {
-		// Up == previous match
-		auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
-		if (!matches.empty()) {
-			int idx = ctx.editor.SearchIndex();
-			if (idx < 0)
-				idx = 0;
-			idx = (idx - 1 + static_cast<int>(matches.size())) % static_cast<int>(matches.size());
-			ctx.editor.SetSearchIndex(idx);
-			search_apply_match(ctx.editor, *buf, matches);
-		} else {
-			search_apply_match(ctx.editor, *buf, matches);
-		}
+		// Up == previous match (a regex query in a regex prompt)
+		run_search(ctx.editor, *buf, ctx.editor.PromptActive() && regex_prompt(ctx.editor), SearchStep::Prev,
+		           false);
 		return true;
 	}
 	ensure_at_least_one_line(*buf);
@@ -4529,18 +4560,9 @@ cmd_move_down(CommandContext &ctx)
 		u->commit();
 	if ((ctx.editor.PromptActive() && ctx.editor.CurrentPromptKind() == Editor::PromptKind::Search) || ctx.editor.
 	    SearchActive()) {
-		// Down == next match
-		auto matches = search_compute_matches(*buf, ctx.editor.SearchQuery());
-		if (!matches.empty()) {
-			int idx = ctx.editor.SearchIndex();
-			if (idx < 0)
-				idx = 0;
-			idx = (idx + 1) % static_cast<int>(matches.size());
-			ctx.editor.SetSearchIndex(idx);
-			search_apply_match(ctx.editor, *buf, matches);
-		} else {
-			search_apply_match(ctx.editor, *buf, matches);
-		}
+		// Down == next match (a regex query in a regex prompt)
+		run_search(ctx.editor, *buf, ctx.editor.PromptActive() && regex_prompt(ctx.editor), SearchStep::Next,
+		           false);
 		return true;
 	}
 	ensure_at_least_one_line(*buf);
