@@ -12,6 +12,7 @@
 
 #include "Command.h"
 #include "RegexGuard.h"
+#include "TermWidth.h"
 #include "syntax/HighlighterRegistry.h"
 #include "syntax/NullHighlighter.h"
 #include "Editor.h"
@@ -134,17 +135,16 @@ measure_char(std::string_view line, std::size_t i, std::size_t rx, std::size_t t
 	wchar_t wch   = 0;
 	const auto rc = std::mbrtowc(&wch, line.data() + i, line.size() - i, &state);
 	if (rc == static_cast<std::size_t>(-1) || rc == static_cast<std::size_t>(-2) || rc == 0) {
-		len   = 1;
-		width = (rc == 0) ? 0 : 1;
-		return;
-	}
-	len = rc;
-	if (wch == L'\t') {
-		width = tabw - (rx % tabw);
+		// Invalid byte or NUL: the renderer draws the byte value itself.
+		wch = static_cast<unsigned char>(line[i]);
+		len = 1;
 	} else {
-		const int w = wcwidth(wch);
-		width       = (w < 0) ? 1 : static_cast<std::size_t>(w);
+		len = rc;
 	}
+	if (wch == L'\t')
+		width = tabw - (rx % tabw);
+	else
+		width = static_cast<std::size_t>(kte::CellWidth(wch));
 }
 
 
