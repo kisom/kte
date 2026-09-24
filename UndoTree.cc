@@ -1,24 +1,31 @@
 // Undo logic is implemented in UndoSystem; this file only owns node lifetime.
 #include "UndoTree.h"
 
-namespace {
+#include <vector>
+
+
 void
-free_node_graph(UndoNode *node)
+FreeUndoForest(UndoNode *first)
 {
-	// Walk the sibling (redo-branch) list; for each node, recursively free its
-	// child subtree first, then the node itself.
-	while (node) {
-		UndoNode *next = node->next;
-		free_node_graph(node->child);
+	// Nodes form a first-child/next-sibling tree whose depth equals the
+	// length of the edit history, so walk it with an explicit stack.
+	std::vector<UndoNode *> stack;
+	if (first)
+		stack.push_back(first);
+	while (!stack.empty()) {
+		UndoNode *node = stack.back();
+		stack.pop_back();
+		if (node->child)
+			stack.push_back(node->child);
+		if (node->next)
+			stack.push_back(node->next);
 		delete node;
-		node = next;
 	}
 }
-} // namespace
 
 
 UndoTree::~UndoTree()
 {
-	free_node_graph(root);
+	FreeUndoForest(root);
 	delete pending;
 }

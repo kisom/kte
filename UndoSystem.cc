@@ -2,6 +2,7 @@
 #include "Buffer.h"
 #include <cassert>
 #include <cstdio>
+#include <vector>
 
 
 UndoSystem::UndoSystem(Buffer &owner, UndoTree &tree)
@@ -260,7 +261,8 @@ void
 UndoSystem::clear()
 {
 	discard_pending();
-	free_node(tree_.root);
+	// The root may have siblings (edits made after undoing to the start).
+	FreeUndoForest(tree_.root);
 	tree_.root       = nullptr;
 	tree_.current    = nullptr;
 	tree_.saved      = nullptr;
@@ -343,20 +345,13 @@ UndoSystem::apply(const UndoNode *node, int direction)
 void
 UndoSystem::free_node(UndoNode *node)
 {
+	// Free this node and its child subtree, but not its siblings.
 	if (!node)
 		return;
-	// Free child subtree(s) and sibling branches
-	if (node->child) {
-		// Free entire redo list starting at child, including each subtree
-		UndoNode *branch = node->child;
-		while (branch) {
-			UndoNode *next = branch->next;
-			free_node(branch);
-			branch = next;
-		}
-		node->child = nullptr;
-	}
+	UndoNode *children = node->child;
+	node->child        = nullptr;
 	delete node;
+	FreeUndoForest(children);
 }
 
 
@@ -364,26 +359,27 @@ void
 UndoSystem::free_branch(UndoNode *node)
 {
 	// Free a branch list (node and its next siblings) including their subtrees
-	while (node) {
-		UndoNode *next = node->next;
-		free_node(node);
-		node = next;
-	}
+	FreeUndoForest(node);
 }
 
 
+// Iterative search for `target` below `cur`; sets out_parent to its parent.
 static bool
 dfs_find_parent(UndoNode *cur, UndoNode *target, UndoNode *&out_parent)
 {
 	if (!cur)
 		return false;
-	for (UndoNode *child = cur->child; child != nullptr; child = child->next) {
-		if (child == target) {
-			out_parent = cur;
-			return true;
+	std::vector<UndoNode *> stack{cur};
+	while (!stack.empty()) {
+		UndoNode *node = stack.back();
+		stack.pop_back();
+		for (UndoNode *child = node->child; child != nullptr; child = child->next) {
+			if (child == target) {
+				out_parent = node;
+				return true;
+			}
+			stack.push_back(child);
 		}
-		if (dfs_find_parent(child, target, out_parent))
-			return true;
 	}
 	return false;
 }
@@ -447,11 +443,14 @@ UndoSystem::is_descendant(UndoNode *root, const UndoNode *target)
 {
 	if (!root || !target)
 		return false;
-	if (root == target)
-		return true;
-	for (UndoNode *child = root->child; child != nullptr; child = child->next) {
-		if (is_descendant(child, target))
+	std::vector<UndoNode *> stack{root};
+	while (!stack.empty()) {
+		UndoNode *node = stack.back();
+		stack.pop_back();
+		if (node == target)
 			return true;
+		for (UndoNode *child = node->child; child != nullptr; child = child->next)
+			stack.push_back(child);
 	}
 	return false;
 }
