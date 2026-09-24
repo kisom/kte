@@ -214,7 +214,9 @@ atomic_write_file(const std::string &path_in, const char *data, std::size_t len,
 		// Carry over permissions and (best effort; needs privilege to give a
 		// file away) ownership of the file being replaced.
 		(void) kte::syscall::Fchmod(fd, dst_st.st_mode & 07777);
-		(void) ::fchown(fd, dst_st.st_uid, dst_st.st_gid);
+		if (::fchown(fd, dst_st.st_uid, dst_st.st_gid) != 0) {
+			// Expected without privilege when the owner differs; keep ours.
+		}
 	} else {
 		// mkstemp creates 0600; a new file gets the usual 0666 & ~umask.
 		const mode_t mask = ::umask(0);
