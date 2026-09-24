@@ -1203,47 +1203,6 @@ SwapManager::RecordDelete(Buffer &buf, int row, int col, std::size_t len)
 
 
 void
-SwapManager::RecordSplit(Buffer &buf, int row, int col)
-{
-	{
-		std::lock_guard<std::mutex> lg(mtx_);
-		auto it = journals_.find(&buf);
-		if (it == journals_.end() || it->second.suspended)
-			return;
-	}
-	Pending p;
-	p.buf  = &buf;
-	p.type = SwapRecType::SPLIT;
-	// payload v1: [encver u8=1][row u32][col u32]
-	p.payload.push_back(1);
-	put_le32(p.payload, static_cast<std::uint32_t>(std::max(0, row)));
-	put_le32(p.payload, static_cast<std::uint32_t>(std::max(0, col)));
-	enqueue(std::move(p));
-	maybe_request_checkpoint(buf, 1);
-}
-
-
-void
-SwapManager::RecordJoin(Buffer &buf, int row)
-{
-	{
-		std::lock_guard<std::mutex> lg(mtx_);
-		auto it = journals_.find(&buf);
-		if (it == journals_.end() || it->second.suspended)
-			return;
-	}
-	Pending p;
-	p.buf  = &buf;
-	p.type = SwapRecType::JOIN;
-	// payload v1: [encver u8=1][row u32]
-	p.payload.push_back(1);
-	put_le32(p.payload, static_cast<std::uint32_t>(std::max(0, row)));
-	enqueue(std::move(p));
-	maybe_request_checkpoint(buf, 1);
-}
-
-
-void
 SwapManager::maybe_request_checkpoint(Buffer &buf, const std::size_t approx_edit_bytes)
 {
 	SwapConfig cfg;

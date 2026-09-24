@@ -5,7 +5,7 @@
  * or scratch document and manages:
  *
  * - Content storage: Uses PieceTable for efficient text operations
- * - Cursor state: Current position (curx_, cury_), rendered column (rx_)
+ * - Cursor state: Current position (curx_, cury_)
  * - Viewport: Scroll offsets (rowoffs_, coloffs_) for display
  * - File backing: Optional association with a file on disk
  * - Undo/Redo: Integrated UndoSystem for operation history
@@ -17,7 +17,6 @@
  *
  * 1. Cursor coordinates:
  *    - (curx_, cury_): Logical character position in the document
- *    - rx_: Rendered column accounting for tab expansion
  *
  * 2. File backing:
  *    - Buffers can be file-backed (associated with a path) or scratch (unnamed)
@@ -116,12 +115,6 @@ public:
 	[[nodiscard]] std::size_t Cury() const
 	{
 		return cury_;
-	}
-
-
-	[[nodiscard]] std::size_t Rx() const
-	{
-		return rx_;
 	}
 
 
@@ -391,12 +384,6 @@ public:
 	{
 		curx_ = x;
 		cury_ = y;
-	}
-
-
-	void SetRenderX(const std::size_t rx)
-	{
-		rx_ = rx;
 	}
 
 
@@ -740,7 +727,6 @@ private:
 
 	// State mirroring original C struct (without undo_tree)
 	std::size_t curx_    = 0, cury_ = 0; // cursor position in characters
-	std::size_t rx_      = 0; // render x (tabs expanded)
 	std::size_t nrows_   = 0; // number of rows
 	std::size_t rowoffs_ = 0, coloffs_ = 0; // viewport offsets
 	mutable std::vector<Line> rows_; // materialized cache of rows (without trailing newlines)

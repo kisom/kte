@@ -52,11 +52,6 @@ struct RetryPolicy {
 	}
 
 
-	// Conservative policy for non-critical operations: fewer attempts, slower retries
-	static RetryPolicy Conservative()
-	{
-		return RetryPolicy{2, std::chrono::milliseconds(200), 2.5, std::chrono::milliseconds(10000)};
-	}
 };
 
 // Retry a function with exponential backoff for transient errors

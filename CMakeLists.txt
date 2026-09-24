@@ -389,7 +389,6 @@ if (BUILD_TESTS)
             tests/test_swap_cleanup2.cc
             tests/test_swap_git_editor.cc
             tests/test_piece_table.cc
-            tests/test_search.cc
             tests/test_search_replace_flow.cc
             tests/test_reflow_paragraph.cc
             tests/test_reflow_indented_bullets.cc
@@ -418,7 +417,6 @@ if (BUILD_TESTS)
             SearchHighlight.cc
             KKeymap.cc
             SwapRecorder.h
-            OptimizedSearch.cc
             UndoNode.cc
             UndoTree.cc
             UndoSystem.cc
