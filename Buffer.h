@@ -391,11 +391,19 @@ public:
 	void SetDirty(bool d)
 	{
 		dirty_ = d;
-		if (d) {
-			++version_;
-			if (highlighter_) {
-				highlighter_->InvalidateFrom(0);
-			}
+		// Bump even when clearing: undo/redo back to the saved state changes the
+		// text and then calls SetDirty(false). Without a bump the highlighter
+		// keeps serving spans for the pre-undo text.
+		MarkContentChanged();
+	}
+
+
+	// Invalidate version-keyed caches (syntax highlighting) after a content change.
+	void MarkContentChanged()
+	{
+		++version_;
+		if (highlighter_) {
+			highlighter_->InvalidateFrom(0);
 		}
 	}
 

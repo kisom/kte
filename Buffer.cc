@@ -455,6 +455,10 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		// Empty PieceTable
 		content_.Clear();
 		rows_cache_dirty_ = true;
+		// History recorded against the previous content no longer applies.
+		if (undo_sys_)
+			undo_sys_->clear();
+		MarkContentChanged();
 
 		return true;
 	}
@@ -520,6 +524,7 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		undo_sys_ = std::make_unique<UndoSystem>(*this, *undo_tree_);
 	// Clear any existing history for a fresh load
 	undo_sys_->clear();
+	MarkContentChanged();
 
 	// Reset cursor/viewport state
 	curx_      = cury_    = rx_ = 0;
@@ -829,6 +834,7 @@ Buffer::replace_all_bytes(const std::string_view bytes)
 	if (!bytes.empty())
 		content_.Append(bytes.data(), bytes.size());
 	rows_cache_dirty_ = true;
+	MarkContentChanged();
 }
 
 
