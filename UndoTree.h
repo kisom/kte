@@ -15,3 +15,8 @@ struct UndoTree {
 	// created for it.
 	~UndoTree();
 };
+
+
+// Frees `first`, its whole child subtree, and every node on its `next`
+// (sibling) chain. Iterative, so history depth cannot overflow the stack.
+void FreeUndoForest(UndoNode *first);
