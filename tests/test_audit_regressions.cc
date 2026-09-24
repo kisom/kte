@@ -695,3 +695,24 @@ TEST(Audit_UArg_DoesNotOverflow)
 		ed.UArgStart();
 	ASSERT_EQ(ed.UArgGet(), 1000000);
 }
+
+
+// std::regex recurses per matched character. Regex search and replace on a
+// very long line (minified JS/JSON) must not overflow the stack.
+TEST(Audit_Regex_LongLine_NoStackOverflow)
+{
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	Buffer &b  = h.Buf();
+	b.insert_text(0, 0, std::string(200000, 'a') + "\nshort\n");
+	b.SetCursor(0, 1);
+
+	ASSERT_TRUE(h.Exec(CommandId::RegexFindStart));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "(a|b)*"));
+	ASSERT_TRUE(h.Exec(CommandId::Refresh));
+	ASSERT_TRUE(!ed.PromptActive());
+
+	regex_replace_all(h, "a+", "b");
+	ASSERT_EQ(h.Line(0), std::string("b"));
+	ASSERT_EQ(h.Line(1), std::string("short"));
+}

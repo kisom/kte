@@ -11,6 +11,7 @@
 #include <string_view>
 
 #include "Command.h"
+#include "RegexGuard.h"
 #include "syntax/HighlighterRegistry.h"
 #include "syntax/NullHighlighter.h"
 #include "Editor.h"
@@ -797,16 +798,19 @@ search_compute_matches_regex(const Buffer &buf, const std::string &pattern, std:
 	try {
 		const std::regex rx(pattern);
 		const auto &rows = buf.Rows();
-		for (std::size_t y = 0; y < rows.size(); ++y) {
-			std::string line = static_cast<std::string>(rows[y]);
-			for (auto it = std::sregex_iterator(line.begin(), line.end(), rx);
-			     it != std::sregex_iterator(); ++it) {
-				const auto &m = *it;
-				out.push_back(RegexMatch{
-					y, static_cast<std::size_t>(m.position()), static_cast<std::size_t>(m.length())
-				});
+		// std::regex recurses per matched character; see RegexGuard.h.
+		kte::RunWithLargeStack([&] {
+			for (std::size_t y = 0; y < rows.size(); ++y) {
+				std::string line = static_cast<std::string>(rows[y]);
+				for (auto it = std::sregex_iterator(line.begin(), line.end(), rx);
+				     it != std::sregex_iterator(); ++it) {
+					const auto &m = *it;
+					out.push_back(RegexMatch{
+						y, static_cast<std::size_t>(m.position()), static_cast<std::size_t>(m.length())
+					});
+				}
 			}
-		}
+		});
 	} catch (const std::regex_error &e) {
 		err_out = e.what();
 		// Return empty results on error
@@ -3212,18 +3216,22 @@ cmd_newline(CommandContext &ctx)
 			std::size_t nrows = buf->Nrows();
 			if (nrows > 1 && buf->GetLineString(nrows - 1).empty())
 				--nrows;
-			for (std::size_t y = 0; y < nrows; ++y) {
-				const std::string before = buf->GetLineString(y);
-				const std::string after  = std::regex_replace(before, rx, repl);
-				if (after != before) {
-					replace_rows_text(*buf, y, before, after, ru);
-					// A replacement containing newlines adds rows; skip past them.
-					const auto added = static_cast<std::size_t>(std::count(after.begin(), after.end(), '\n'));
-					y                += added;
-					nrows            += added;
-					++changed;
+			// std::regex recurses per matched character; see RegexGuard.h. The
+			// caller waits for the worker, so the buffer is never shared.
+			kte::RunWithLargeStack([&] {
+				for (std::size_t y = 0; y < nrows; ++y) {
+					const std::string before = buf->GetLineString(y);
+					const std::string after  = std::regex_replace(before, rx, repl);
+					if (after != before) {
+						replace_rows_text(*buf, y, before, after, ru);
+						// A replacement containing newlines adds rows; skip past them.
+						const auto added = static_cast<std::size_t>(std::count(after.begin(), after.end(), '\n'));
+						y                += added;
+						nrows            += added;
+						++changed;
+					}
 				}
-			}
+			});
 			clamp_cursor_to_buffer(*buf);
 			buf->SetDirty(true);
 			ctx.editor.SetStatus("Regex replaced in " + std::to_string(changed) + " line(s)");

@@ -1,4 +1,5 @@
 #include "QtFrontend.h"
+#include "RegexGuard.h"
 
 #include <QApplication>
 #include <QWidget>
@@ -165,7 +166,9 @@ protected:
 						    (ed_->CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
 						     ed_->CurrentPromptKind() ==
 						     Editor::PromptKind::RegexReplaceFind)) {
-							try {
+							// Long lines are not highlighted: std::regex recursion
+							// could overflow the stack (RegexGuard.h).
+							if (line.size() <= kte::kRegexRenderLineLimit) try {
 								std::regex rx(ed_->SearchQuery());
 								for (auto it = std::sregex_iterator(
 									     line.begin(), line.end(), rx);

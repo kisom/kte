@@ -10,6 +10,7 @@
 #include <regex>
 
 #include "ImGuiRenderer.h"
+#include "RegexGuard.h"
 #include "Highlight.h"
 #include "GUITheme.h"
 #include "Buffer.h"
@@ -359,7 +360,9 @@ ImGuiRenderer::Draw(Editor &ed)
 			if (search_mode) {
 				// In regex mode, reuse the compiled regex hoisted above the loop.
 				if (regex_mode) {
-					if (search_rx_valid) {
+					// Long lines are not highlighted: std::regex recursion
+					// could overflow the stack (RegexGuard.h).
+					if (search_rx_valid && line.size() <= kte::kRegexRenderLineLimit) {
 						try {
 							for (auto it = std::sregex_iterator(line.begin(), line.end(), search_rx);
 							     it != std::sregex_iterator(); ++it) {

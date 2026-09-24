@@ -10,6 +10,7 @@
 #include <string>
 
 #include "TerminalRenderer.h"
+#include "RegexGuard.h"
 #include "Buffer.h"
 #include "Editor.h"
 #include "Highlight.h"
@@ -70,7 +71,9 @@ TerminalRenderer::Draw(Editor &ed)
 				if (ed.PromptActive() && (
 					    ed.CurrentPromptKind() == Editor::PromptKind::RegexSearch || ed.
 					    CurrentPromptKind() == Editor::PromptKind::RegexReplaceFind)) {
-					try {
+					// Long lines are not highlighted: std::regex recursion
+					// could overflow the stack (RegexGuard.h).
+					if (sline.size() <= kte::kRegexRenderLineLimit) try {
 						std::regex rx(ed.SearchQuery());
 						for (auto it = std::sregex_iterator(sline.begin(), sline.end(), rx);
 						     it != std::sregex_iterator(); ++it) {

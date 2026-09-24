@@ -172,6 +172,7 @@ set(COMMON_SOURCES
         ErrorHandler.cc
         SyscallWrappers.cc
         ErrorRecovery.cc
+        RegexGuard.cc
         TerminalInputHandler.cc
         TerminalRenderer.cc
         TerminalFrontend.cc
@@ -384,6 +385,7 @@ if (BUILD_TESTS)
             ErrorHandler.cc
             SyscallWrappers.cc
             ErrorRecovery.cc
+            RegexGuard.cc
             KKeymap.cc
             SwapRecorder.h
             OptimizedSearch.cc
