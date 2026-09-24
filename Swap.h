@@ -226,6 +226,7 @@ private:
 		// drop them until a checkpoint re-establishes the full content.
 		bool gap{false};
 		bool gap_notified{false}; // the user was told about the current gap
+		bool lockout_notified{false}; // told about the lock; kept across ResetJournal
 		std::uint64_t gap_chkpt_request_ns{0};
 		bool gap_unfixable_reported{false}; // gap on a buffer too large to checkpoint
 		// Another kte process holds this journal's lock: do not write to it.

@@ -206,9 +206,12 @@ compute_swap_path_for_filename(const std::string &filename)
 	const std::string suffix = "." + hex_u64(fnv1a64(key)) + ".swp";
 	// A long basename made even this name exceed NAME_MAX (255), so the
 	// journal could never be created. Shorten only such names (the hash
-	// keeps them distinct), on a UTF-8 boundary.
-	if (base.size() + suffix.size() > 255) {
-		std::size_t keep = 255 - suffix.size();
+	// keeps them distinct), on a UTF-8 boundary, leaving room for the
+	// ".tmp" sibling that compaction writes (at exactly 255 compaction
+	// failed on every checkpoint and the journal grew without bound).
+	constexpr std::size_t kMaxName = 255 - 4; // strlen(".tmp")
+	if (base.size() + suffix.size() > kMaxName) {
+		std::size_t keep = kMaxName - suffix.size();
 		while (keep > 0 && (static_cast<unsigned char>(base[keep]) & 0xC0) == 0x80)
 			--keep;
 		base.resize(keep);
@@ -1439,8 +1442,12 @@ SwapManager::process_one(const Pending &p)
 				{
 					std::lock_guard<std::mutex> lg(mtx_);
 					ctxp->locked_out = true;
-					notify_user_locked_("File is being edited in another kte; crash recovery is off here (" +
-					                    path + ")");
+					if (!ctxp->lockout_notified) {
+						ctxp->lockout_notified = true;
+						notify_user_locked_(
+							"File is being edited in another kte; crash recovery is off here (" +
+							path + ")");
+					}
 				}
 				report_error(open_err, p.buf);
 				return; // not an I/O failure; later records are skipped
@@ -1452,6 +1459,11 @@ SwapManager::process_one(const Pending &p)
 			}
 			mark_gap();
 			return;
+		}
+		{
+			// Holding the journal now; a later lock-out is news again.
+			std::lock_guard<std::mutex> lg(mtx_);
+			ctxp->lockout_notified = false;
 		}
 		if (p.payload.size() > kMaxRecordPayload) {
 			// Recorders keep payloads within the limit, so this is a bug, not an

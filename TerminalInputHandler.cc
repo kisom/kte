@@ -393,9 +393,11 @@ read_key(int &ch, bool &is_keycode)
 		return true;
 	}
 	// The rest of the character is on its way; wait for it (restoring the
-	// caller's timeout), but not forever if it never comes.
+	// caller's timeout), but not long if it never comes: terminals that send
+	// Alt as a raw 8-bit byte (rxvt meta8) produce lone lead bytes, and
+	// every such key would otherwise stall input.
 	const int saved_delay = wgetdelay(stdscr);
-	timeout(1000);
+	timeout(250);
 	for (int i = 0; i < need; ++i) {
 		const int b = getch();
 		if (b == ERR || b > 0xFF || (b & 0xC0) != 0x80) {
@@ -427,7 +429,13 @@ TerminalInputHandler::decode_(MappedInput &out)
 	if (!read_key(ch, is_keycode))
 		return false; // no input
 	if (ch < 0) {
-		out.hasCommand = false; // invalid byte sequence, dropped
+		// Invalid byte sequence, dropped. It still ends a pending ESC or
+		// C-k prefix, as any other key would; left set, it applied to the
+		// next key instead.
+		esc_meta_       = false;
+		k_prefix_       = false;
+		k_ctrl_pending_ = false;
+		out.hasCommand  = false;
 		return true;
 	}
 	bool consumed = map_key_to_command(
