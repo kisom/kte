@@ -348,13 +348,19 @@ SwapManager::Attach(Buffer *buf)
 {
 	if (!buf || buf->IsVirtual())
 		return; // e.g. +HELP+: nothing to recover, and its name is not a path
+	bool fresh = false;
+	{
+		std::lock_guard<std::mutex> lg(mtx_);
+		fresh = journals_.find(buf) == journals_.end();
+	}
+	const BaseId base = fresh ? compute_base(buf->Filename()) : BaseId{};
 	std::lock_guard<std::mutex> lg(mtx_);
-	const bool fresh = journals_.find(buf) == journals_.end();
-	JournalCtx &ctx  = journals_[buf];
+	const bool still_fresh = journals_.find(buf) == journals_.end();
+	JournalCtx &ctx        = journals_[buf];
 	if (ctx.path.empty())
 		ctx.path = ComputeSidecarPath(*buf);
-	if (fresh)
-		capture_base(buf->Filename(), ctx);
+	if (fresh && still_fresh)
+		apply_base(ctx, base);
 	// Ensure a recorder exists as well.
 	if (recorders_.find(buf) == recorders_.end()) {
 		recorders_[buf] = std::make_unique<BufferRecorder>(*this, *buf);
@@ -385,6 +391,7 @@ SwapManager::Detach(Buffer *buf, const bool remove_file)
 	std::string path;
 	bool locked_out = false;
 	{
+		std::lock_guard<std::mutex> io(io_mtx_);
 		std::lock_guard<std::mutex> lg(mtx_);
 		auto it = journals_.find(buf);
 		if (it != journals_.end()) {
@@ -419,8 +426,10 @@ SwapManager::ResetJournal(Buffer &buf)
 	}
 
 	Flush(&buf);
+	const BaseId base = compute_base(buf.Filename());
 
 	{
+		std::lock_guard<std::mutex> io(io_mtx_);
 		std::lock_guard<std::mutex> lg(mtx_);
 		auto it = journals_.find(&buf);
 		if (it == journals_.end())
@@ -433,7 +442,7 @@ SwapManager::ResetJournal(Buffer &buf)
 		ctx.gap_chkpt_request_ns   = 0;
 		ctx.gap_unfixable_reported = false;
 		ctx.locked_out             = false;
-		capture_base(buf.Filename(), ctx);
+		apply_base(ctx, base);
 		ctx.last_flush_ns          = 0;
 		ctx.last_fsync_ns          = 0;
 		ctx.last_chkpt_ns          = 0;
@@ -541,15 +550,28 @@ SwapManager::NotifyFilenameChanged(Buffer &buf)
 	// has just loaded or saved the file, so the new journal's base is the
 	// file's content.
 	std::string old_path;
+	bool attached = false;
 	{
 		std::lock_guard<std::mutex> lg(mtx_);
 		auto it = journals_.find(&buf);
-		if (it == journals_.end())
-			return;
-		old_path             = it->second.path;
-		it->second.suspended = true;
+		if (it != journals_.end()) {
+			attached             = true;
+			old_path             = it->second.path;
+			it->second.suspended = true;
+		}
+	}
+	if (!attached) {
+		// A buffer that was never journaled (a virtual buffer such as +HELP+,
+		// now saved under a real name) starts journaling here.
+		if (!buf.IsVirtual() && !buf.Filename().empty()) {
+			Attach(&buf);
+			buf.SetSwapRecorder(RecorderFor(&buf));
+		}
+		return;
 	}
 	Flush(&buf);
+	const BaseId base = compute_base(buf.Filename());
+	std::lock_guard<std::mutex> io(io_mtx_);
 	std::lock_guard<std::mutex> lg(mtx_);
 	auto it = journals_.find(&buf);
 	if (it == journals_.end())
@@ -566,7 +588,7 @@ SwapManager::NotifyFilenameChanged(Buffer &buf)
 	ctx.gap_chkpt_request_ns    = 0;
 	ctx.gap_unfixable_reported  = false;
 	ctx.locked_out              = false;
-	capture_base(buf.Filename(), ctx);
+	apply_base(ctx, base);
 	ctx.path                    = new_path;
 	ctx.suspended              = false;
 	ctx.header_ok              = false;
@@ -714,7 +736,7 @@ SwapManager::write_header(int fd, const JournalCtx &ctx)
 
 
 bool
-SwapManager::open_ctx(JournalCtx &ctx, const std::string &path, std::string &err)
+SwapManager::open_ctx(JournalCtx &ctx, const std::string &path, std::string &err, bool *locked_out)
 {
 	err.clear();
 	if (ctx.fd >= 0)
@@ -747,8 +769,9 @@ SwapManager::open_ctx(JournalCtx &ctx, const std::string &path, std::string &err
 	// its records with ours.
 	if (::flock(fd, LOCK_EX | LOCK_NB) != 0 && errno == EWOULDBLOCK) {
 		kte::syscall::Close(fd);
-		ctx.locked_out = true;
-		err            = "Swap file is in use by another kte process: " + path;
+		if (locked_out)
+			*locked_out = true; // caller records it under mtx_
+		err = "Swap file is in use by another kte process: " + path;
 		return false;
 	}
 	// Ensure permissions even if file already existed.
@@ -786,15 +809,17 @@ SwapManager::open_ctx(JournalCtx &ctx, const std::string &path, std::string &err
 		}
 		if (::flock(fd, LOCK_EX | LOCK_NB) != 0 && errno == EWOULDBLOCK) {
 			kte::syscall::Close(fd);
-			ctx.locked_out = true;
-			err            = "Swap file is in use by another kte process: " + path;
+			if (locked_out)
+				*locked_out = true; // caller records it under mtx_
+			err = "Swap file is in use by another kte process: " + path;
 			return false;
 		}
 		(void) kte::syscall::Fchmod(fd, 0600);
 		st.st_size = 0;
 	}
-	ctx.fd   = fd;
-	ctx.path = path;
+	// (ctx.path is not written here: this runs on the writer thread and the
+	// main thread reads ctx.path under mtx_; callers pass ctx.path itself.)
+	ctx.fd = fd;
 	if (st.st_size == 0) {
 		ctx.header_ok         = write_header(fd, ctx);
 		ctx.approx_size_bytes = ctx.header_ok ? 64 : 0;
@@ -1237,22 +1262,29 @@ SwapManager::writer_loop()
 		// Throttled fsync: best-effort (grouped)
 		try {
 			std::uint64_t now = now_ns();
-			// fsync under mtx_: the main thread closes journal fds under the
-			// same lock. Syncing outside it raced with those closes: the fd
-			// could be closed (or reused) mid-fsync, and the in-flight fsync
-			// kept the closed journal's flock alive, so the owner's own
-			// cleanup saw its journal as held by someone else.
-			std::lock_guard<std::mutex> lg(mtx_);
-			for (auto &kv: journals_) {
-				JournalCtx &ctx = kv.second;
-				if (ctx.fd >= 0) {
-					if (ctx.last_fsync_ns == 0 || (now - ctx.last_fsync_ns) / 1000000ULL >=
-					    cfg_.fsync_interval_ms) {
-						ctx.last_fsync_ns = now;
-						(void) kte::syscall::Fsync(ctx.fd);
+			// Hold io_mtx_ across the fsyncs: journal fds are only closed
+			// under it (by the main thread), so none of these can be closed or
+			// reused mid-fsync. Unsynchronised, an in-flight fsync also kept a
+			// just-closed journal's flock alive, so the owner's own cleanup saw
+			// its journal as held. mtx_ is held only to collect the fds, so
+			// edits are not blocked while fsync runs.
+			std::lock_guard<std::mutex> io(io_mtx_);
+			std::vector<int> to_sync;
+			{
+				std::lock_guard<std::mutex> lg(mtx_);
+				for (auto &kv: journals_) {
+					JournalCtx &ctx = kv.second;
+					if (ctx.fd >= 0) {
+						if (ctx.last_fsync_ns == 0 || (now - ctx.last_fsync_ns) / 1000000ULL >=
+						    cfg_.fsync_interval_ms) {
+							ctx.last_fsync_ns = now;
+							to_sync.push_back(ctx.fd);
+						}
 					}
 				}
 			}
+			for (int fd: to_sync)
+				(void) kte::syscall::Fsync(fd);
 		} catch (const std::exception &e) {
 			report_error(std::string("Exception in fsync operations: ") + e.what());
 		} catch (...) {
@@ -1340,10 +1372,17 @@ SwapManager::process_one(const Pending &p)
 		if (!ctxp)
 			return;
 		std::string open_err;
-		if (!open_ctx(*ctxp, path, open_err)) {
-			report_error(open_err, p.buf);
-			if (ctxp->locked_out)
+		bool locked_out = false;
+		if (!open_ctx(*ctxp, path, open_err, &locked_out)) {
+			if (locked_out) {
+				{
+					std::lock_guard<std::mutex> lg(mtx_);
+					ctxp->locked_out = true;
+				}
+				report_error(open_err, p.buf);
 				return; // not an I/O failure; later records are skipped
+			}
+			report_error(open_err, p.buf);
 			{
 				std::lock_guard<std::mutex> lg(mtx_);
 				circuit_breaker_.RecordFailure();
@@ -1560,11 +1599,27 @@ SwapManager::file_crc32(const std::string &path, std::uint32_t &out)
 }
 
 
-void
-SwapManager::capture_base(const std::string &file, JournalCtx &ctx)
+SwapManager::BaseId
+SwapManager::compute_base(const std::string &file)
 {
-	ctx.has_base     = stat_base(file, ctx.base_size, ctx.base_mtime_ns);
-	ctx.has_base_crc = ctx.has_base && file_crc32(file, ctx.base_crc);
+	// Content CRCs are skipped for very large files (reading them again on
+	// every open and save is too slow); size and mtime still identify them.
+	constexpr std::uint64_t kMaxCrcBytes = std::uint64_t{64} << 20;
+	BaseId id;
+	id.has     = stat_base(file, id.size, id.mtime_ns);
+	id.has_crc = id.has && id.size <= kMaxCrcBytes && file_crc32(file, id.crc);
+	return id;
+}
+
+
+void
+SwapManager::apply_base(JournalCtx &ctx, const BaseId &id)
+{
+	ctx.has_base      = id.has;
+	ctx.base_size     = id.size;
+	ctx.base_mtime_ns = id.mtime_ns;
+	ctx.has_base_crc  = id.has_crc;
+	ctx.base_crc      = id.crc;
 }
 
 

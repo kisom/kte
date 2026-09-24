@@ -1126,3 +1126,23 @@ TEST(Audit_Save_HardLink_LeftoverCopyDoesNotBlock)
 	ASSERT_TRUE(b.Save(err));
 	ASSERT_EQ(slurp(d.path / "h2.txt"), std::string("new old\n"));
 }
+
+
+// A virtual buffer saved under a real name is journaled from then on.
+TEST(Audit_VirtualBuffer_SavedAs_GetsJournal)
+{
+	TempDir d("virtual_saveas");
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	ASSERT_TRUE(h.Exec(CommandId::ShowHelp));
+	ASSERT_TRUE(h.Exec(CommandId::ToggleReadOnly));
+	const std::string target = (d.path / "notes.txt").string();
+	ASSERT_TRUE(Execute(ed, "save-as", target));
+	Buffer *b = ed.CurrentBuffer();
+	ASSERT_TRUE(!b->IsVirtual());
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "x"));
+	ed.Swap()->Flush(b);
+	const std::string swp = kte::SwapManager::ComputeSwapPathForTests(*b);
+	ASSERT_TRUE(std::filesystem::exists(swp));
+	std::filesystem::remove(swp);
+}
