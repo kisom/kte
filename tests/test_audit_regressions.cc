@@ -1949,16 +1949,14 @@ TEST(Search_NextPrevVisitReferenceMatches)
 					for (std::size_t p = line.find(q); p != std::string::npos; p = line.find(q, p + q.size()))
 						want.emplace_back(y, p);
 				} else {
-					std::size_t from = 0;
-					std::cmatch m;
-					while (from <= line.size() &&
-					       std::regex_search(line.data() + from, line.data() + line.size(), m, rx,
-					                         from ? std::regex_constants::match_prev_avail
-					                              : std::regex_constants::match_default)) {
-						const std::size_t pos = from + static_cast<std::size_t>(m.position(0));
-						want.emplace_back(y, pos);
-						from = pos + std::max<std::size_t>(static_cast<std::size_t>(m.length(0)), 1);
-					}
+					// regex_iterator rather than regex_search with
+					// match_prev_avail, which libc++ ignores for '^'.
+					// For these patterns an empty match is never
+					// followed by a non-empty one at the same place,
+					// so its stepping matches the rule above.
+					const char *lb = line.data();
+					for (std::cregex_iterator it(lb, lb + line.size(), rx), end; it != end; ++it)
+						want.emplace_back(y, static_cast<std::size_t>(it->position(0)));
 				}
 				if (nl == std::string::npos)
 					break;
@@ -2196,9 +2194,11 @@ TEST(RegexEngine_ReplaceMatchesStdRegex)
 	const char *subjects[] = {"", "baaac", "one two  three", "a-b-c", "xyz", "aaa", "  lead", "tail  "};
 	const std::pair<const char *, const char *> cases[] = {
 		{"a*", "X"}, {"a", "[$&]"}, {"(\\w+)", "<$1>"}, {"(o)(n)?", "$2$1"}, {"-", "$`|$'"},
-		{"\\s+", "$$"}, {"^", ">"}, {"$", "<"}, {"b|", "_"}, {"\\b", "|"},
+		{"\\s+", "$$"}, {"^", ">"}, {"$", "<"}, {"b|", "_"},
 		{"([a-z])([a-z])", "$2$1"}, {"(a)(x)?", "[$2]"},
 #if defined(__GLIBCXX__)
+		// libc++'s std::regex misses the \b at the end of the subject.
+		{"\\b", "|"},
 		// Read as libstdc++ reads them (libc++ differs): $0 is the match,
 		// two digits are read greedily, missing groups expand to nothing.
 		{"b", "[$0]"}, {"(b?)", "<$10>"}, {"(a)", "[$2]"}, {"(a)(b)?", "$12"},
@@ -2218,6 +2218,24 @@ TEST(RegexEngine_ReplaceMatchesStdRegex)
 		}
 	}
 }
+
+
+// '^' matches only at the start of the subject, also when searching from
+// inside it. Not with std::regex under libc++, which ignores
+// match_prev_avail (and match_not_bol with it) for '^'.
+#if defined(KTE_USE_PCRE2) || defined(__GLIBCXX__)
+TEST(RegexEngine_CaretOnlyAtSubjectStart)
+{
+	kte::Regex rx;
+	std::string err;
+	ASSERT_TRUE(rx.Compile("^", err));
+	std::size_t pos = 99, len = 99;
+	ASSERT_TRUE(rx.Search("ab", 0, pos, len));
+	ASSERT_EQ(pos, (std::size_t) 0);
+	ASSERT_TRUE(!rx.Search("ab", 1, pos, len));
+	ASSERT_TRUE(!rx.Search("ab", 2, pos, len));
+}
+#endif
 
 
 // With PCRE2, catastrophic backtracking stops at the match limit and says
