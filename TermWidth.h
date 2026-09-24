@@ -8,7 +8,6 @@
 #include <cstddef>
 #include <cwchar>
 #include <string_view>
-#include <vector>
 
 namespace kte {
 // Tab stops every kTabWidth columns, in every frontend and in the command
@@ -69,25 +68,5 @@ MeasureChar(std::string_view line, std::size_t i, std::size_t col, std::size_t &
 		width = tabw - (col % tabw);
 	else
 		width = static_cast<std::size_t>(CellWidth(wch));
-}
-
-
-// The display column at which each byte of `line` is drawn (bytes inside a
-// multi-byte character share its column); out[line.size()] is the line's
-// width. Lets a renderer map byte offsets to columns without rescanning.
-inline void
-DisplayColumns(std::string_view line, std::vector<std::size_t> &out)
-{
-	out.assign(line.size() + 1, 0);
-	std::size_t col = 0;
-	for (std::size_t i = 0; i < line.size();) {
-		std::size_t len = 1, width = 1;
-		MeasureChar(line, i, col, len, width);
-		for (std::size_t k = 0; k < len && i + k < line.size(); ++k)
-			out[i + k] = col;
-		col += width;
-		i += len;
-	}
-	out[line.size()] = col;
 }
 } // namespace kte

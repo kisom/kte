@@ -8,20 +8,6 @@
 
 #include "Highlight.h"
 
-// Cross-frontend theme change request hook: declared here, defined in Command.cc
-namespace kte {
-extern bool gThemeChangePending;
-extern std::string gThemeChangeRequest; // raw user-provided name
-// Font change request hooks and current font state (set by command handlers)
-extern bool gFontChangePending;
-extern std::string gFontFamilyRequest; // requested family (case-insensitive)
-extern float gFontSizeRequest; // <= 0 means keep size
-extern std::string gCurrentFontFamily; // last applied family
-extern float gCurrentFontSize; // last applied size
-// Request to show a visual font dialog (set by command handler)
-extern bool gFontDialogRequested;
-}
-
 #include <imgui.h>
 #include <vector>
 #include <memory>

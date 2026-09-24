@@ -28,7 +28,6 @@ enum class CommandId {
 	OpenFileStart, // begin open-file prompt
 	VisualFilePickerToggle,
 	// GUI-only: toggle/show a visual font selector dialog
-	VisualFontPickerToggle,
 	// Buffers
 	BufferSwitchStart, // begin buffer switch prompt
 	BufferNew, // create a new empty, unnamed buffer (C-k i)

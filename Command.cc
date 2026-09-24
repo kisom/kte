@@ -28,21 +28,6 @@
 #  include "imgui.h"
 #endif
 
-// Define cross-frontend theme change flags declared in GUITheme.h
-namespace kte {
-bool gThemeChangePending = false;
-std::string gThemeChangeRequest;
-// Font change request globals
-bool gFontChangePending = false;
-std::string gFontFamilyRequest;
-float gFontSizeRequest = 0.0f;
-std::string gCurrentFontFamily;
-float gCurrentFontSize = 0.0f;
-// Request a visual font dialog
-bool gFontDialogRequested = false;
-}
-
-
 // UTF-8 aware stepping. Cursor columns are byte offsets; these keep motion
 // and deletion on code point boundaries so a multibyte character is never
 // split. Malformed bytes are treated as single-byte characters.
@@ -425,7 +410,6 @@ allowed_during_prompt(CommandId id)
 	case CommandId::FontZoomOut:
 	case CommandId::FontZoomReset:
 	case CommandId::VisualFilePickerToggle:
-	case CommandId::VisualFontPickerToggle:
 		return true;
 	default:
 		return false;
@@ -1742,7 +1726,7 @@ cmd_set_option(CommandContext &ctx)
 }
 
 
-// GUI theme cycling commands (available in GUI build; ImGui-only for now)
+// GUI theme cycling commands (available in GUI build)
 #if defined(KTE_BUILD_GUI)
 static bool
 cmd_theme_next(CommandContext &ctx)
@@ -1884,37 +1868,13 @@ cmd_font_set_by_name(const CommandContext &ctx)
 static bool
 cmd_font_set_by_name(CommandContext &ctx)
 {
-	// Non-GUI build: record the requested font family
-	std::string name = ctx.arg;
-	// trim
-	auto ltrim = [](std::string &s) {
-		s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
-			return !std::isspace(ch);
-		}));
-	};
-	auto rtrim = [](std::string &s) {
-		s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
-			return !std::isspace(ch);
-		}).base(), s.end());
-	};
-	ltrim(name);
-	rtrim(name);
-	if (name.empty()) {
-		// Show current font when no argument provided
-		std::string cur = kte::gCurrentFontFamily.empty() ? std::string("default") : kte::gCurrentFontFamily;
-		ctx.editor.SetStatus(std::string("Current font: ") + cur);
-		return true;
-	}
-	kte::gFontFamilyRequest = name;
-	// Keep size if not specified by user; signal change
-	kte::gFontChangePending = true;
-	ctx.editor.SetStatus(std::string("Font requested: ") + name);
+	ctx.editor.SetStatus("Fonts are not available in the terminal");
 	return true;
 }
 #endif
 
 
-// Font size set (GUI, ImGui-only for now)
+// Font size set (GUI)
 #if defined(KTE_BUILD_GUI)
 static bool
 cmd_font_set_size(const CommandContext &ctx)
@@ -1974,38 +1934,7 @@ cmd_font_set_size(const CommandContext &ctx)
 static bool
 cmd_font_set_size(CommandContext &ctx)
 {
-	// Non-GUI build: parse size and record the request
-	std::string a = ctx.arg;
-	auto ltrim    = [](std::string &s) {
-		s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
-			return !std::isspace(ch);
-		}));
-	};
-	auto rtrim = [](std::string &s) {
-		s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
-			return !std::isspace(ch);
-		}).base(), s.end());
-	};
-	ltrim(a);
-	rtrim(a);
-	if (a.empty()) {
-		float cur = (kte::gCurrentFontSize > 0.0f) ? kte::gCurrentFontSize : 18.0f;
-		ctx.editor.SetStatus(std::string("Current font size: ") + std::to_string((int) std::round(cur)));
-		return true;
-	}
-	char *endp = nullptr;
-	float size = strtof(a.c_str(), &endp);
-	if (endp == a.c_str() || !std::isfinite(size)) {
-		ctx.editor.SetStatus("font-size: expected number");
-		return true;
-	}
-	if (size < 6.0f)
-		size = 6.0f;
-	if (size > 96.0f)
-		size = 96.0f;
-	kte::gFontSizeRequest   = size;
-	kte::gFontChangePending = true;
-	ctx.editor.SetStatus(std::string("Font size requested: ") + std::to_string((int) std::round(size)));
+	ctx.editor.SetStatus("Fonts are not available in the terminal");
 	return true;
 }
 #endif
@@ -2048,7 +1977,7 @@ cmd_toggle_edit_mode(const CommandContext &ctx)
 }
 
 
-// Background set command (GUI, ImGui-only for now)
+// Background set command (GUI)
 #if defined(KTE_BUILD_GUI)
 static bool
 cmd_background_set(const CommandContext &ctx)
@@ -2218,20 +2147,6 @@ cmd_visual_file_picker_toggle(const CommandContext &ctx)
 	} else {
 		ctx.editor.SetStatus("Closed file picker");
 	}
-	return true;
-}
-
-
-// GUI: request visual font picker (sets a flag for the frontend)
-static bool
-cmd_visual_font_picker_toggle(const CommandContext &ctx)
-{
-#ifdef KTE_BUILD_GUI
-	kte::gFontDialogRequested = true;
-	ctx.editor.SetStatus("Font chooser");
-#else
-	ctx.editor.SetStatus("Font chooser not available in terminal");
-#endif
 	return true;
 }
 
@@ -5626,10 +5541,6 @@ InstallDefaultCommands()
 	CommandRegistry::Register({
 		CommandId::VisualFilePickerToggle, "file-picker-toggle", "Toggle visual file picker",
 		cmd_visual_file_picker_toggle, false, false
-	});
-	CommandRegistry::Register({
-		CommandId::VisualFontPickerToggle, "font-picker-toggle", "Show visual font picker",
-		cmd_visual_font_picker_toggle, false, false
 	});
 	// Working directory
 	CommandRegistry::Register({

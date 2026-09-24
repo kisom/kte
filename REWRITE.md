@@ -848,7 +848,6 @@ pub enum CommandId {
     
     // GUI-specific
     VisualFilePickerToggle,
-    VisualFontPickerToggle,
     ThemeNext,
     ThemePrev,
     ThemeSetByName,
