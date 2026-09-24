@@ -898,3 +898,79 @@ TEST(Audit_ForEachRegexMatch_LongLine)
 	ASSERT_EQ(n, (std::size_t) 1);
 	ASSERT_EQ(total, line.size());
 }
+
+
+// Quit checks every buffer for unsaved changes, not just the current one.
+TEST(Audit_Quit_ChecksAllBuffers)
+{
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	h.Buf().insert_text(0, 0, "unsaved");
+	h.Buf().SetDirty(true);
+	Buffer other;
+	ed.AddBuffer(std::move(other));
+	ed.SwitchTo(ed.BufferCount() - 1);
+	ASSERT_TRUE(!ed.CurrentBuffer()->Dirty());
+	ASSERT_TRUE(h.Exec(CommandId::Quit));
+	ASSERT_TRUE(!ed.QuitRequested());
+	ASSERT_TRUE(h.Exec(CommandId::Quit));
+	ASSERT_TRUE(ed.QuitRequested());
+}
+
+
+// Reload refuses a file deleted on disk and asks before discarding edits.
+TEST(Audit_Reload_ConfirmsAndRefusesDeletedFile)
+{
+	TempDir d("reload_safety");
+	const std::string file = (d.path / "r.txt").string();
+	std::ofstream(file) << "disk\n";
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	std::string err;
+	ASSERT_TRUE(ed.OpenFile(file, err));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "EDIT "));
+	ASSERT_TRUE(h.Exec(CommandId::ReloadBuffer));
+	ASSERT_EQ(h.Line(0), std::string("EDIT disk"));
+	std::filesystem::remove(file);
+	(void) h.Exec(CommandId::ReloadBuffer);
+	(void) h.Exec(CommandId::ReloadBuffer);
+	ASSERT_EQ(h.Line(0), std::string("EDIT disk"));
+}
+
+
+// Closing a dirty buffer: Enter alone at "Save changes?" cancels instead of
+// discarding the edits.
+TEST(Audit_CloseConfirm_EmptyAnswerCancels)
+{
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	h.Buf().insert_text(0, 0, "work");
+	h.Buf().SetDirty(true);
+	const std::size_t n = ed.BufferCount();
+	ASSERT_TRUE(h.Exec(CommandId::BufferClose));
+	ASSERT_TRUE(ed.PromptActive());
+	ASSERT_TRUE(h.Exec(CommandId::Newline));
+	ASSERT_EQ(ed.BufferCount(), n);
+	ASSERT_EQ(h.Text(), std::string("work"));
+}
+
+
+// Save-as onto a file that is open in another buffer is refused (it would
+// leave two buffers, and one journal, for the same file).
+TEST(Audit_SaveAs_FileOpenInOtherBuffer_Refused)
+{
+	TempDir d("saveas_open");
+	std::ofstream(d.path / "y.txt") << "y\n";
+	std::ofstream(d.path / "z.txt") << "z\n";
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	std::string err;
+	ASSERT_TRUE(ed.OpenFile((d.path / "y.txt").string(), err));
+	ASSERT_TRUE(ed.OpenFile((d.path / "z.txt").string(), err));
+	const std::size_t n = ed.BufferCount();
+	(void) Execute(ed, "save-as", (d.path / "y.txt").string());
+	ASSERT_TRUE(!ed.PromptActive());
+	ASSERT_EQ(slurp(d.path / "y.txt"), std::string("y\n"));
+	ASSERT_EQ(ed.BufferCount(), n);
+	ASSERT_EQ(ed.FindOpenBuffer((d.path / "y.txt").string()) != ed.CurrentBufferIndex(), true);
+}

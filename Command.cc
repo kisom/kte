@@ -363,6 +363,17 @@ safe_current_path()
 }
 
 
+// True if `path` is open in a buffer other than the current one. Saving the
+// current buffer there would leave two buffers for one file (sharing, and
+// deleting each other's, swap journal).
+static bool
+open_in_other_buffer(const Editor &ed, const std::string &path)
+{
+	const std::size_t idx = ed.FindOpenBuffer(path);
+	return idx != static_cast<std::size_t>(-1) && idx != ed.CurrentBufferIndex();
+}
+
+
 // True if `path` names the file `buf` is backed by (same inode).
 static bool
 is_buffers_own_file(const Buffer &buf, const std::string &path)
@@ -1018,6 +1029,10 @@ cmd_save_as(CommandContext &ctx)
 		ctx.editor.SetStatus("save-as requires a filename");
 		return false;
 	}
+	if (open_in_other_buffer(ctx.editor, ctx.arg)) {
+		ctx.editor.SetStatus(ctx.arg + " is open in another buffer; save or close that buffer instead");
+		return false;
+	}
 	// Ask before replacing an existing file other than the buffer's own.
 	if (fs_exists(ctx.arg) && !is_buffers_own_file(*buf, ctx.arg)) {
 		ctx.editor.StartPrompt(Editor::PromptKind::Confirm, "Overwrite", "");
@@ -1041,6 +1056,31 @@ cmd_save_as(CommandContext &ctx)
 }
 
 
+static std::string buffer_display_name(const Buffer &b);
+
+
+// Display names of buffers with unsaved changes ("a.txt, b.txt and 2 more"),
+// or empty if none.
+static std::string
+dirty_buffer_names(const Editor &ed)
+{
+	std::vector<std::string> names;
+	for (const auto &b: ed.Buffers()) {
+		if (b.Dirty())
+			names.push_back(buffer_display_name(b));
+	}
+	std::string out;
+	for (std::size_t i = 0; i < names.size() && i < 3; ++i) {
+		if (i > 0)
+			out += ", ";
+		out += names[i];
+	}
+	if (names.size() > 3)
+		out += " and " + std::to_string(names.size() - 3) + " more";
+	return out;
+}
+
+
 static bool
 cmd_quit(CommandContext &ctx)
 {
@@ -1052,9 +1092,12 @@ cmd_quit(CommandContext &ctx)
 		ctx.editor.SetStatus("Quit requested");
 		return true;
 	}
-	// If current buffer exists and is dirty, warn and arm confirmation
-	if (buf && buf->Dirty()) {
-		ctx.editor.SetStatus("Unsaved changes. C-k q to quit without saving");
+	(void) buf;
+	// Any dirty buffer (not only the current one) needs confirmation: quitting
+	// used to drop other buffers' changes without a word.
+	const std::string dirty = dirty_buffer_names(ctx.editor);
+	if (!dirty.empty()) {
+		ctx.editor.SetStatus("Unsaved changes in " + dirty + ". C-k q again to quit without saving");
 		ctx.editor.SetQuitConfirmPending(true);
 		return true;
 	}
@@ -1100,6 +1143,12 @@ cmd_save_and_quit(CommandContext &ctx)
 			ctx.editor.SetStatus("Buffer not file-backed; use save-as before quitting");
 			return false;
 		}
+	}
+	// Other buffers may still hold unsaved changes: do not drop them.
+	const std::string dirty = dirty_buffer_names(ctx.editor);
+	if (!dirty.empty()) {
+		ctx.editor.SetStatus("Saved; unsaved changes remain in " + dirty + ". Not quitting");
+		return true;
 	}
 	ctx.editor.SetStatus("Save and quit requested");
 	ctx.editor.SetQuitRequested(true);
@@ -1988,7 +2037,7 @@ cmd_buffer_close(const CommandContext &ctx)
 	if (b && b->Dirty()) {
 		ctx.editor.StartPrompt(Editor::PromptKind::Confirm, "Save", "");
 		ctx.editor.SetCloseConfirmPending(true);
-		ctx.editor.SetStatus(std::string("Save changes to ") + name + "? (y/N)");
+		ctx.editor.SetStatus(std::string("Save changes to ") + name + "? (y/n, C-g cancel)");
 		return true;
 	}
 	// Otherwise close immediately
@@ -2957,7 +3006,9 @@ cmd_newline(CommandContext &ctx)
 					value = expand_user_path(value);
 					// Ask before overwriting any existing file other than the
 					// buffer's own (it used to ask only for unnamed buffers).
-					if (fs_exists(value) && !is_buffers_own_file(*buf, value)) {
+					if (open_in_other_buffer(ctx.editor, value)) {
+						ctx.editor.SetStatus(value + " is open in another buffer; save or close that buffer instead");
+					} else if (fs_exists(value) && !is_buffers_own_file(*buf, value)) {
 						ctx.editor.StartPrompt(Editor::PromptKind::Confirm, "Overwrite", "");
 						ctx.editor.SetPendingOverwritePath(value);
 						ctx.editor.SetStatus(
@@ -3061,20 +3112,38 @@ cmd_newline(CommandContext &ctx)
 				// Regardless of answer, end any close-after-save pending state for safety.
 				ctx.editor.SetCloseAfterSave(false);
 			} else if (ctx.editor.PendingRecoveryPrompt() != Editor::RecoveryPromptKind::None) {
-				bool yes = false;
-				if (!value.empty()) {
-					char c = value[0];
-					yes    = (c == 'y' || c == 'Y');
+				const char c = value.empty() ? '\0' : value[0];
+				const bool yes = (c == 'y' || c == 'Y');
+				const bool no  = (c == 'n' || c == 'N');
+				// "Discard" deletes the crash journal, so it takes an explicit
+				// 'n'. Enter or any other key (e.g. typing that was meant for the
+				// buffer when the prompt appeared) cancels, keeping the journal.
+				if (!yes && !no &&
+				    ctx.editor.PendingRecoveryPrompt() == Editor::RecoveryPromptKind::RecoverOrDiscard) {
+					ctx.editor.CancelRecoveryPrompt();
+					ctx.editor.CancelPrompt();
+					ctx.editor.SetStatus("Recovery canceled; swap file kept (answer y or n)");
+					return true;
 				}
 				(void) ctx.editor.ResolveRecoveryPrompt(yes);
 				ctx.editor.CancelPrompt();
 				// Continue any queued opens (e.g., startup argv files).
 				ctx.editor.ProcessPendingOpens();
 			} else if (ctx.editor.CloseConfirmPending() && buf) {
-				bool yes = false;
-				if (!value.empty()) {
-					char c = value[0];
-					yes    = (c == 'y' || c == 'Y');
+				const char c = value.empty() ? '\0' : value[0];
+				const bool yes = (c == 'y' || c == 'Y');
+				// Closing without saving discards the edits (and their journal),
+				// so it takes an explicit 'n'; anything else cancels the close.
+				if (!yes && c != 'n' && c != 'N') {
+					ctx.editor.SetCloseConfirmPending(false);
+					ctx.editor.SetStatus("Close canceled (answer y or n)");
+					return true;
+				}
+				// Saving here must not silently overwrite changes made on disk.
+				if (yes && buf->IsFileBacked() && buf->ExternallyModifiedOnDisk()) {
+					ctx.editor.SetCloseConfirmPending(false);
+					ctx.editor.SetStatus("File changed on disk; not saved or closed. Save with C-k s to confirm overwriting");
+					return true;
 				}
 				// Prepare close details
 				std::size_t idx_close  = ctx.editor.CurrentBufferIndex();
@@ -5283,6 +5352,22 @@ cmd_reload_buffer(CommandContext &ctx)
 		ctx.editor.SetStatus("Cannot reload unnamed buffer");
 		return false;
 	}
+	// Reloading a file that is gone would replace the buffer with nothing.
+	if (!fs_exists(filename)) {
+		ctx.editor.SetStatus("File no longer exists on disk; not reloading " + filename);
+		return false;
+	}
+	// Reload discards unsaved edits (and their undo history and journal), so
+	// a dirty buffer needs a second C-k l with no edit in between.
+	static const Buffer *confirm_buf     = nullptr;
+	static std::uint64_t confirm_version = 0;
+	if (buf->Dirty() && !(confirm_buf == buf && confirm_version == buf->Version())) {
+		confirm_buf     = buf;
+		confirm_version = buf->Version();
+		ctx.editor.SetStatus("Unsaved changes will be lost. C-k l again to reload anyway");
+		return true;
+	}
+	confirm_buf = nullptr;
 	std::string err;
 	if (!buf->OpenFromFile(filename, err)) {
 		ctx.editor.SetStatus(std::string("Reload failed: ") + err);
