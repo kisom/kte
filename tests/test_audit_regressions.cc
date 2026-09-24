@@ -1532,3 +1532,88 @@ TEST(Audit_Swap_LongBasenameStillJournaled)
 	sm.Detach(&a, true);
 	ASSERT_TRUE(!std::filesystem::exists(swp));
 }
+
+
+// Indenting a region leaves empty lines alone: with the whole buffer
+// selected, the empty row after the final newline became a tab-only line.
+TEST(Audit_IndentRegion_SkipsEmptyLines)
+{
+	TestHarness h;
+	h.Buf().insert_text(0, 0, "a\n\nb\n");
+	h.Buf().SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::MarkAllAndJumpEnd));
+	ASSERT_TRUE(h.Exec(CommandId::IndentRegion));
+	ASSERT_EQ(h.Text(), std::string("\ta\n\n\tb\n"));
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), std::string("a\n\nb\n"));
+}
+
+
+// Reflow never wraps before a line's first word: a first word longer than
+// the width produced a prefix-only line (another one on each reflow).
+TEST(Audit_Reflow_LongFirstWordNoBlankLine)
+{
+	const std::string url = "https://example.com/" + std::string(70, 'x');
+	{
+		TestHarness h;
+		h.Buf().insert_text(0, 0, "see:\n\n" + url + " is the link\n");
+		h.Buf().SetCursor(0, 2);
+		ASSERT_TRUE(h.Exec(CommandId::ReflowParagraph));
+		ASSERT_TRUE(h.Exec(CommandId::ReflowParagraph));
+		ASSERT_EQ(h.Text(), std::string("see:\n\n" + url + "\nis the link\n"));
+	}
+	{
+		TestHarness h;
+		h.Buf().insert_text(0, 0, "- " + url + " x\n");
+		h.Buf().SetCursor(0, 0);
+		ASSERT_TRUE(h.Exec(CommandId::ReflowParagraph));
+		ASSERT_EQ(h.Text(), std::string("- " + url + "\n  x\n"));
+	}
+}
+
+
+// A whitespace-only line separates paragraphs, and CRLF lines keep their
+// CR at the end of each reflowed line.
+TEST(Audit_Reflow_BlankishSeparatorAndCrlf)
+{
+	{
+		TestHarness h;
+		h.Buf().insert_text(0, 0, "First paragraph.\n  \nSecond paragraph.\n");
+		h.Buf().SetCursor(0, 0);
+		ASSERT_TRUE(h.Exec(CommandId::ReflowParagraph));
+		ASSERT_EQ(h.Text(), std::string("First paragraph.\n  \nSecond paragraph.\n"));
+	}
+	{
+		TestHarness h;
+		h.Buf().insert_text(0, 0, "one two\r\nthree four\r\nfive\r\n\r\nnext\r\n");
+		h.Buf().SetCursor(0, 0);
+		ASSERT_TRUE(h.Exec(CommandId::ReflowParagraph));
+		ASSERT_EQ(h.Text(), std::string("one two three four five\r\n\r\nnext\r\n"));
+		ASSERT_TRUE(h.Undo());
+		ASSERT_EQ(h.Text(), std::string("one two\r\nthree four\r\nfive\r\n\r\nnext\r\n"));
+	}
+}
+
+
+// A counted backspace or delete that joins lines undoes in one step.
+TEST(Audit_CountedDelete_AcrossJoin_OneUndo)
+{
+	{
+		TestHarness h;
+		h.Buf().insert_text(0, 0, "abc\nde");
+		h.Buf().SetCursor(1, 1);
+		ASSERT_TRUE(h.Exec(CommandId::Backspace, "", 3));
+		ASSERT_EQ(h.Text(), std::string("abe"));
+		ASSERT_TRUE(h.Undo());
+		ASSERT_EQ(h.Text(), std::string("abc\nde"));
+	}
+	{
+		TestHarness h;
+		h.Buf().insert_text(0, 0, "abc\nde");
+		h.Buf().SetCursor(2, 0);
+		ASSERT_TRUE(h.Exec(CommandId::DeleteChar, "", 3));
+		ASSERT_EQ(h.Text(), std::string("abe"));
+		ASSERT_TRUE(h.Undo());
+		ASSERT_EQ(h.Text(), std::string("abc\nde"));
+	}
+}

@@ -463,6 +463,20 @@ before the fix (unless noted).
   exactly 255 bytes, which broke compaction's ".tmp" sibling and let
   the journal grow without bound; it now leaves room for it.)
 
+**Seventh round (highlighters, region and paragraph commands, buffers)**
+- Indent-region on a selection ending in the empty row after a final
+  newline added a tab-only last line (empty lines are now skipped).
+- Reflow emitted a prefix-only line before a first word longer than the
+  width (a blank line before a long URL, a bullet split from its text),
+  adding another on every reflow; joined paragraphs separated by a
+  whitespace-only line; and moved the CRs of CRLF lines into the middle
+  of lines.
+- A counted backspace/delete that joined lines took several undos.
+- The C++ highlighter scanned to the end of the line for a raw-string
+  '(' at every R", quadratic on long lines.
+- Fuzzing every highlighter (incremental vs full), 20,000 random command
+  sequences, and 6,300 random buffer-list sessions found nothing else.
+
 **Known limitations (not fixed)**
 - Catastrophic regex backtracking (e.g. `(a*)*b`) can still take very
   long; std::regex has no time limit.
