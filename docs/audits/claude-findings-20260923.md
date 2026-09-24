@@ -325,7 +325,7 @@ Updated as fixes land on `claude/funny-fermat-gj2vm5`.
 | B7 | fixed: spans are widened to whole UTF-8 characters before the GUIs draw them (`SanitizeSpans`) |
 | B8 | fixed: a text-event suppression lasts only until the next key press |
 | B9 | fixed: C0 controls and DEL drawn and measured as two-cell caret notation (`TermWidth.h`) |
-| B10 | fixed: one tab width (`kte::kTabWidth`); Qt draws by the command layer's display columns |
+| B10 | fixed: one tab width (`kte::kTabWidth`); the Qt frontend has since been removed |
 | B13 | open (highlighter edge cases) |
 | B11 | fixed: SmartNewline with a prompt open delegates to Newline |
 | B12 | fixed: merged appends invalidate the line index |
@@ -575,6 +575,11 @@ before the fix (unless noted).
 **Known limitations (not fixed)**
 - Without PCRE2 (std::regex builds), catastrophic regex backtracking
   can still take very long; std::regex has no limit.
+- Without PCRE2 on libc++ (macOS), '^' also matches where a search
+  resumes inside a line (libc++ ignores match_prev_avail, and
+  match_not_bol with it, for '^'), and '\b' never matches at the end of
+  a line. Search_NextPrevVisitReferenceMatches fails in that
+  configuration; the default macOS build uses PCRE2.
 - Typing in a multi-megabyte single line costs O(line length) per
   keystroke (cursor column computed by scanning the line).
 - Highlighter edge cases B13 are unchanged. (B7, B8 and B10 were fixed
@@ -646,4 +651,28 @@ UTF-8, syntax colouring and search highlights.
   highlighters copy each line; both are modest next to the file itself.
 - A long run of backspaces grows its undo record by prepending (quadratic
   only in the length of one typed run).
+
+---
+
+## Follow-up: macOS build and Qt removal (2026-09-24)
+
+The gate had only run on Linux (as root). On macOS it failed three
+tests and the app bundle could not start.
+
+- kge stopped at launch with "Failed loading SDL3 library": Homebrew's
+  sdl2 is sdl2-compat, which dlopen()s SDL3, and the bundle fixup copies
+  only linked libraries. SDL3 is now bundled when sdl2-compat is.
+- Saving lost setuid/setgid when not running as root: writing the data
+  clears them, and the mode was applied before the write. Ownership and
+  mode now go on after the data; in-place writes restore the mode.
+- Two tests used libc++'s std::regex as the reference, which misses
+  '\b' at the end of the subject and ignores match_prev_avail for '^'.
+- After C-k, pressing Shift (for C-k C, C-k ^ or a shifted symbol) or
+  pressing Ctrl again (C-k C-d) ended the prefix as an unknown command
+  in kge; modifier keys alone are now ignored there (checked with
+  synthetic SDL key events against kge's objects).
+- The Qt frontend was removed: unused, out of make-app-release since
+  March, not built by the gate, and its bundle could not start (no
+  platform plugin). Every renderer and input change had to be made in
+  it separately.
 
