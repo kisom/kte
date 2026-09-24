@@ -24,6 +24,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <random>
+#include <regex>
 #include <set>
 #include <vector>
 #include <clocale>
@@ -888,17 +889,20 @@ TEST(Audit_Commands_FilesystemErrorsDoNotThrow)
 }
 
 
-// Renderer regex highlighting on a long line with a deeply recursive pattern
-// (overflowed an 8 MiB stack at under 10,000 bytes) runs off the main stack.
-TEST(Audit_ForEachRegexMatch_LongLine)
+// std::regex on a long line with a deeply recursive pattern (overflowed an
+// 8 MiB stack at under 10,000 bytes) completes on the large stack.
+TEST(Audit_RunWithLargeStack_LongLine)
 {
 	std::string line;
 	while (line.size() < 200000)
 		line += "word, more words; and so on. ";
 	std::size_t n = 0, total = 0;
-	kte::ForEachRegexMatch(line, std::regex("(\\w|\\s|[.,;])+"), [&](std::size_t, std::size_t len) {
-		++n;
-		total += len;
+	const std::regex rx("(\\w|\\s|[.,;])+");
+	kte::RunWithLargeStack([&] {
+		for (auto it = std::sregex_iterator(line.begin(), line.end(), rx); it != std::sregex_iterator(); ++it) {
+			++n;
+			total += static_cast<std::size_t>(it->length());
+		}
 	});
 	ASSERT_EQ(n, (std::size_t) 1);
 	ASSERT_EQ(total, line.size());

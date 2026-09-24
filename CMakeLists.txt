@@ -197,6 +197,7 @@ set(COMMON_SOURCES
         ErrorRecovery.cc
         RegexGuard.cc
         RegexEngine.cc
+        SearchHighlight.cc
         TerminalInputHandler.cc
         TerminalRenderer.cc
         TerminalFrontend.cc
@@ -296,6 +297,7 @@ set(COMMON_HEADERS
         TestFrontend.h
         TextSpan.h
         RegexEngine.h
+        SearchHighlight.h
         UndoNode.h
         UndoTree.h
         UndoSystem.h
@@ -413,6 +415,7 @@ if (BUILD_TESTS)
             ErrorRecovery.cc
             RegexGuard.cc
             RegexEngine.cc
+            SearchHighlight.cc
             KKeymap.cc
             SwapRecorder.h
             OptimizedSearch.cc

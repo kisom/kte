@@ -2,6 +2,8 @@
 
 #include <regex>
 
+#include "RegexGuard.h"
+
 #if defined(KTE_USE_PCRE2)
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h>
@@ -223,6 +225,13 @@ Regex::LimitHit() const
 }
 
 
+void
+Regex::RunGuarded(const std::function<void()> &fn)
+{
+	fn();
+}
+
+
 const char *
 Regex::EngineName()
 {
@@ -308,6 +317,13 @@ bool
 Regex::LimitHit() const
 {
 	return false;
+}
+
+
+void
+Regex::RunGuarded(const std::function<void()> &fn)
+{
+	RunWithLargeStack(fn);
 }
 
 

@@ -1,5 +1,5 @@
 #include "QtFrontend.h"
-#include "RegexGuard.h"
+#include "SearchHighlight.h"
 
 #include <QApplication>
 #include <QWidget>
@@ -14,7 +14,6 @@
 #include <QPainter>
 #include <QPaintEvent>
 #include <QWheelEvent>
-#include <regex>
 
 #include "Editor.h"
 #include "Command.h"
@@ -142,6 +141,10 @@ protected:
 				p.save();
 				p.setClipRect(viewport);
 
+				// Search matches: the pattern is compiled once per frame.
+				const kte::SearchHighlight search_hl(*ed_);
+				std::vector<std::pair<std::size_t, std::size_t> > hl_src_ranges;
+
 				// Iterate visible lines
 				for (std::size_t i = rowoffs, vis_idx = 0; i < last_row; ++i, ++vis_idx) {
 					// Get line as string for regex/iterator usage and general string ops.
@@ -159,34 +162,8 @@ protected:
 					};
 
 					// Search-match background highlights first (under text)
-					if (ed_->SearchActive() && !ed_->SearchQuery().empty()) {
-						std::vector<std::pair<std::size_t, std::size_t> > hl_src_ranges;
-						// Compute ranges per line (source indices)
-						if (ed_->PromptActive() &&
-						    (ed_->CurrentPromptKind() == Editor::PromptKind::RegexSearch ||
-						     ed_->CurrentPromptKind() ==
-						     Editor::PromptKind::RegexReplaceFind)) {
-							// std::regex recursion is kept off the main stack for long
-							// lines (RegexGuard.h); very long lines are not highlighted.
-							if (line.size() <= kte::kRegexRenderLineLimit) try {
-								std::regex rx(ed_->SearchQuery());
-								kte::ForEachRegexMatch(line, rx, [&](std::size_t pos, std::size_t len) {
-									hl_src_ranges.emplace_back(pos, pos + len);
-								});
-							} catch (const std::regex_error &) {
-								// Invalid regex: ignore, status line already shows errors
-							}
-						} else {
-							const std::string &q = ed_->SearchQuery();
-							if (!q.empty()) {
-								std::size_t pos = 0;
-								while ((pos = line.find(q, pos)) != std::string::npos) {
-									hl_src_ranges.emplace_back(pos, pos + q.size());
-									pos += q.size();
-								}
-							}
-						}
-
+					if (search_hl.Active()) {
+						search_hl.Ranges(line, hl_src_ranges);
 						if (!hl_src_ranges.empty()) {
 							const bool has_current =
 								ed_->SearchMatchLen() > 0 && ed_->SearchMatchY() == i;
