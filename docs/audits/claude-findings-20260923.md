@@ -322,7 +322,11 @@ Updated as fixes land on `claude/funny-fermat-gj2vm5`.
 | B4 | not changed: C-h is a deliberate binding (search & replace); terminals whose terminfo `kbs` is ^H are translated to KEY_BACKSPACE by ncurses |
 | B5 | fixed: backspace/delete/left/right step over whole UTF-8 characters; up/down snap to a boundary |
 | B6 | fixed: horizontal scroll and mouse column use display cells (mbrtowc/wcwidth) |
-| B7–B10, B13 | open (GUI-only or highlighter edge cases) |
+| B7 | fixed: spans are widened to whole UTF-8 characters before the GUIs draw them (`SanitizeSpans`) |
+| B8 | fixed: a text-event suppression lasts only until the next key press |
+| B9 | fixed: C0 controls and DEL drawn and measured as two-cell caret notation (`TermWidth.h`) |
+| B10 | fixed: one tab width (`kte::kTabWidth`); Qt draws by the command layer's display columns |
+| B13 | open (highlighter edge cases) |
 | B11 | fixed: SmartNewline with a prompt open delegates to Newline |
 | B12 | fixed: merged appends invalidate the line index |
 | P1 | fixed: `ensure_cursor_visible` and the terminal/ImGui renderers no longer call `Rows()` |
@@ -330,7 +334,7 @@ Updated as fixes land on `claude/funny-fermat-gj2vm5`.
 | P3 | fixed: highlighting invalidated from the edited row (46 ms -> 0.14 ms per keystroke near the end of a 100k-line C++ file) |
 | P4 | fixed: replace-all, delete-region, indent/unindent and visual-line edits each apply as one edit |
 | P5 | fixed: no throwaway checkpoint on filename change |
-| P6 | open (test-only code) |
+| P6 | moot: `OptimizedSearch` was test-only and has been removed |
 
 Regression tests: `tests/test_audit_regressions.cc`. Each test fails on the
 unfixed code (M4 by crashing).
@@ -573,11 +577,73 @@ before the fix (unless noted).
   can still take very long; std::regex has no limit.
 - Typing in a multi-megabyte single line costs O(line length) per
   keystroke (cursor column computed by scanning the line).
-- GUI-only items B7, B8, B10 and highlighter edge cases B13 are
-  unchanged; the ImGui and Qt frontends could not be built in the review
-  environment (changed GUI files were syntax-checked where possible).
+- Highlighter edge cases B13 are unchanged. (B7, B8 and B10 were fixed
+  in the debt pass below, once the GUIs could be built and run.)
 - Journals are created at the first edit, so a second kte that opens
   the file before the first one edits it is not warned at open; the
   session that is locked out is told at its first edit instead.
 - A regex that matches rarely or not at all scans the whole buffer
   (0.1 s on 105 MB with PCRE2, 1.6 s with std::regex).
+
+---
+
+## Debt and performance pass (2026-09-24)
+
+After the merge of the fixes above. Both GUI frontends (ImGui and Qt) were
+built in this environment and checked by screenshot under Xvfb; the ImGui
+renderer changes are pixel-identical to before on a sample with tabs,
+UTF-8, syntax colouring and search highlights.
+
+**Performance**
+- Typing near the top of a large file: each edit shifted every later line
+  start. The shift is now pending and applied on read; piece lookup
+  binary-searches prefix sums instead of walking the piece list. Typing on
+  line 10 of a 1M-line file, with a frame's worth of line reads per
+  keystroke: 0.52 -> 0.017 ms.
+- A loaded file is adopted as the piece table's original storage: the
+  first keystroke no longer copies the whole file (140 ms at 200 MB), and
+  the read buffer is not copied again. Save writes the pieces instead of
+  materializing a second full copy that then stayed resident. An unedited
+  (single-piece) buffer is viewed in place; `GetLineView` no longer copies
+  the whole buffer after an edit when the line lies within one piece.
+- Line reads decide "ends with a newline" from the line index instead of
+  fetching the last byte; the index is rebuilt with `memchr`.
+- ImGui measured every span and the cursor from column 0 of the line
+  (quadratic on long lines); the terminal renderer rescanned spans per
+  byte; Qt compiled a `std::regex` per visible line per frame. All now
+  linear, with search-match ranges computed by one shared
+  `SearchHighlight`.
+- The highlighter engine returns cached spans by reference and no longer
+  `dynamic_cast`s per call.
+
+**Bugs found on the way**
+- Qt: operators were drawn in the dark background colour (invisible);
+  tabs were 4 columns against the command layer's 8; text after a
+  multi-byte character was placed one column per byte; the editor's
+  column count was computed three different ways from painting and the
+  cell width was rounded, so on long lines the cursor drifted off the
+  text. Unhighlighted text between spans is now drawn.
+- B7, B8 (above).
+
+**Debt removed**
+- `Buffer::Rows()` and the `Line` wrapper (tests use `GetLineString` or a
+  test-only `LinesForTests()`); `OptimizedSearch`, `UndoNodePool.h`, the
+  unused swap SPLIT/JOIN writers and several unused Editor/Buffer/PieceTable
+  members; mutexes that guarded only reads in single-threaded classes
+  (the claim that PieceTable reads were thread-safe was false).
+- Consolidated: filetype detection and highlighter installation
+  (`Buffer::ApplyDetectedFiletype`, `InstallFiletypeHighlighter`), whole
+  buffer copies (`Buffer::Bytes`), character measurement
+  (`kte::MeasureChar`, `DisplayColumns`), span sanitizing
+  (`kte::SanitizeSpans`), word motion scans, the search reset, and the
+  regex engine's stack policy (`kte::Regex::RunGuarded`).
+
+**Left as is**
+- The C-k / ESC-meta / universal-argument key state machine is still
+  written once per frontend; unifying it is a behavioural change best done
+  with its own tests.
+- The highlighter keeps one line state per row (about 40 bytes each) and
+  highlighters copy each line; both are modest next to the file itself.
+- A long run of backspaces grows its undo record by prepending (quadratic
+  only in the length of one typed run).
+
