@@ -265,7 +265,6 @@ ensure_cursor_visible(const Editor &ed, Buffer &buf)
 	}
 
 	buf.SetOffsets(rowoffs, coloffs);
-	buf.SetRenderX(rx);
 }
 
 
@@ -3051,7 +3050,6 @@ cmd_show_help(CommandContext &ctx)
 		b.SetDirty(false);
 		b.SetCursor(0, 0);
 		b.SetOffsets(0, 0);
-		b.SetRenderX(0);
 	};
 
 	if (help_index != static_cast<std::size_t>(-1)) {

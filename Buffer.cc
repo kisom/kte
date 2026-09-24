@@ -347,7 +347,6 @@ Buffer::Buffer(const Buffer &other)
 {
 	curx_             = other.curx_;
 	cury_             = other.cury_;
-	rx_               = other.rx_;
 	nrows_            = other.nrows_;
 	rowoffs_          = other.rowoffs_;
 	coloffs_          = other.coloffs_;
@@ -401,7 +400,6 @@ Buffer::operator=(const Buffer &other)
 		return *this;
 	curx_             = other.curx_;
 	cury_             = other.cury_;
-	rx_               = other.rx_;
 	nrows_            = other.nrows_;
 	rowoffs_          = other.rowoffs_;
 	coloffs_          = other.coloffs_;
@@ -450,7 +448,6 @@ Buffer::operator=(const Buffer &other)
 Buffer::Buffer(Buffer &&other) noexcept
 	: curx_(other.curx_),
 	  cury_(other.cury_),
-	  rx_(other.rx_),
 	  nrows_(other.nrows_),
 	  rowoffs_(other.rowoffs_),
 	  coloffs_(other.coloffs_),
@@ -502,7 +499,6 @@ Buffer::operator=(Buffer &&other) noexcept
 
 	curx_                 = other.curx_;
 	cury_                 = other.cury_;
-	rx_                   = other.rx_;
 	nrows_                = other.nrows_;
 	rowoffs_              = other.rowoffs_;
 	coloffs_              = other.coloffs_;
@@ -593,7 +589,7 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 		dirty_          = false;
 
 		// Reset cursor/viewport state
-		curx_      = cury_    = rx_ = 0;
+		curx_      = cury_    = 0;
 		rowoffs_   = coloffs_ = 0;
 		mark_set_  = false;
 		mark_curx_ = mark_cury_ = 0;
@@ -687,7 +683,7 @@ Buffer::OpenFromFile(const std::string &path, std::string &err)
 	MarkContentChanged();
 
 	// Reset cursor/viewport state
-	curx_      = cury_    = rx_ = 0;
+	curx_      = cury_    = 0;
 	rowoffs_   = coloffs_ = 0;
 	mark_set_  = false;
 	mark_curx_ = mark_cury_ = 0;

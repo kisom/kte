@@ -24,6 +24,7 @@ namespace kte {
 enum class SwapRecType : std::uint8_t {
 	INS = 1,
 	DEL = 2,
+	// SPLIT and JOIN are no longer written; replay still reads them.
 	SPLIT = 3,
 	JOIN = 4,
 	META = 0xF0,
@@ -212,10 +213,6 @@ private:
 	void RecordInsert(Buffer &buf, int row, int col, std::string_view text);
 
 	void RecordDelete(Buffer &buf, int row, int col, std::size_t len);
-
-	void RecordSplit(Buffer &buf, int row, int col);
-
-	void RecordJoin(Buffer &buf, int row);
 
 	void RecordCheckpoint(Buffer &buf, bool urgent_flush);
 

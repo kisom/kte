@@ -10,13 +10,6 @@
 PieceTable::PieceTable() = default;
 
 
-PieceTable::PieceTable(const std::size_t initialCapacity)
-{
-	add_.reserve(initialCapacity);
-	materialized_.reserve(initialCapacity);
-}
-
-
 PieceTable::PieceTable(const std::size_t initialCapacity,
                        const std::size_t piece_limit,
                        const std::size_t small_piece_threshold,
@@ -107,14 +100,6 @@ PieceTable::operator=(PieceTable &&other) noexcept
 
 
 PieceTable::~PieceTable() = default;
-
-
-void
-PieceTable::Reserve(const std::size_t newCapacity)
-{
-	add_.reserve(newCapacity);
-	materialized_.reserve(newCapacity);
-}
 
 
 // Setter to allow tuning consolidation heuristics
@@ -417,12 +402,10 @@ PieceTable::RebuildLineIndex() const
 		const std::string &src = pc.src == Source::Original ? original_ : add_;
 		const char *base       = src.data() + static_cast<std::ptrdiff_t>(pc.start);
 
-		for (std::size_t j = 0; j < pc.len; ++j) {
-			if (base[j] == '\n') {
-				// next line starts after the newline
-				line_index_.push_back(pos + j + 1);
-			}
-		}
+		const char *end        = base + pc.len;
+		// The next line starts after each newline.
+		for (const char *p = base; (p = static_cast<const char *>(std::memchr(p, '\n', end - p))) != nullptr; ++p)
+			line_index_.push_back(pos + static_cast<std::size_t>(p - base) + 1);
 
 		pos += pc.len;
 	}
@@ -800,14 +783,10 @@ PieceTable::GetLine(std::size_t line_num) const
 	auto [start, end] = GetLineRange(line_num);
 	if (end < start)
 		return std::string();
-	// Trim trailing '\n'
-	if (end > start) {
-		// To check last char, we can get it via GetRange of len 1 at end-1 without materializing whole
-		std::string last = GetRange(end - 1, 1);
-		if (!last.empty() && last[0] == '\n') {
-			end -= 1;
-		}
-	}
+	// Every line but the last ends at a newline (each newline starts an
+	// index entry); leave it out.
+	if (end > start && line_num + 1 < line_index_.size())
+		end -= 1;
 	return GetRange(start, end - start);
 }
 
@@ -837,13 +816,10 @@ PieceTable::LineColToByteOffset(std::size_t row, std::size_t col) const
 		return total_size_;
 	std::size_t start = line_index_[row];
 	std::size_t end   = (row + 1 < line_index_.size()) ? line_index_[row + 1] : total_size_;
-	// Clamp col to line length excluding trailing newline
-	if (end > start) {
-		std::string last = GetRange(end - 1, 1);
-		if (!last.empty() && last[0] == '\n') {
-			end -= 1;
-		}
-	}
+	// Clamp col to the line's length without its newline (every line but
+	// the last has one).
+	if (end > start && row + 1 < line_index_.size())
+		end -= 1;
 	std::size_t target = start + std::min(col, end - start);
 	return target;
 }

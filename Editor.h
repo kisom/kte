@@ -79,19 +79,6 @@ public:
 	}
 
 
-	// Mode and flags (mirroring legacy fields)
-	void SetMode(int m)
-	{
-		mode_ = m;
-	}
-
-
-	[[nodiscard]] int Mode() const
-	{
-		return mode_;
-	}
-
-
 	void SetKillChain(bool on)
 	{
 		kill_ = on ? 1 : 0;
@@ -101,18 +88,6 @@ public:
 	[[nodiscard]] bool KillChain() const
 	{
 		return kill_ != 0;
-	}
-
-
-	void SetNoKill(bool on)
-	{
-		no_kill_ = on ? 1 : 0;
-	}
-
-
-	[[nodiscard]] bool NoKill() const
-	{
-		return no_kill_ != 0;
 	}
 
 
@@ -164,18 +139,6 @@ public:
 	}
 
 
-	void SetDirtyEx(int d)
-	{
-		dirtyex_ = d;
-	}
-
-
-	[[nodiscard]] int DirtyEx() const
-	{
-		return dirtyex_;
-	}
-
-
 	void SetUniversalArg(int uarg, int ucount)
 	{
 		uarg_   = uarg;
@@ -186,12 +149,6 @@ public:
 	[[nodiscard]] int UArg() const
 	{
 		return uarg_;
-	}
-
-
-	[[nodiscard]] int UCount() const
-	{
-		return ucount_;
 	}
 
 
@@ -208,19 +165,6 @@ public:
 	// Consume the current universal argument, returning count >= 1.
 	// If no universal argument active, returns 1.
 	int UArgGet();
-
-	// Repeatable command flag: input layer can mark the next command as repeatable
-	void SetRepeatable(bool on)
-	{
-		repeatable_ = on;
-	}
-
-
-	[[nodiscard]] bool Repeatable() const
-	{
-		return repeatable_;
-	}
-
 
 	// Status message storage. Rendering is renderer-dependent; the editor
 	// merely stores the current message and its timestamp.
@@ -666,14 +610,10 @@ private:
 	};
 
 	std::size_t rows_ = 0, cols_ = 0;
-	int mode_         = 0;
 	int kill_         = 0; // KILL CHAIN
-	int no_kill_      = 0; // don't kill in delete_row
-	int dirtyex_      = 0;
 	std::string msg_;
 	std::time_t msgtm_ = 0;
 	int uarg_          = 0, ucount_ = 0; // C-u support
-	bool repeatable_   = false; // whether the next command is repeatable
 
 	std::vector<Buffer> buffers_;
 	std::vector<Buffer> *shared_buffers_ = nullptr; // if set, use this instead of buffers_

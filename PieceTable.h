@@ -52,8 +52,6 @@ class PieceTable {
 public:
 	PieceTable();
 
-	explicit PieceTable(std::size_t initialCapacity);
-
 	// Advanced constructor allowing configuration of consolidation heuristics
 	PieceTable(std::size_t initialCapacity,
 	           std::size_t piece_limit,
@@ -69,9 +67,6 @@ public:
 	PieceTable &operator=(PieceTable &&other) noexcept;
 
 	~PieceTable();
-
-	// Public API mirrors GapBuffer
-	void Reserve(std::size_t newCapacity);
 
 	void AppendChar(char c);
 
@@ -106,13 +101,6 @@ public:
 	[[nodiscard]] std::size_t Size() const
 	{
 		return total_size_;
-	}
-
-
-	[[nodiscard]] std::size_t Capacity() const
-	{
-		// Capacity for piece table isn't directly meaningful; report materialized capacity
-		return materialized_.capacity();
 	}
 
 

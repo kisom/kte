@@ -728,15 +728,11 @@ void
 Editor::Reset()
 {
 	rows_    = cols_ = 0;
-	mode_    = 0;
 	kill_    = 0;
-	no_kill_ = 0;
-	dirtyex_ = 0;
 	msg_.clear();
 	msgtm_                = 0;
 	uarg_                 = 0;
 	ucount_               = 0;
-	repeatable_           = false;
 	quit_requested_       = false;
 	quit_confirm_pending_ = false;
 	// Reset close-confirm/save state
