@@ -2,6 +2,7 @@
  * TerminalFrontend - couples TerminalInputHandler + TerminalRenderer and owns ncurses lifecycle
  */
 #pragma once
+#include <chrono>
 #include <termios.h>
 #include <signal.h>
 
@@ -32,6 +33,9 @@ private:
 	TerminalRenderer renderer_{};
 	int prev_r_ = 0;
 	int prev_c_ = 0;
+	// Redraw only when something may have changed (see Step).
+	bool first_frame_ = true;
+	std::chrono::steady_clock::time_point last_draw_{};
 	// Saved terminal attributes to restore on shutdown
 	bool have_orig_tio_ = false;
 	struct termios orig_tio_{};

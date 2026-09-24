@@ -346,8 +346,8 @@ SwapManager::Rehome(Buffer *old_addr, Buffer *new_addr)
 void
 SwapManager::Attach(Buffer *buf)
 {
-	if (!buf)
-		return;
+	if (!buf || buf->IsVirtual())
+		return; // e.g. +HELP+: nothing to recover, and its name is not a path
 	std::lock_guard<std::mutex> lg(mtx_);
 	const bool fresh = journals_.find(buf) == journals_.end();
 	JournalCtx &ctx  = journals_[buf];

@@ -20,6 +20,15 @@ public:
 
 	bool Poll(MappedInput &out) override;
 
+	// Read one key if available. Returns false when no input was read; true
+	// when a key was consumed (out.hasCommand says whether it produced a
+	// command: prefixes such as C-k or ESC do not).
+	bool PollKey(MappedInput &out)
+	{
+		out = {};
+		return decode_(out);
+	}
+
 private:
 	bool decode_(MappedInput &out);
 

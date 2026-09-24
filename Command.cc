@@ -109,13 +109,6 @@ utf8_next_len(std::string_view line, std::size_t x)
 
 
 static inline std::string_view
-line_view(const Buffer::Line &l)
-{
-	return std::string_view(l.Data(), l.Size());
-}
-
-
-static inline std::string_view
 line_view(const std::string &l)
 {
 	return std::string_view(l);
@@ -937,7 +930,8 @@ cmd_save(CommandContext &ctx)
 	// Allow saving directly to a filename if buffer was opened with a
 	// non-existent path (not yet file-backed but has a filename).
 	if (!buf->IsFileBacked()) {
-		if (!buf->Filename().empty()) {
+		// A virtual buffer's name (e.g. +HELP+) is not a path: ask for one.
+		if (!buf->Filename().empty() && !buf->IsVirtual()) {
 			// If first-time save to an existing path, confirm overwrite
 			if (fs_exists(buf->Filename())) {
 				ctx.editor.StartPrompt(Editor::PromptKind::Confirm, "Overwrite", "");
@@ -1130,7 +1124,7 @@ cmd_save_and_quit(CommandContext &ctx)
 				ctx.editor.SetStatus(err);
 				return false;
 			}
-		} else if (!buf->Filename().empty()) {
+		} else if (!buf->Filename().empty() && !buf->IsVirtual()) {
 			if (buf->SaveAs(buf->Filename(), err)) {
 				buf->SetDirty(false);
 				if (auto *sm = ctx.editor.Swap())
@@ -3162,7 +3156,7 @@ cmd_newline(CommandContext &ctx)
 							if (auto *u = buf->Undo())
 								u->mark_saved();
 						}
-					} else if (!buf->Filename().empty()) {
+					} else if (!buf->Filename().empty() && !buf->IsVirtual()) {
 						if (!buf->SaveAs(buf->Filename(), err)) {
 							ctx.editor.SetStatus(err);
 							proceed_to_close = false;
@@ -3974,6 +3968,14 @@ cmd_yank(CommandContext &ctx)
 	}
 	ensure_at_least_one_line(*buf);
 	int repeat = ctx.count > 0 ? ctx.count : 1;
+	// Bound the total: C-u 1000000 C-y of a large kill would allocate
+	// gigabytes (and bad_alloc or the OOM killer end the session).
+	constexpr std::size_t kMaxYankBytes = std::size_t{256} << 20;
+	if (text.size() * static_cast<std::size_t>(repeat) > kMaxYankBytes) {
+		ctx.editor.SetStatus("Yank too large (" + std::to_string(repeat) + " x " + std::to_string(text.size()) +
+		                     " bytes)");
+		return false;
+	}
 	std::string ins;
 	if (repeat == 1) {
 		ins = text;

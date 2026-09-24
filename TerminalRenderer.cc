@@ -241,6 +241,45 @@ TerminalRenderer::Draw(Editor &ed)
 						return 0;
 					}
 				};
+				// Fast-forward to the scroll offset with the draw loop's own skip
+				// rules (a tab is skipped only if it ends at or before coloffs,
+				// any other character while it starts before coloffs), cached
+				// for the row's current content.
+				if (coloffs > 0 && src_i == 0) {
+					if (skip_cache_.size() < static_cast<std::size_t>(content_rows))
+						skip_cache_.resize(static_cast<std::size_t>(content_rows));
+					SkipCache &sc = skip_cache_[static_cast<std::size_t>(r)];
+					if (!(sc.valid && sc.buf == buf && sc.version == buf->Version() && sc.row == li &&
+					      sc.coloffs == coloffs)) {
+						std::size_t s = 0, c = 0;
+						while (s < line.size()) {
+							std::mbstate_t st = std::mbstate_t();
+							wchar_t w         = 0;
+							std::size_t n     = std::mbrtowc(&w, &line[s], line.size() - s, &st);
+							if (n == (size_t) -1 || n == (size_t) -2) {
+								w = static_cast<unsigned char>(line[s]);
+								n = 1;
+							} else if (n == 0) {
+								w = L'\0';
+								n = 1;
+							}
+							if (w == L'\t') {
+								const std::size_t next_tab = tabw - (c % tabw);
+								if (c + next_tab > coloffs)
+									break;
+								c += next_tab;
+							} else {
+								if (c >= coloffs)
+									break;
+								c += static_cast<std::size_t>(kte::CellWidth(w));
+							}
+							s += n;
+						}
+						sc = SkipCache{buf, buf->Version(), li, coloffs, s, c, true};
+					}
+					src_i      = sc.src;
+					render_col = sc.col;
+				}
 				while (written < cols) {
 					bool from_src = false;
 					wchar_t wch   = L' ';
@@ -391,7 +430,10 @@ TerminalRenderer::Draw(Editor &ed)
 		std::size_t cx            = buf->Curx();
 		int cur_y                 = static_cast<int>(cy) - static_cast<int>(buf->Rowoffs());
 		std::size_t rx_recomputed = 0;
-		if (cy < nlines) {
+		if (cy < nlines && cursor_cache_.valid && cursor_cache_.buf == buf &&
+		    cursor_cache_.version == buf->Version() && cursor_cache_.row == cy && cursor_cache_.cx == cx) {
+			rx_recomputed = cursor_cache_.rx;
+		} else if (cy < nlines) {
 			const std::string line_for_cursor = buf->GetLineString(cy);
 			std::size_t src_i_cur             = 0;
 			std::size_t render_col_cur        = 0;
@@ -420,6 +462,7 @@ TerminalRenderer::Draw(Editor &ed)
 				src_i_cur += len;
 			}
 			rx_recomputed = render_col_cur;
+			cursor_cache_ = CursorCache{buf, buf->Version(), cy, cx, rx_recomputed, true};
 		}
 		int cur_x = static_cast<int>(rx_recomputed) - static_cast<int>(buf->Coloffs());
 		if (cur_y >= 0 && cur_y < content_rows && cur_x >= 0 && cur_x < cols) {
