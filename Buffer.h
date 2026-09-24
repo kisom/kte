@@ -700,6 +700,19 @@ public:
 		return content_.Size();
 	}
 
+
+	// Byte offset of (row, col) in the content (clamped), and back.
+	[[nodiscard]] std::size_t RowColToOffset(std::size_t row, std::size_t col) const
+	{
+		return content_.LineColToByteOffset(row, col);
+	}
+
+
+	[[nodiscard]] std::pair<std::size_t, std::size_t> OffsetToRowCol(std::size_t off) const
+	{
+		return content_.ByteOffsetToLineCol(off);
+	}
+
 	// Undo system accessors (created per-buffer)
 	[[nodiscard]] UndoSystem *Undo();
 

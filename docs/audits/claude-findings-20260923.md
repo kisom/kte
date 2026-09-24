@@ -513,6 +513,19 @@ before the fix (unless noted).
 - replace_all_bytes clears undo history (it was recorded against, and
   may reference, the previous content).
 
+**Follow-up: search**
+- Search finds the next match from the search origin (then from the
+  current match) and stops there; it no longer collects every match in
+  the buffer on every keystroke and next/previous. The i/N count stops
+  at 1,000 matches (and, for regex, after 4 MiB). On 26 MB: plain
+  keystroke 30 ms -> 0.1 ms, next 24 -> 3 ms, regex keystroke 434 ->
+  1.6 ms. Previous-match scans backwards in 1 MiB forward-searched
+  blocks (string_view::rfind: 511 ms -> 6 ms on 105 MB).
+- Semantics change: the first match is the first one at or after the
+  cursor (it was the first in the buffer), and Left/Right also step
+  through matches in the regex replace prompt; Up/Down in a regex prompt
+  use the regex.
+
 **Known limitations (not fixed)**
 - Catastrophic regex backtracking (e.g. `(a*)*b`) can still take very
   long; std::regex has no time limit.
@@ -524,8 +537,8 @@ before the fix (unless noted).
 - Journals are created at the first edit, so a second kte that opens
   the file before the first one edits it is not warned at open; the
   session that is locked out is told at its first edit instead.
-- Regex search runs std::regex over the whole buffer per keystroke
-  (about 0.4 s on 26 MB).
+- A regex that matches rarely or not at all still scans the whole
+  buffer with std::regex (1.6 s on 105 MB).
 - A journal whose buffer exceeds 16 MiB cannot be checkpointed; after a
   lost record such a journal stays incomplete until the file is saved
   (reported to the user).
