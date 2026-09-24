@@ -390,6 +390,7 @@ Buffer::operator=(const Buffer &other)
 	filename_         = other.filename_;
 	is_file_backed_   = other.is_file_backed_;
 	is_virtual_       = other.is_virtual_;
+	id_               = NextBufferId(); // a copy is a different document
 	dirty_            = other.dirty_;
 	read_only_        = other.read_only_;
 	mark_set_         = other.mark_set_;
@@ -436,6 +437,7 @@ Buffer::Buffer(Buffer &&other) noexcept
 	  filename_(std::move(other.filename_)),
 	  is_file_backed_(other.is_file_backed_),
 	  is_virtual_(other.is_virtual_),
+	  id_(other.id_),
 	  dirty_(other.dirty_),
 	  read_only_(other.read_only_),
 	  mark_set_(other.mark_set_),
@@ -487,6 +489,7 @@ Buffer::operator=(Buffer &&other) noexcept
 	filename_             = std::move(other.filename_);
 	is_file_backed_       = other.is_file_backed_;
 	is_virtual_           = other.is_virtual_;
+	id_                   = other.id_;
 	dirty_                = other.dirty_;
 	read_only_            = other.read_only_;
 	mark_set_             = other.mark_set_;

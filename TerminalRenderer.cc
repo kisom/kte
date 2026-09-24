@@ -249,7 +249,7 @@ TerminalRenderer::Draw(Editor &ed)
 					if (skip_cache_.size() < static_cast<std::size_t>(content_rows))
 						skip_cache_.resize(static_cast<std::size_t>(content_rows));
 					SkipCache &sc = skip_cache_[static_cast<std::size_t>(r)];
-					if (!(sc.valid && sc.buf == buf && sc.version == buf->Version() && sc.row == li &&
+					if (!(sc.valid && sc.buf_id == buf->Id() && sc.version == buf->Version() && sc.row == li &&
 					      sc.coloffs == coloffs)) {
 						std::size_t s = 0, c = 0;
 						while (s < line.size()) {
@@ -275,7 +275,7 @@ TerminalRenderer::Draw(Editor &ed)
 							}
 							s += n;
 						}
-						sc = SkipCache{buf, buf->Version(), li, coloffs, s, c, true};
+						sc = SkipCache{buf->Id(), buf->Version(), li, coloffs, s, c, true};
 					}
 					src_i      = sc.src;
 					render_col = sc.col;
@@ -430,7 +430,7 @@ TerminalRenderer::Draw(Editor &ed)
 		std::size_t cx            = buf->Curx();
 		int cur_y                 = static_cast<int>(cy) - static_cast<int>(buf->Rowoffs());
 		std::size_t rx_recomputed = 0;
-		if (cy < nlines && cursor_cache_.valid && cursor_cache_.buf == buf &&
+		if (cy < nlines && cursor_cache_.valid && cursor_cache_.buf_id == buf->Id() &&
 		    cursor_cache_.version == buf->Version() && cursor_cache_.row == cy && cursor_cache_.cx == cx) {
 			rx_recomputed = cursor_cache_.rx;
 		} else if (cy < nlines) {
@@ -462,7 +462,7 @@ TerminalRenderer::Draw(Editor &ed)
 				src_i_cur += len;
 			}
 			rx_recomputed = render_col_cur;
-			cursor_cache_ = CursorCache{buf, buf->Version(), cy, cx, rx_recomputed, true};
+			cursor_cache_ = CursorCache{buf->Id(), buf->Version(), cy, cx, rx_recomputed, true};
 		}
 		int cur_x = static_cast<int>(rx_recomputed) - static_cast<int>(buf->Coloffs());
 		if (cur_y >= 0 && cur_y < content_rows && cur_x >= 0 && cur_x < cols) {

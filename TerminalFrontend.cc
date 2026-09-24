@@ -1,4 +1,6 @@
 #include <cstdio>
+#include <ctime>
+#include <string>
 #include <ncurses.h>
 #include <termios.h>
 #include <unistd.h>
@@ -106,8 +108,18 @@ TerminalFrontend::Step(Editor &ed, bool &running)
 	ed.SetDimensions(static_cast<std::size_t>(r), static_cast<std::size_t>(c));
 
 	// Allow deferred opens (including swap recovery prompts) to run.
-	if (ed.ProcessPendingOpens())
-		changed = true;
+	// Its return value only reports an opened buffer; a deferred open that
+	// starts a prompt or sets a status must be drawn too.
+	{
+		const bool prompt_before = ed.PromptActive();
+		const std::string status_before = ed.Status();
+		const std::time_t status_time_before = ed.StatusTime();
+		if (ed.ProcessPendingOpens())
+			changed = true;
+		if (ed.PromptActive() != prompt_before || ed.Status() != status_before ||
+		    ed.StatusTime() != status_time_before)
+			changed = true;
+	}
 
 	// Handle all pending input before drawing: one key per frame made a
 	// pasted block take a frame (and a full redraw) per character. The first

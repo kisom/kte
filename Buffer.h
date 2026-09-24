@@ -34,6 +34,7 @@
  *    - Direct PieceTable access for new editing operations
  */
 #pragma once
+#include <atomic>
 
 #include <algorithm>
 #include <cstddef>
@@ -349,6 +350,15 @@ public:
 	[[nodiscard]] bool IsVirtual() const
 	{
 		return is_virtual_;
+	}
+
+
+	// Identity of this document, stable for its lifetime, including when the
+	// Buffer object is moved (e.g. by the editor's buffer vector). Copies get
+	// a new id. Use it, not the object's address, to key per-buffer caches.
+	[[nodiscard]] std::uint64_t Id() const
+	{
+		return id_;
 	}
 
 
@@ -703,6 +713,13 @@ private:
 	std::string filename_;
 	bool is_file_backed_              = false;
 	bool is_virtual_                  = false;
+	std::uint64_t id_                 = NextBufferId();
+
+	static std::uint64_t NextBufferId()
+	{
+		static std::atomic<std::uint64_t> next{1};
+		return next.fetch_add(1);
+	}
 	bool dirty_                       = false;
 	bool read_only_                   = false;
 	bool mark_set_                    = false;

@@ -1198,3 +1198,44 @@ TEST(Audit_InsertText_RepeatCount)
 	ASSERT_TRUE(h.Undo());
 	ASSERT_EQ(h.Text(), std::string(""));
 }
+
+
+// A reload confirmation is cancelled by any other command, so a later C-k l
+// (after, say, moving the cursor) asks again instead of discarding edits.
+TEST(Audit_Reload_ConfirmationCancelledByOtherCommand)
+{
+	TempDir d("reload_cancel");
+	const std::string file = (d.path / "r.txt").string();
+	std::ofstream(file) << "disk\n";
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	std::string err;
+	ASSERT_TRUE(ed.OpenFile(file, err));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "EDIT "));
+	ASSERT_TRUE(h.Exec(CommandId::ReloadBuffer));
+	(void) h.Exec(CommandId::MoveRight);
+	ASSERT_TRUE(h.Exec(CommandId::ReloadBuffer));
+	ASSERT_EQ(h.Line(0), std::string("EDIT disk"));
+	ASSERT_TRUE(h.Exec(CommandId::ReloadBuffer));
+	ASSERT_EQ(h.Line(0), std::string("disk"));
+}
+
+
+// Buffer ids: copies get a fresh id, moves keep it, so caches keyed on the
+// id never mistake a new buffer at a reused address for the old one.
+TEST(Audit_BufferId_StableAcrossMovesUniqueForCopies)
+{
+	Buffer a;
+	const std::uint64_t id = a.Id();
+	ASSERT_TRUE(id != 0);
+	Buffer b(a);
+	ASSERT_TRUE(b.Id() != id);
+	Buffer c(std::move(a));
+	ASSERT_EQ(c.Id(), id);
+	Buffer e;
+	e = std::move(c);
+	ASSERT_EQ(e.Id(), id);
+	Buffer f;
+	f = e;
+	ASSERT_TRUE(f.Id() != id);
+}
