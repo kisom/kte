@@ -474,7 +474,7 @@ protected:
 						left += QStringLiteral(" *");
 
 					// total lines suffix " <n>L"
-					unsigned long lcount = static_cast<unsigned long>(buf->Rows().size());
+					unsigned long lcount = static_cast<unsigned long>(buf->Nrows());
 					left                 += QStringLiteral(" ");
 					left                 += QString::number(static_cast<qlonglong>(lcount));
 					left                 += QStringLiteral("L");
@@ -617,7 +617,7 @@ protected:
 				long nr = static_cast<long>(new_rowoffs) + d_rows;
 				if (nr < 0)
 					nr = 0;
-				const auto nrows = static_cast<long>(buf->Rows().size());
+				const auto nrows = static_cast<long>(buf->Nrows());
 				if (nr > std::max(0L, nrows - 1))
 					nr = std::max(0L, nrows - 1);
 				new_rowoffs = static_cast<std::size_t>(nr);
