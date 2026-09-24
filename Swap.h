@@ -247,7 +247,7 @@ private:
 
 	static bool write_header(int fd, const JournalCtx &ctx);
 
-	static bool open_ctx(JournalCtx &ctx, const std::string &path, std::string &err);
+	static bool open_ctx(JournalCtx &ctx, const std::string &path, std::string &err, bool *locked_out = nullptr);
 
 	static void close_ctx(JournalCtx &ctx);
 
@@ -259,9 +259,20 @@ private:
 	// CRC-32 of a file's content; false if it cannot be read.
 	static bool file_crc32(const std::string &path, std::uint32_t &out);
 
-	// Record the identity (size, mtime, content CRC) of the file a journal's
-	// records will apply to.
-	static void capture_base(const std::string &file, JournalCtx &ctx);
+	// Identity (size, mtime, content CRC) of the file a journal's records
+	// apply to. Computed without holding mtx_ (it reads the file), then
+	// stored into the JournalCtx under it.
+	struct BaseId {
+		bool has{false};
+		std::uint64_t size{0};
+		std::int64_t mtime_ns{0};
+		bool has_crc{false};
+		std::uint32_t crc{0};
+	};
+
+	static BaseId compute_base(const std::string &file);
+
+	static void apply_base(JournalCtx &ctx, const BaseId &id);
 
 	static void put_le32(std::vector<std::uint8_t> &out, std::uint32_t v);
 
@@ -283,6 +294,11 @@ private:
 	std::unordered_map<Buffer *, JournalCtx> journals_;
 	std::unordered_map<Buffer *, std::unique_ptr<BufferRecorder> > recorders_;
 	mutable std::mutex mtx_;
+	// Serialises closing journal fds with the writer's periodic fsync, so
+	// neither can act on an fd the other has closed (or that was reused).
+	// Taken before mtx_ when both are needed; edits (which take mtx_) never
+	// wait for an fsync.
+	mutable std::mutex io_mtx_;
 	std::condition_variable cv_;
 	std::vector<Pending> queue_;
 	std::uint64_t next_seq_{0};
