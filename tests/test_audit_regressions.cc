@@ -831,3 +831,52 @@ TEST(Audit_HorizontalScroll_ControlCharsAreTwoCells)
 	ASSERT_TRUE(h.Exec(CommandId::MoveEnd));
 	ASSERT_EQ(b.Coloffs(), (std::size_t) (100 - 80 + 1));
 }
+
+
+// Opening a directory or a FIFO fails cleanly (a directory used to throw
+// bad_alloc and exit the editor; a FIFO blocked forever).
+TEST(Audit_Open_NonRegularFiles_Rejected)
+{
+	TempDir d("open_nonreg");
+	Buffer b;
+	std::string err;
+	ASSERT_TRUE(!b.OpenFromFile(d.path.string(), err));
+	ASSERT_TRUE(err.find("directory") != std::string::npos);
+	const std::string fifo = (d.path / "pipe").string();
+	ASSERT_EQ(::mkfifo(fifo.c_str(), 0600), 0);
+	err.clear();
+	ASSERT_TRUE(!b.OpenFromFile(fifo, err));
+}
+
+
+// Saving never replaces a non-regular file (e.g. a device node or FIFO).
+TEST(Audit_Save_RefusesNonRegularTarget)
+{
+	TempDir d("save_nonreg");
+	const std::string fifo = (d.path / "pipe").string();
+	ASSERT_EQ(::mkfifo(fifo.c_str(), 0600), 0);
+	Buffer b;
+	b.insert_text(0, 0, "x\n");
+	std::string err;
+	ASSERT_TRUE(!b.SaveAs(fifo, err));
+	struct stat st{};
+	ASSERT_EQ(::lstat(fifo.c_str(), &st), 0);
+	ASSERT_TRUE(S_ISFIFO(st.st_mode));
+}
+
+
+// Filesystem errors in commands (here: a name longer than NAME_MAX) are
+// reported, not thrown out of the editor.
+TEST(Audit_Commands_FilesystemErrorsDoNotThrow)
+{
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	h.Buf().insert_text(0, 0, "precious\n");
+	const std::string longname = "/tmp/" + std::string(400, 'n');
+	ASSERT_TRUE(Execute(ed, "save-as", longname) || true);
+	ASSERT_TRUE(h.Exec(CommandId::OpenFileStart));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, longname));
+	(void) h.Exec(CommandId::Newline);
+	(void) ed.ProcessPendingOpens();
+	ASSERT_EQ(h.Text(), std::string("precious\n"));
+}

@@ -11,6 +11,7 @@
 #include <string_view>
 
 #include "Command.h"
+#include "ErrorHandler.h"
 #include "RegexGuard.h"
 #include "TermWidth.h"
 #include "syntax/HighlighterRegistry.h"
@@ -339,6 +340,26 @@ is_mutating_command(CommandId id)
 	default:
 		return false;
 	}
+}
+
+
+// Non-throwing filesystem queries for command code. The throwing overloads
+// fail on ENAMETOOLONG, EACCES or a deleted working directory, which used
+// to terminate the editor.
+static bool
+fs_exists(const std::string &path)
+{
+	std::error_code ec;
+	return std::filesystem::exists(path, ec) && !ec;
+}
+
+
+static std::filesystem::path
+safe_current_path()
+{
+	std::error_code ec;
+	auto p = std::filesystem::current_path(ec);
+	return ec ? std::filesystem::path(".") : p;
 }
 
 
@@ -906,7 +927,7 @@ cmd_save(CommandContext &ctx)
 	if (!buf->IsFileBacked()) {
 		if (!buf->Filename().empty()) {
 			// If first-time save to an existing path, confirm overwrite
-			if (std::filesystem::exists(buf->Filename())) {
+			if (fs_exists(buf->Filename())) {
 				ctx.editor.StartPrompt(Editor::PromptKind::Confirm, "Overwrite", "");
 				ctx.editor.SetPendingOverwritePath(buf->Filename());
 				ctx.editor.SetStatus(
@@ -997,7 +1018,7 @@ cmd_save_as(CommandContext &ctx)
 		return false;
 	}
 	// Ask before replacing an existing file other than the buffer's own.
-	if (std::filesystem::exists(ctx.arg) && !is_buffers_own_file(*buf, ctx.arg)) {
+	if (fs_exists(ctx.arg) && !is_buffers_own_file(*buf, ctx.arg)) {
 		ctx.editor.StartPrompt(Editor::PromptKind::Confirm, "Overwrite", "");
 		ctx.editor.SetPendingOverwritePath(ctx.arg);
 		ctx.editor.SetStatus(std::string("Overwrite existing file '") + ctx.arg + "'? (y/N)");
@@ -1846,7 +1867,7 @@ cmd_visual_file_picker_toggle(const CommandContext &ctx)
 		// Initialize directory to current working directory if empty
 		if (ctx.editor.FilePickerDir().empty()) {
 			try {
-				ctx.editor.SetFilePickerDir(std::filesystem::current_path().string());
+				ctx.editor.SetFilePickerDir(safe_current_path().string());
 			} catch (...) {
 				ctx.editor.SetFilePickerDir(".");
 			}
@@ -2074,17 +2095,18 @@ cmd_insert_text(CommandContext &ctx)
 				std::filesystem::path p(expanded);
 				std::filesystem::path dir;
 				std::string base;
+				std::error_code dir_ec;
 				if (expanded.empty()) {
-					dir = std::filesystem::current_path();
+					dir = safe_current_path();
 					base.clear();
-				} else if (std::filesystem::is_directory(p)) {
+				} else if (std::filesystem::is_directory(p, dir_ec)) {
 					dir = p;
 					base.clear();
 				} else {
 					dir  = p.parent_path();
 					base = p.filename().string();
 					if (dir.empty())
-						dir = std::filesystem::current_path();
+						dir = safe_current_path();
 				}
 
 				std::error_code ec;
@@ -2934,7 +2956,7 @@ cmd_newline(CommandContext &ctx)
 					value = expand_user_path(value);
 					// Ask before overwriting any existing file other than the
 					// buffer's own (it used to ask only for unnamed buffers).
-					if (std::filesystem::exists(value) && !is_buffers_own_file(*buf, value)) {
+					if (fs_exists(value) && !is_buffers_own_file(*buf, value)) {
 						ctx.editor.StartPrompt(Editor::PromptKind::Confirm, "Overwrite", "");
 						ctx.editor.SetPendingOverwritePath(value);
 						ctx.editor.SetStatus(
@@ -5555,6 +5577,27 @@ InstallDefaultCommands()
 }
 
 
+// Run a command handler. An exception escaping a command (a filesystem
+// error, bad_alloc on a huge operation, ...) used to reach main() and exit
+// the editor, losing every unsaved buffer; report it and keep running.
+static bool
+run_handler(Editor &ed, const Command &cmd, CommandContext &ctx)
+{
+	if (!cmd.handler)
+		return false;
+	try {
+		return cmd.handler(ctx);
+	} catch (const std::exception &e) {
+		kte::ErrorHandler::Instance().Error("Command", std::string(cmd.name) + ": " + e.what(), "");
+		ed.SetStatus(std::string("Error in ") + cmd.name + ": " + e.what());
+	} catch (...) {
+		kte::ErrorHandler::Instance().Error("Command", std::string(cmd.name) + ": unknown exception", "");
+		ed.SetStatus(std::string("Error in ") + cmd.name);
+	}
+	return false;
+}
+
+
 bool
 Execute(Editor &ed, CommandId id, const std::string &arg, int count)
 {
@@ -5605,7 +5648,7 @@ Execute(Editor &ed, CommandId id, const std::string &arg, int count)
 	}
 
 	CommandContext ctx{ed, arg, final_count};
-	return cmd->handler ? cmd->handler(ctx) : false;
+	return run_handler(ed, *cmd, ctx);
 }
 
 
@@ -5623,5 +5666,5 @@ Execute(Editor &ed, const std::string &name, const std::string &arg, int count)
 		}
 	}
 	CommandContext ctx{ed, arg, count};
-	return cmd->handler ? cmd->handler(ctx) : false;
+	return run_handler(ed, *cmd, ctx);
 }
