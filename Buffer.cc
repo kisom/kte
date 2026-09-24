@@ -699,51 +699,18 @@ Buffer::delete_text(int row, int col, std::size_t len)
 	if (col < 0)
 		col = 0;
 
+	// `len` counts each newline as one character, so the deletion is simply
+	// the next `len` bytes from the (clamped) start, capped at end of buffer.
 	const std::size_t start = content_.LineColToByteOffset(static_cast<std::size_t>(row),
 	                                                       static_cast<std::size_t>(col));
-	std::size_t r         = static_cast<std::size_t>(row);
-	std::size_t c         = static_cast<std::size_t>(col);
-	std::size_t remaining = len;
-	const std::size_t lc  = content_.LineCount();
-
-	while (remaining > 0 && r < lc) {
-		const std::string line = content_.GetLine(r); // logical line (without trailing '\n')
-		const std::size_t L    = line.size();
-		if (c < L) {
-			const std::size_t take = std::min(remaining, L - c);
-			c                      += take;
-			remaining              -= take;
-		}
-		if (remaining == 0)
-			break;
-		// Consume newline between lines as one char, if there is a next line
-		if (r + 1 < lc) {
-			remaining -= 1; // the newline
-			r         += 1;
-			c         = 0;
-		} else {
-			// At last line and still remaining: delete to EOF
-			const std::size_t total  = content_.Size();
-			const std::size_t actual = (total > start) ? (total - start) : 0;
-			if (actual == 0)
-				return;
-			content_.Delete(start, actual);
-			rows_cache_dirty_ = true;
-			if (swap_rec_)
-				swap_rec_->OnDelete(row, col, actual);
-			return;
-		}
-	}
-
-	// Compute end offset at (r,c)
-	std::size_t end = content_.LineColToByteOffset(r, c);
-	if (end > start) {
-		const std::size_t actual = end - start;
-		content_.Delete(start, actual);
-		rows_cache_dirty_ = true;
-		if (swap_rec_)
-			swap_rec_->OnDelete(row, col, actual);
-	}
+	const std::size_t total  = content_.Size();
+	const std::size_t actual = (total > start) ? std::min(len, total - start) : 0;
+	if (actual == 0)
+		return;
+	content_.Delete(start, actual);
+	rows_cache_dirty_ = true;
+	if (swap_rec_)
+		swap_rec_->OnDelete(row, col, actual);
 }
 
 

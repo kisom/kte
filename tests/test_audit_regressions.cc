@@ -248,3 +248,126 @@ TEST(Audit_M3_SharedBuffers_UseOwnersSwapManager)
 	b.insert_text(0, 0, "abc");
 	ASSERT_EQ(b.GetLineString(0), std::string("abc"));
 }
+
+
+// D3: killing a region that ends on a last line without a trailing newline
+// removes it entirely (no stray newline), and undo restores the original.
+TEST(Audit_D3_KillRegion_ToUnterminatedLastLine)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "foo\nbar");
+	b.SetMark(3, 0);
+	b.SetCursor(3, 1);
+
+	ASSERT_TRUE(h.Exec(CommandId::KillRegion));
+	ASSERT_EQ(h.Text(), std::string("foo"));
+	ASSERT_EQ(b.Nrows(), (std::size_t) 1);
+
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), std::string("foo\nbar"));
+}
+
+
+// D3: killing the unterminated last line removes it and the newline before
+// it; undo restores it exactly.
+TEST(Audit_D3_KillLine_UnterminatedLastLine)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "a\nb");
+	b.SetCursor(0, 1);
+
+	ASSERT_TRUE(h.Exec(CommandId::KillLine));
+	ASSERT_EQ(h.Text(), std::string("a"));
+	ASSERT_EQ(h.EditorRef().KillRingHead(), std::string("b"));
+
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), std::string("a\nb"));
+}
+
+
+// D4: the empty row after a trailing newline is not a line; killing it is a
+// no-op, and undo must not add a line.
+TEST(Audit_D4_KillLine_OnRowAfterTrailingNewline)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "a\n");
+	b.SetCursor(0, 1);
+
+	ASSERT_TRUE(h.Exec(CommandId::KillLine));
+	ASSERT_EQ(h.Text(), std::string("a\n"));
+	(void) h.Undo();
+	ASSERT_EQ(h.Text(), std::string("a\n"));
+}
+
+
+static void
+regex_replace_all(TestHarness &h, const std::string &find, const std::string &with)
+{
+	ASSERT_TRUE(h.Exec(CommandId::RegexpReplace));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, find));
+	ASSERT_TRUE(h.Exec(CommandId::Newline));
+	if (!with.empty())
+		ASSERT_TRUE(h.Exec(CommandId::InsertText, with));
+	ASSERT_TRUE(h.Exec(CommandId::Newline));
+	ASSERT_TRUE(!h.EditorRef().PromptActive());
+}
+
+
+// D4: a zero-width regex does not match the position after the final newline.
+TEST(Audit_D4_RegexReplace_ZeroWidth_NoExtraLine)
+{
+	TestHarness h;
+	h.Buf().insert_text(0, 0, "a\nb\n");
+	regex_replace_all(h, "^", "# ");
+	ASSERT_EQ(h.Text(), std::string("# a\n# b\n"));
+}
+
+
+// D3: regex replace on an unterminated last line does not add a newline.
+TEST(Audit_D3_RegexReplace_KeepsMissingTrailingNewline)
+{
+	TestHarness h;
+	h.Buf().insert_text(0, 0, "a\nfoo");
+	regex_replace_all(h, "foo", "bar");
+	ASSERT_EQ(h.Text(), std::string("a\nbar"));
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), std::string("a\nfoo"));
+}
+
+
+// D3: reflowing the last paragraph of a file without a trailing newline does
+// not add one.
+TEST(Audit_D3_Reflow_KeepsMissingTrailingNewline)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "one\ntwo");
+	b.SetCursor(0, 1);
+	ASSERT_TRUE(h.Exec(CommandId::ReflowParagraph));
+	ASSERT_EQ(h.Text(), std::string("one two"));
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), std::string("one\ntwo"));
+}
+
+
+// D5: the visual-line newline is undoable as one step.
+TEST(Audit_D5_VisualLineNewline_Undo)
+{
+	TestHarness h;
+	Buffer &b = h.Buf();
+	b.insert_text(0, 0, "ab\ncd\nef");
+	b.SetCursor(1, 0);
+	b.VisualLineStart();
+	b.VisualLineSetActiveY(1);
+	b.SetCursor(1, 1);
+
+	ASSERT_TRUE(h.Exec(CommandId::Newline));
+	ASSERT_EQ(h.Text(), std::string("a\nb\nc\nd\nef"));
+	b.VisualLineClear();
+
+	ASSERT_TRUE(h.Undo());
+	ASSERT_EQ(h.Text(), std::string("ab\ncd\nef"));
+}
