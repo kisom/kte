@@ -237,9 +237,34 @@ private:
 	mutable std::uint64_t version_ = 0;
 	std::size_t total_size_        = 0;
 
+	// End offset of each piece (prefix sums) for binary-search lookup,
+	// valid while piece_ends_version_ == version_ (every mutation bumps it).
+	mutable std::vector<std::size_t> piece_ends_;
+	mutable std::uint64_t piece_ends_version_ = std::numeric_limits<std::uint64_t>::max();
+
 	// Cached line index: starting byte offset of each line (always contains at least 1 entry: 0)
 	mutable std::vector<std::size_t> line_index_;
 	mutable bool line_index_dirty_ = true;
+	// A shift not yet applied to line_index_: entries from index
+	// line_shift_from_ on are really line_index_[i] + line_shift_by_ (mod
+	// 2^64, so it may be negative). An edit moves every later line start;
+	// applying that at once cost O(lines) per keystroke, so consecutive edits
+	// on one line only adjust the pending shift.
+	mutable std::size_t line_shift_from_ = std::numeric_limits<std::size_t>::max();
+	mutable std::size_t line_shift_by_   = 0;
+
+	// Start of line i (i < line_index_.size()), with the pending shift.
+	[[nodiscard]] std::size_t lineStart(std::size_t i) const
+	{
+		return i >= line_shift_from_ ? line_index_[i] + line_shift_by_ : line_index_[i];
+	}
+
+
+	// Index of the first line starting after byte_offset.
+	[[nodiscard]] std::size_t lineUpperBound(std::size_t byte_offset) const;
+
+	// Fold the pending shift into line_index_.
+	void applyLineShift() const;
 
 	// Heuristic knobs
 	std::size_t piece_limit_             = 4096; // trigger consolidation when exceeded

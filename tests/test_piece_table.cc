@@ -197,3 +197,60 @@ TEST (PieceTable_ReferenceModel_RandomEdits_Deterministic)
 		ASSERT_EQ(pt.GetLine(line), LineContentFor(model, line));
 	}
 }
+
+// Random edits against a std::string model, starting from adopted original
+// storage, with consolidation forced often: every read path (ranges, views,
+// lines, offset conversions) must agree with the model after each edit.
+TEST (PieceTable_ReferenceModel_AllReadPaths)
+{
+	std::mt19937 rng(0x5EEDu);
+	for (int round = 0; round < 20; ++round) {
+		PieceTable pt(0, 16, 8, 64); // tiny limits: consolidation runs constantly
+		std::string model = "first line\nsecond\n\nthird line here\nlast";
+		pt.AdoptOriginal(std::string(model));
+		for (int step = 0; step < 300; ++step) {
+			const std::size_t n = model.size();
+			if (n == 0 || rng() % 3 != 0) {
+				static const char *frags[] = {"x", "\n", "ab\ncd", "", "tail\n", "\n\n", "é"};
+				const std::string ins      = frags[rng() % 7];
+				const std::size_t at       = n ? rng() % (n + 1) : 0;
+				pt.Insert(at, ins.data(), ins.size());
+				model.insert(at, ins);
+			} else {
+				const std::size_t at  = rng() % n;
+				const std::size_t len = 1 + rng() % std::min<std::size_t>(n - at, 7);
+				pt.Delete(at, len);
+				model.erase(at, len);
+			}
+			ASSERT_EQ(pt.Size(), model.size());
+			ASSERT_EQ(std::string(pt.ContentView()), model);
+			// Line structure.
+			std::vector<std::size_t> starts{0};
+			for (std::size_t i = 0; i < model.size(); ++i)
+				if (model[i] == '\n')
+					starts.push_back(i + 1);
+			ASSERT_EQ(pt.LineCount(), starts.size());
+			for (std::size_t l = 0; l < starts.size(); ++l) {
+				const std::size_t end = l + 1 < starts.size() ? starts[l + 1] - 1 : model.size();
+				ASSERT_EQ(pt.GetLine(l), model.substr(starts[l], end - starts[l]));
+				ASSERT_EQ(pt.LineColToByteOffset(l, 1000), end);
+			}
+			// Random ranges and views (edit first, so views take the
+			// no-materialization path where they can).
+			for (int k = 0; k < 4 && !model.empty(); ++k) {
+				const std::size_t off = rng() % model.size();
+				const std::size_t len = 1 + rng() % 9;
+				ASSERT_EQ(pt.GetRange(off, len), model.substr(off, len));
+				pt.Insert(0, "", 0); // no-op: must not disturb anything
+				ASSERT_EQ(std::string(pt.View(off, len)), model.substr(off, len));
+				const auto [row, col] = pt.ByteOffsetToLineCol(off);
+				ASSERT_EQ(starts[row] + col, off);
+			}
+			std::string chunks;
+			pt.ForEachChunk([&](const char *d, std::size_t len) {
+				chunks.append(d, len);
+			});
+			ASSERT_EQ(chunks, model);
+		}
+	}
+}
