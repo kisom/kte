@@ -337,63 +337,63 @@ delete_region(Buffer &buf, std::size_t sx, std::size_t sy, std::size_t ex, std::
 			u->commit();
 		}
 	} else {
-		// Multi-line: delete from (sx,sy) to (ex,ey)
-		// Strategy:
-		// 1. Save suffix of last line (from ex to end)
-		// 2. Delete tail of first line (from sx to end)
-		// 3. Delete all lines from sy+1 to ey (inclusive)
-		// 4. Insert saved suffix at end of first line
-		// 5. Join if needed (no, suffix is appended directly)
-
-		const auto &rows           = buf.Rows();
-		std::size_t first_line_len = rows[sy].size();
-		std::size_t last_line_len  = rows[ey].size();
-		std::size_t xs             = std::min(sx, first_line_len);
-		std::size_t xe             = std::min(ex, last_line_len);
-
-		// Save suffix of last line before any modifications
-		std::string suffix = rows[ey].substr(xe);
-
-		// Delete tail of first line (from xs to end)
-		if (xs < first_line_len) {
-			std::string tail = std::string(rows[sy].substr(xs));
-			buf.delete_text(static_cast<int>(sy), static_cast<int>(xs), first_line_len - xs);
-			if (u && !tail.empty()) {
-				buf.SetCursor(xs, sy);
-				u->Begin(UndoType::Delete);
-				u->Append(std::string_view(tail));
-				u->commit();
+		// Multi-line: delete from (sx,sy) to (ex,ey) as one contiguous range.
+		// Deleting whole rows instead would leave a stray newline when the
+		// region ends on a last line that has no trailing newline.
+		std::string deleted;
+		std::size_t xs = 0;
+		for (std::size_t y = sy; y <= ey; ++y) {
+			const std::string line = buf.GetLineString(y);
+			if (y == sy) {
+				xs = std::min(sx, line.size());
+				deleted.append(line, xs, std::string::npos);
+				deleted.push_back('\n');
+			} else if (y < ey) {
+				deleted.append(line);
+				deleted.push_back('\n');
+			} else {
+				deleted.append(line, 0, std::min(ex, line.size()));
 			}
 		}
-
-		// Delete lines from ey down to sy+1 (reverse order to preserve indices)
-		for (std::size_t i = ey; i > sy; --i) {
-			if (u) {
-				std::string row_text = static_cast<std::string>(buf.Rows()[i]);
-				buf.SetCursor(0, i);
-				u->Begin(UndoType::DeleteRow);
-				u->Append(std::string_view(row_text));
-				u->commit();
-			}
-			buf.delete_row(static_cast<int>(i));
-		}
-
-		// Append saved suffix to first line
-		if (!suffix.empty()) {
-			// Get current length of line sy after deletions
-			const auto &rows_after = buf.Rows();
-			std::size_t line_len   = rows_after[sy].size();
-			buf.insert_text(static_cast<int>(sy), static_cast<int>(line_len), suffix);
-			if (u) {
-				buf.SetCursor(line_len, sy);
-				u->Begin(UndoType::Insert);
-				u->Append(std::string_view(suffix));
-				u->commit();
-			}
+		buf.delete_text(static_cast<int>(sy), static_cast<int>(xs), deleted.size());
+		if (u && !deleted.empty()) {
+			buf.SetCursor(xs, sy);
+			u->Begin(UndoType::Delete);
+			u->Append(std::string_view(deleted));
+			u->commit();
 		}
 	}
 	buf.SetCursor(sx, sy);
 	buf.SetDirty(true);
+}
+
+
+// Replace the text of rows [y, y + old_text lines) in place with new_text,
+// where old_text is those rows joined by '\n' (no trailing newline). Unlike
+// delete_row/insert_row this never adds or removes the newline after the
+// last replaced row, so a file without a trailing newline keeps that shape.
+static void
+replace_rows_text(Buffer &buf, std::size_t y, const std::string &old_text, const std::string &new_text,
+                  UndoSystem *u)
+{
+	if (!old_text.empty()) {
+		buf.delete_text(static_cast<int>(y), 0, old_text.size());
+		if (u) {
+			buf.SetCursor(0, y);
+			u->Begin(UndoType::Delete);
+			u->Append(std::string_view(old_text));
+			u->commit();
+		}
+	}
+	if (!new_text.empty()) {
+		buf.insert_text(static_cast<int>(y), 0, new_text);
+		if (u) {
+			buf.SetCursor(0, y);
+			u->Begin(UndoType::Insert);
+			u->Append(std::string_view(new_text));
+			u->commit();
+		}
+	}
 }
 
 
@@ -3006,29 +3006,24 @@ cmd_newline(CommandContext &ctx)
 			std::size_t changed = 0;
 			UndoSystem *ru      = buf->Undo();
 			UndoGroupGuard rguard(ru);
-			// Iterate by index to allow modifications via PieceTable helpers
-			for (std::size_t y = 0; y < buf->Rows().size(); ++y) {
-				std::string before = static_cast<std::string>(buf->Rows()[y]);
-				std::string after  = std::regex_replace(before, rx, repl);
+			// When the buffer ends with '\n', the last row is the empty position
+			// after it, not a line; a zero-width pattern like ^ must not match it.
+			std::size_t nrows = buf->Nrows();
+			if (nrows > 1 && buf->GetLineString(nrows - 1).empty())
+				--nrows;
+			for (std::size_t y = 0; y < nrows; ++y) {
+				const std::string before = buf->GetLineString(y);
+				const std::string after  = std::regex_replace(before, rx, repl);
 				if (after != before) {
-					// Replace entire line y with 'after' using PieceTable ops
-					if (ru) {
-						buf->SetCursor(0, y);
-						ru->Begin(UndoType::DeleteRow);
-						ru->Append(std::string_view(before));
-						ru->commit();
-					}
-					buf->delete_row(static_cast<int>(y));
-					buf->insert_row(static_cast<int>(y), std::string_view(after));
-					if (ru) {
-						buf->SetCursor(0, y);
-						ru->Begin(UndoType::InsertRow);
-						ru->Append(std::string_view(after));
-						ru->commit();
-					}
+					replace_rows_text(*buf, y, before, after, ru);
+					// A replacement containing newlines adds rows; skip past them.
+					const auto added = static_cast<std::size_t>(std::count(after.begin(), after.end(), '\n'));
+					y                += added;
+					nrows            += added;
 					++changed;
 				}
 			}
+			clamp_cursor_to_buffer(*buf);
 			buf->SetDirty(true);
 			ctx.editor.SetStatus("Regex replaced in " + std::to_string(changed) + " line(s)");
 			// Clear search UI state
@@ -3068,32 +3063,42 @@ cmd_newline(CommandContext &ctx)
 	if (buf->VisualLineActive()) {
 		const std::size_t sy = buf->VisualLineStartY();
 		const std::size_t ey = buf->VisualLineEndY();
-		const auto &rows     = buf->Rows();
-		if (rows.empty())
+		if (buf->Nrows() == 0)
 			return true;
 		std::size_t splits_above = 0;
 		if (sy < y)
 			splits_above = std::min(ey, y - 1) - sy + 1;
 
-		// Iterate bottom-up to keep row indices stable while splitting.
-		for (std::size_t yy = ey + 1; yy-- > sy;) {
-			const auto &rows_view = buf->Rows();
-			if (yy >= rows_view.size())
-				continue;
-			std::size_t xx = x;
-			if (xx > rows_view[yy].size())
-				xx = rows_view[yy].size();
-			// First split at the cursor column; subsequent splits create blank lines.
-			buf->split_line(static_cast<int>(yy), static_cast<int>(xx));
-			for (int i = 1; i < repeat; ++i) {
-				buf->split_line(static_cast<int>(yy + i), 0);
+		// Every split is recorded, as one undo step. Begin() takes the node's
+		// position from the cursor, so place the cursor at each split first.
+		UndoSystem *vu = buf->Undo();
+		UndoGroupGuard vguard(vu);
+		auto split_at  = [&](std::size_t row, std::size_t col) {
+			buf->SetCursor(col, row);
+			if (vu) {
+				vu->Begin(UndoType::Newline);
+				vu->commit();
 			}
+			buf->split_line(static_cast<int>(row), static_cast<int>(col));
+		};
+
+		// Iterate bottom-up to keep row indices stable while splitting.
+		const std::size_t nrows = buf->Nrows();
+		for (std::size_t yy = ey + 1; yy-- > sy;) {
+			if (yy >= nrows)
+				continue;
+			const std::size_t xx = std::min(x, buf->GetLineString(yy).size());
+			// First split at the cursor column; subsequent splits create blank lines.
+			split_at(yy, xx);
+			for (int i = 1; i < repeat; ++i)
+				split_at(yy + static_cast<std::size_t>(i), 0);
 		}
 
 		buf->SetDirty(true);
 		// Cursor: end up on the final inserted line for the original cursor line.
+		// Each selected line above the cursor gained `repeat` lines.
 		std::size_t new_y = y + static_cast<std::size_t>(repeat);
-		new_y             += splits_above;
+		new_y             += splits_above * static_cast<std::size_t>(repeat);
 		buf->SetCursor(0, new_y);
 		ensure_cursor_visible(ctx.editor, *buf);
 		return true;
@@ -3549,6 +3554,25 @@ cmd_kill_line(CommandContext &ctx)
 				}
 			}
 			y = 0;
+		} else if (y + 1 == rows_view.size()) {
+			// Last row. If it is empty, the buffer ends with '\n' and this row is
+			// just the position after it: there is no line to kill. Otherwise
+			// the line has no trailing newline, so kill it together with the
+			// newline before it (delete_row would leave that newline behind).
+			std::string content = static_cast<std::string>(rows_view[y]);
+			if (content.empty())
+				break;
+			const std::size_t prev_len = rows_view[y - 1].size();
+			killed_total += content;
+			const std::string deleted = "\n" + content;
+			buf->delete_text(static_cast<int>(y - 1), static_cast<int>(prev_len), deleted.size());
+			if (u) {
+				buf->SetCursor(prev_len, y - 1);
+				u->Begin(UndoType::Delete);
+				u->Append(std::string_view(deleted));
+				u->commit();
+			}
+			y -= 1;
 		} else if (y < rows_view.size()) {
 			// erase current line; keep y pointing at the next line
 			std::string content = static_cast<std::string>(rows_view[y]);
@@ -4916,31 +4940,21 @@ cmd_reflow_paragraph(CommandContext &ctx)
 	if (new_lines.empty())
 		new_lines.push_back("");
 
-	// Replace paragraph lines via PieceTable-backed operations
-	UndoSystem *u = buf->Undo();
-	for (std::size_t i = para_end; i + 1 > para_start; --i) {
-		if (u) {
-			buf->SetCursor(0, i);
-			u->Begin(UndoType::DeleteRow);
-			u->Append(static_cast<std::string>(buf->Rows()[i]));
-			u->commit();
-		}
-		buf->delete_row(static_cast<int>(i));
-		if (i == 0)
-			break; // prevent wrap on size_t
+	// Replace the paragraph's text in place (see replace_rows_text).
+	std::string old_text;
+	for (std::size_t i = para_start; i <= para_end; ++i) {
+		if (i > para_start)
+			old_text.push_back('\n');
+		old_text += static_cast<std::string>(rows[i]);
 	}
-	// Insert new lines starting at para_start
-	std::size_t insert_y = para_start;
-	for (const auto &ln: new_lines) {
-		buf->insert_row(static_cast<int>(insert_y), std::string_view(ln));
-		if (u) {
-			buf->SetCursor(0, insert_y);
-			u->Begin(UndoType::InsertRow);
-			u->Append(std::string_view(ln));
-			u->commit();
-		}
-		insert_y += 1;
+	std::string new_text;
+	for (std::size_t i = 0; i < new_lines.size(); ++i) {
+		if (i > 0)
+			new_text.push_back('\n');
+		new_text += new_lines[i];
 	}
+	if (new_text != old_text)
+		replace_rows_text(*buf, para_start, old_text, new_text, buf->Undo());
 
 	// Place cursor at the end of the paragraph
 	std::size_t new_last_y = para_start + (new_lines.empty() ? 0 : new_lines.size() - 1);
