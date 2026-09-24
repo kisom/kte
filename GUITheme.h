@@ -281,7 +281,7 @@ SyntaxInk(const TokenKind k)
 	case TokenKind::Function:
 		return dark ? RGBA(0x88C0D0) : RGBA(0x3465A4);
 	case TokenKind::Operator:
-		return dark ? RGBA(0x2E3440) : RGBA(0x2E3440);
+		return dark ? RGBA(0xECEFF4) : RGBA(0x2E3440); // as the ImGui palette
 	case TokenKind::Punctuation:
 		return dark ? RGBA(0xECEFF4) : RGBA(0x2E3440);
 	case TokenKind::Identifier:

@@ -1,5 +1,6 @@
 #include "QtFrontend.h"
 #include "SearchHighlight.h"
+#include "TermWidth.h"
 
 #include <QApplication>
 #include <QWidget>
@@ -8,6 +9,7 @@
 #include <QScreen>
 #include <QFont>
 #include <QFontMetrics>
+#include <QFontMetricsF>
 #include <QFontDatabase>
 #include <QFileDialog>
 #include <QFontDialog>
@@ -22,6 +24,36 @@
 #include "Highlight.h"
 
 namespace {
+// Text layout, shared by painting and the editor's row/column count: they
+// must agree, or the editor scrolls the cursor to a column the window does
+// not show.
+struct TextLayout {
+	int line_h;
+	qreal cell_w; // fractional: rounding it drifts over long lines
+	int ch_w;     // cell_w rounded, for pixel-delta arithmetic
+	int status_h;
+	static constexpr int pad_l = 8, pad_t = 6, pad_r = 8, pad_b = 6;
+
+
+	explicit TextLayout(const QFont &f)
+		: line_h(std::max(1, QFontMetrics(f).height())),
+		  cell_w(std::max<qreal>(1.0, QFontMetricsF(f).horizontalAdvance(QStringLiteral(" ")))),
+		  ch_w(std::max(1, qRound(cell_w))),
+		  status_h(line_h + 6) {}
+
+
+	// Rows (text rows plus the status row, see Editor::ContentRows) and
+	// columns for a w x h window.
+	void SetEditorDimensions(Editor &ed, int w, int h) const
+	{
+		const int avail_w = std::max(0, w - pad_l - pad_r);
+		const int avail_h = std::max(0, h - pad_t - pad_b - status_h);
+		ed.SetDimensions(std::max<std::size_t>(1, avail_h / line_h) + 1,
+		                 std::max<std::size_t>(1, static_cast<std::size_t>(avail_w / cell_w)));
+	}
+};
+
+
 class MainWindow : public QWidget {
 public:
 	explicit MainWindow(class QtInputHandler &ih, QWidget *parent = nullptr)
@@ -100,15 +132,14 @@ protected:
 		QFont f(font_family_, font_px_);
 		p.setFont(f);
 		QFontMetrics fm(f);
-		const int line_h = fm.height();
-		const int ch_w   = std::max(1, fm.horizontalAdvance(QStringLiteral(" ")));
-
-		// Layout metrics
-		const int pad_l    = 8;
-		const int pad_t    = 6;
-		const int pad_r    = 8;
-		const int pad_b    = 6;
-		const int status_h = line_h + 6; // status bar height
+		const TextLayout layout(f);
+		const int line_h   = layout.line_h;
+		const qreal cell_w = layout.cell_w;
+		const int pad_l    = TextLayout::pad_l;
+		const int pad_t    = TextLayout::pad_t;
+		const int pad_r    = TextLayout::pad_r;
+		const int pad_b    = TextLayout::pad_b;
+		const int status_h = layout.status_h;
 
 		// Content area (text viewport)
 		const QRect content_rect(pad_l,
@@ -134,8 +165,6 @@ protected:
 				const std::size_t last_row = std::min<std::size_t>(
 					nrows, rowoffs + std::max(0, max_lines));
 
-				// Tab width: follow ImGuiRenderer default of 4
-				const std::size_t tabw = 4;
 
 				// Prepare painter clip to viewport
 				p.save();
@@ -145,6 +174,14 @@ protected:
 				const kte::SearchHighlight search_hl(*ed_);
 				std::vector<std::pair<std::size_t, std::size_t> > hl_src_ranges;
 
+				std::vector<std::size_t> col_of; // per line, see DisplayColumns
+				// Left edge of display column col (fractional pixels).
+				auto col_x = [&](std::size_t col) -> qreal {
+					return viewport.x() + (static_cast<qreal>(col) - static_cast<qreal>(coloffs)) * cell_w;
+				};
+				// Columns the viewport shows, plus one partly visible.
+				const std::size_t vis_cols = static_cast<std::size_t>(viewport.width() / cell_w) + 1;
+
 				// Iterate visible lines
 				for (std::size_t i = rowoffs, vis_idx = 0; i < last_row; ++i, ++vis_idx) {
 					// Get line as string for regex/iterator usage and general string ops.
@@ -152,13 +189,57 @@ protected:
 					const int y            = viewport.y() + static_cast<int>(vis_idx) * line_h;
 					const int baseline     = y + fm.ascent();
 
-					// Helper: convert src col -> rx with tab expansion
+					// Display column (cells, as the command layer's scrolling
+					// counts them) of each source byte.
+					kte::DisplayColumns(line, col_of);
 					auto src_to_rx_line = [&](std::size_t src_col) -> std::size_t {
-						std::size_t rx = 0;
-						for (std::size_t k = 0; k < src_col && k < line.size(); ++k) {
-							rx += (line[k] == '\t') ? (tabw - (rx % tabw)) : 1;
+						return col_of[std::min(src_col, line.size())];
+					};
+					// Draw source bytes [s, e) (tabs expanded) at their column;
+					// the viewport clip hides what lies left of coloffs. ASCII runs
+					// are drawn whole; other characters one at a time at their
+					// cell, since a glyph from a fallback font can be wider than a
+					// cell and would push the rest of the run out of place.
+					auto draw_text_at = [&](std::size_t col, const char *d, std::size_t n) {
+						p.drawText(QPointF(col_x(col), baseline), QString::fromUtf8(d, static_cast<int>(n)));
+					};
+					auto draw_seg = [&](std::size_t s, std::size_t e, const QColor &color) {
+						// Only the visible columns: characters left of coloffs or
+						// right of the viewport are skipped.
+						s = static_cast<std::size_t>(std::lower_bound(col_of.begin() + s, col_of.begin() + e,
+						                                              coloffs) - col_of.begin());
+						e = static_cast<std::size_t>(std::lower_bound(col_of.begin() + s, col_of.begin() + e,
+						                                              coloffs + vis_cols) - col_of.begin());
+						if (e <= s)
+							return;
+						p.setPen(color);
+						std::string run; // ASCII, tabs expanded
+						std::size_t run_col = col_of[s];
+						for (std::size_t k = s; k < e;) {
+							const unsigned char c = static_cast<unsigned char>(line[k]);
+							if (c < 0x80) {
+								if (run.empty())
+									run_col = col_of[k];
+								if (c == '\t')
+									run.append(col_of[k + 1] - col_of[k], ' ');
+								else
+									run.push_back(static_cast<char>(c));
+								++k;
+								continue;
+							}
+							if (!run.empty()) {
+								draw_text_at(run_col, run.data(), run.size());
+								run.clear();
+							}
+							std::size_t n = 1; // bytes sharing this character's column
+							while (k + n < e && col_of[k + n] == col_of[k] &&
+							       (static_cast<unsigned char>(line[k + n]) & 0xC0) == 0x80)
+								++n;
+							draw_text_at(col_of[k], line.data() + k, n);
+							k += n;
 						}
-						return rx;
+						if (!run.empty())
+							draw_text_at(run_col, run.data(), run.size());
 					};
 
 					// Search-match background highlights first (under text)
@@ -177,11 +258,8 @@ protected:
 								std::size_t rx_e = src_to_rx_line(ex);
 								if (rx_e <= coloffs)
 									continue; // fully left of view
-								int vx0 = viewport.x() + static_cast<int>((
-									          (rx_s > coloffs ? rx_s - coloffs : 0)
-									          * ch_w));
-								int vx1 = viewport.x() + static_cast<int>((
-									          (rx_e - coloffs) * ch_w));
+								const int vx0 = qRound(col_x(std::max(rx_s, coloffs)));
+								const int vx1 = qRound(col_x(rx_e));
 								QRect r(vx0, y, std::max(0, vx1 - vx0), line_h);
 								if (r.width() <= 0)
 									continue;
@@ -217,33 +295,17 @@ protected:
 						std::size_t rx_s = src_to_rx_line(sx);
 						std::size_t rx_e = src_to_rx_line(ex);
 						if (rx_e > coloffs) {
-							int vx0 = viewport.x() + static_cast<int>((rx_s > coloffs
-								          ? rx_s - coloffs
-								          : 0) * ch_w);
-							int vx1 = viewport.x() + static_cast<int>(
-								          (rx_e - coloffs) * ch_w);
+							const int vx0 = qRound(col_x(std::max(rx_s, coloffs)));
+							const int vx1 = qRound(col_x(rx_e));
 							QRect sel_r(vx0, y, std::max(0, vx1 - vx0), line_h);
 							if (sel_r.width() > 0)
 								p.fillRect(sel_r, sel_bg);
 						}
 					}
 
-					// Build expanded line (tabs -> spaces) for drawing
-					std::string expanded;
-					expanded.reserve(line.size() + 8);
-					std::size_t rx_acc = 0;
-					for (char c: line) {
-						if (c == '\t') {
-							std::size_t adv = (tabw - (rx_acc % tabw));
-							expanded.append(adv, ' ');
-							rx_acc += adv;
-						} else {
-							expanded.push_back(c);
-							rx_acc += 1;
-						}
-					}
-
-					// Syntax highlighting spans or plain text
+					// Syntax-colored spans, the text between them in the default
+					// color (drawing only the spans dropped unhighlighted text such
+					// as operators).
 					if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->
 					    HasHighlighter()) {
 						kte::LineHighlight lh = buf->Highlighter()->GetLine(
@@ -280,76 +342,24 @@ protected:
 							              int(v.z * 255.0f), int(v.w * 255.0f));
 						};
 
-						// Helper to convert src col to expanded rx
-						auto src_to_rx_full = [&](std::size_t sidx) -> std::size_t {
-							std::size_t rx = 0;
-							for (std::size_t k = 0; k < sidx && k < line.size(); ++k) {
-								rx += (line[k] == '\t') ? (tabw - (rx % tabw)) : 1;
-							}
-							return rx;
-						};
-
-						if (spans.empty()) {
-							// No highlight spans: draw the whole (visible) expanded line in default fg
-							if (coloffs < expanded.size()) {
-								const char *start =
-									expanded.c_str() + static_cast<int>(coloffs);
-								p.setPen(fg);
-								p.drawText(viewport.x(), baseline,
-								           QString::fromUtf8(start));
-							}
-						} else {
-							// Draw colored spans
-							for (const auto &sp: spans) {
-								std::size_t rx_s = src_to_rx_full(sp.s);
-								std::size_t rx_e = src_to_rx_full(sp.e);
-								if (rx_e <= coloffs)
-									continue; // left of viewport
-								std::size_t draw_start = (rx_s > coloffs)
-									? rx_s
-									: coloffs;
-								std::size_t draw_end = std::min<std::size_t>(
-									rx_e, expanded.size());
-								if (draw_end <= draw_start)
-									continue;
-								std::size_t screen_x = draw_start - coloffs;
-								int px = viewport.x() + int(screen_x * ch_w);
-								int len = int(draw_end - draw_start);
-								p.setPen(colorFor(sp.k));
-								p.drawText(px, baseline,
-								           QString::fromUtf8(
-									           expanded.c_str() + draw_start, len));
-							}
+						std::size_t pos = 0;
+						for (const auto &sp: spans) {
+							const std::size_t s = std::max(sp.s, pos);
+							draw_seg(pos, s, fg);
+							draw_seg(s, sp.e, colorFor(sp.k));
+							pos = std::max(pos, sp.e);
 						}
+						draw_seg(pos, line.size(), fg);
 					} else {
-						// Draw expanded text clipped by coloffs
-						if (static_cast<std::size_t>(coloffs) < expanded.size()) {
-							const char *start =
-								expanded.c_str() + static_cast<int>(coloffs);
-							p.setPen(fg);
-							p.drawText(viewport.x(), baseline, QString::fromUtf8(start));
-						}
+						draw_seg(0, line.size(), fg);
 					}
 
 					// Cursor indicator on current line
 					if (i == cy) {
-						std::size_t rx_cur = src_to_rx_line(cx);
+						const std::size_t rx_cur = src_to_rx_line(cx);
 						if (rx_cur >= coloffs) {
-							// Compute exact pixel x by measuring expanded substring [coloffs, rx_cur)
-							std::size_t start = std::min<std::size_t>(
-								coloffs, expanded.size());
-							std::size_t end = std::min<
-								std::size_t>(rx_cur, expanded.size());
-							int px_advance = 0;
-							if (end > start) {
-								const QString sub = QString::fromUtf8(
-									expanded.c_str() + start,
-									static_cast<int>(end - start));
-								px_advance = fm.horizontalAdvance(sub);
-							}
-							int x0 = viewport.x() + px_advance;
-							QRect r(x0, y, ch_w, line_h);
-							p.fillRect(r, cur_bg);
+							const int x0 = qRound(col_x(rx_cur));
+							p.fillRect(QRect(x0, y, qRound(col_x(rx_cur + 1)) - x0, line_h), cur_bg);
 						}
 					}
 				}
@@ -511,16 +521,7 @@ protected:
 			return;
 		// Update editor dimensions based on new size
 		QFont f(font_family_, font_px_);
-		QFontMetrics fm(f);
-		const int line_h   = std::max(12, fm.height());
-		const int ch_w     = std::max(6, fm.horizontalAdvance(QStringLiteral(" ")));
-		const int pad_l    = 8, pad_r = 8, pad_t = 6, pad_b = 6;
-		const int status_h = line_h + 6;
-		const int avail_w  = std::max(0, width() - pad_l - pad_r);
-		const int avail_h  = std::max(0, height() - pad_t - pad_b - status_h);
-		std::size_t rows   = std::max<std::size_t>(1, (avail_h / line_h));
-		std::size_t cols   = std::max<std::size_t>(1, (avail_w / ch_w));
-		ed_->SetDimensions(rows, cols);
+		TextLayout(f).SetEditorDimensions(*ed_, width(), height());
 	}
 
 
@@ -537,10 +538,9 @@ protected:
 		}
 
 		// Recompute metrics to map pixel deltas to rows/cols
-		QFont f(font_family_, font_px_);
-		QFontMetrics fm(f);
-		const int line_h = std::max(12, fm.height());
-		const int ch_w   = std::max(6, fm.horizontalAdvance(QStringLiteral(" ")));
+		const TextLayout layout(QFont(font_family_, font_px_));
+		const int line_h = layout.line_h;
+		const int ch_w   = layout.ch_w;
 
 		// Determine scroll intent: use pixelDelta when available (trackpads), otherwise angleDelta
 		QPoint pixel = event->pixelDelta();
@@ -721,18 +721,7 @@ GUIFrontend::Init(int &argc, char **argv, Editor &ed)
 
 	// Set initial dimensions based on font metrics
 	QFont f(family, px_size);
-	QFontMetrics fm(f);
-	const int line_h   = std::max(12, fm.height());
-	const int ch_w     = std::max(6, fm.horizontalAdvance(QStringLiteral("M")));
-	const int w        = window_->width();
-	const int h        = window_->height();
-	const int pad      = 16;
-	const int status_h = line_h + 4;
-	const int avail_w  = std::max(0, w - 2 * pad);
-	const int avail_h  = std::max(0, h - 2 * pad - status_h);
-	std::size_t rows   = std::max<std::size_t>(1, (avail_h / line_h) + 1); // + status
-	std::size_t cols   = std::max<std::size_t>(1, (avail_w / ch_w));
-	ed.SetDimensions(rows, cols);
+	TextLayout(f).SetEditorDimensions(ed, window_->width(), window_->height());
 
 	return true;
 }
@@ -911,18 +900,8 @@ GUIFrontend::Step(Editor &ed, bool &running)
 
 		// Recompute editor dimensions to match new metrics
 		QFont f(target_family, target_px);
-		QFontMetrics fm(f);
-		const int line_h   = std::max(12, fm.height());
-		const int ch_w     = std::max(6, fm.horizontalAdvance(QStringLiteral("M")));
-		const int w        = window_ ? window_->width() : 0;
-		const int h        = window_ ? window_->height() : 0;
-		const int pad      = 16;
-		const int status_h = line_h + 4;
-		const int avail_w  = std::max(0, w - 2 * pad);
-		const int avail_h  = std::max(0, h - 2 * pad - status_h);
-		std::size_t rows   = std::max<std::size_t>(1, (avail_h / line_h) + 1); // + status
-		std::size_t cols   = std::max<std::size_t>(1, (avail_w / ch_w));
-		ed.SetDimensions(rows, cols);
+		TextLayout(f).SetEditorDimensions(ed, window_ ? window_->width() : 0,
+		                                                window_ ? window_->height() : 0);
 
 		if (window_)
 			window_->update();
