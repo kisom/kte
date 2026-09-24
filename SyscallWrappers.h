@@ -12,11 +12,10 @@ namespace syscall {
 // Automatically retries on EINTR.
 int Open(const char *path, int flags, mode_t mode = 0);
 
-// EINTR-safe wrapper for close(2).
+// Wrapper for close(2).
 // Returns 0 on success, -1 on failure (errno set).
-// Automatically retries on EINTR.
-// Note: Some systems may not restart close() on EINTR, but we retry anyway
-// as recommended by POSIX.1-2008.
+// EINTR is treated as success and never retried: the descriptor has already
+// been released on Linux, and retrying could close an unrelated, reused fd.
 int Close(int fd);
 
 // EINTR-safe wrapper for fsync(2).

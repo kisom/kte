@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <fstream>
 #include <string>
 #include <unistd.h>
@@ -331,4 +332,191 @@ TEST(SwapRecoveryPrompt_CorruptSwap_Decline_KeepsAsideAndStartsFresh)
 
 	std::remove(file_path.c_str());
 	std::filesystem::remove_all(xdg_root);
+}
+
+
+namespace {
+// Journal for `file_path` holding the edits in `edit`, via a throwaway manager.
+static std::string
+make_journal(const std::string &file_path, void (*edit)(Buffer &), std::string &expected)
+{
+	Buffer b;
+	std::string err;
+	(void) b.OpenFromFile(file_path, err);
+	std::remove(kte::SwapManager::ComputeSwapPathForTests(b).c_str());
+	kte::SwapManager sm;
+	sm.Attach(&b);
+	b.SetSwapRecorder(sm.RecorderFor(&b));
+	edit(b);
+	sm.Flush(&b);
+	const std::string swap_path = kte::SwapManager::ComputeSwapPathForTests(b);
+	expected                    = buffer_bytes_via_views(b);
+	// Keep the journal as a crash would leave it (Detach would checkpoint).
+	const std::string bytes = read_file_bytes(swap_path);
+	b.SetSwapRecorder(nullptr);
+	sm.Detach(&b, true);
+	write_file_bytes(swap_path, bytes);
+	return swap_path;
+}
+
+
+struct XdgSandbox {
+	std::filesystem::path root;
+	std::unique_ptr<ScopedXdgStateHome> scoped;
+
+
+	explicit XdgSandbox(const std::string &tag)
+	{
+		root = std::filesystem::temp_directory_path() /
+		       (std::string("kte_ut_xdg_") + tag + "_" + std::to_string((int) ::getpid()));
+		std::filesystem::remove_all(root);
+		std::filesystem::create_directories(root / "work");
+		scoped = std::make_unique<ScopedXdgStateHome>(root.string());
+	}
+
+
+	~XdgSandbox()
+	{
+		scoped.reset();
+		std::filesystem::remove_all(root);
+	}
+};
+
+
+static void
+answer(Editor &ed, const char *yn)
+{
+	ASSERT_TRUE(Execute(ed, CommandId::InsertText, yn));
+	ASSERT_TRUE(Execute(ed, CommandId::Newline));
+}
+} // namespace
+
+
+// Recovery must work when another named buffer is current (the AddBuffer
+// path): opening used to delete the very swap file it was about to replay.
+TEST(SwapRecoveryPrompt_Recover_WithAnotherNamedBufferOpen)
+{
+	ktet::InstallDefaultCommandsOnce();
+	XdgSandbox sb("recover_named");
+	const std::string other = (sb.root / "work" / "other.txt").string();
+	const std::string file  = (sb.root / "work" / "r.txt").string();
+	write_file_bytes(other, "other\n");
+	write_file_bytes(file, "base\n");
+	std::string expected;
+	const std::string swp = make_journal(file, [](Buffer &b) {
+		b.insert_text(0, 0, std::string("A"));
+	}, expected);
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+	std::string err;
+	ASSERT_TRUE(ed.OpenFile(other, err));
+	ed.RequestOpenFile(file);
+	(void) ed.ProcessPendingOpens();
+	ASSERT_EQ(ed.PendingRecoveryPrompt(), Editor::RecoveryPromptKind::RecoverOrDiscard);
+	answer(ed, "y");
+	ASSERT_EQ(buffer_bytes_via_views(*ed.CurrentBuffer()), expected);
+	ASSERT_TRUE(std::filesystem::exists(swp));
+}
+
+
+// After recovering from a journal whose last record is torn, the torn bytes
+// are dropped, so records from the recovered session stay replayable.
+TEST(SwapRecoveryPrompt_Recover_TornTail_JournalStaysReplayable)
+{
+	ktet::InstallDefaultCommandsOnce();
+	XdgSandbox sb("recover_torn");
+	const std::string file = (sb.root / "work" / "t.txt").string();
+	write_file_bytes(file, "base\n");
+	std::string expected;
+	const std::string swp = make_journal(file, [](Buffer &b) {
+		b.insert_text(0, 0, std::string("A"));
+	}, expected);
+	write_file_bytes(swp, read_file_bytes(swp) + std::string("\x01\x20\x00\x00zz", 6)); // torn record
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+	ed.AddBuffer(Buffer());
+	ed.RequestOpenFile(file);
+	(void) ed.ProcessPendingOpens();
+	answer(ed, "y");
+	Buffer *cur = ed.CurrentBuffer();
+	ASSERT_EQ(buffer_bytes_via_views(*cur), std::string("Abase\n"));
+	cur->insert_text(0, 1, std::string("Z"));
+	ed.Swap()->Flush(cur);
+
+	Buffer check;
+	std::string err, rerr;
+	ASSERT_TRUE(check.OpenFromFile(file, err));
+	ASSERT_TRUE(kte::SwapManager::ReplayFile(check, swp, rerr));
+	ASSERT_EQ(buffer_bytes_via_views(check), std::string("AZbase\n"));
+}
+
+
+// Opening a file that is already open switches to its buffer instead of
+// creating a second buffer sharing the same swap journal.
+TEST(SwapRecoveryPrompt_OpenTwice_SwitchesToExisting)
+{
+	ktet::InstallDefaultCommandsOnce();
+	XdgSandbox sb("open_twice");
+	const std::string file  = (sb.root / "work" / "d.txt").string();
+	const std::string other = (sb.root / "work" / "o.txt").string();
+	write_file_bytes(file, "x\n");
+	write_file_bytes(other, "y\n");
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+	std::string err;
+	ASSERT_TRUE(ed.OpenFile(file, err));
+	ASSERT_TRUE(ed.OpenFile(other, err));
+	const std::size_t n = ed.Buffers().size();
+	ASSERT_TRUE(ed.OpenFile(file, err));
+	ASSERT_EQ(ed.Buffers().size(), n);
+	ASSERT_EQ(ed.CurrentBuffer()->Filename(), std::filesystem::canonical(file).string());
+	ed.RequestOpenFile(other);
+	(void) ed.ProcessPendingOpens();
+	ASSERT_EQ(ed.Buffers().size(), n);
+	ASSERT_EQ(ed.CurrentBuffer()->Filename(), std::filesystem::canonical(other).string());
+}
+
+
+// Distinct paths must not map to the same swap file.
+TEST(SwapPath_EncodingIsOneToOne)
+{
+	ASSERT_TRUE(kte::SwapManager::ComputeSwapPathForFilename("/x/a!b") !=
+	            kte::SwapManager::ComputeSwapPathForFilename("/x/a/b"));
+	ASSERT_TRUE(kte::SwapManager::ComputeSwapPathForFilename("/x/a%21b") !=
+	            kte::SwapManager::ComputeSwapPathForFilename("/x/a!b"));
+}
+
+
+// Reload restarts the journal: edits discarded by the reload must not come
+// back through crash recovery.
+TEST(SwapJournal_Reload_ResetsJournal)
+{
+	ktet::InstallDefaultCommandsOnce();
+	XdgSandbox sb("reload");
+	const std::string file = (sb.root / "work" / "rl.txt").string();
+	write_file_bytes(file, "hello\nworld\n");
+
+	Editor ed;
+	ed.SetDimensions(24, 80);
+	std::string err;
+	ASSERT_TRUE(ed.OpenFile(file, err));
+	Buffer *cur = ed.CurrentBuffer();
+	cur->SetCursor(0, 0);
+	ASSERT_TRUE(Execute(ed, CommandId::InsertText, "XXXX"));
+	ASSERT_TRUE(Execute(ed, CommandId::ReloadBuffer));
+	cur = ed.CurrentBuffer();
+	cur->SetCursor(0, 1);
+	ASSERT_TRUE(Execute(ed, CommandId::InsertText, "YY"));
+	ed.Swap()->Flush(cur);
+	const std::string live = buffer_bytes_via_views(*cur);
+	ASSERT_EQ(live, std::string("hello\nYYworld\n"));
+
+	Buffer check;
+	std::string rerr;
+	ASSERT_TRUE(check.OpenFromFile(file, err));
+	ASSERT_TRUE(kte::SwapManager::ReplayFile(check, kte::SwapManager::ComputeSwapPathForTests(*cur), rerr));
+	ASSERT_EQ(buffer_bytes_via_views(check), live);
 }

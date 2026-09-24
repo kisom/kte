@@ -5236,6 +5236,10 @@ cmd_reload_buffer(CommandContext &ctx)
 		ctx.editor.SetStatus(std::string("Reload failed: ") + err);
 		return false;
 	}
+	// The journal recorded edits against the discarded content; restart it
+	// from the reloaded file, or crash recovery would replay those edits.
+	if (auto *sm = ctx.editor.Swap())
+		sm->ResetJournal(*buf);
 	// Try to restore the cursor to its previous position if still valid; otherwise clamp
 	{
 		auto rows              = rows_of(*buf);

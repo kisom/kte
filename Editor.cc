@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <utility>
 
@@ -48,6 +49,46 @@ apply_pending_line(Editor &ed, const std::size_t line1)
 	b->SetCursor(0, line);
 }
 } // namespace
+
+
+namespace {
+// Same normalization as Buffer::OpenFromFile (expand "~", canonical path if
+// the file exists, else absolute), so a path can be compared with the
+// Filename() of open buffers.
+std::string
+normalize_open_path(const std::string &in)
+{
+	std::string expanded = in;
+	if (!expanded.empty() && expanded[0] == '~') {
+		const char *home = std::getenv("HOME");
+		if (home && expanded.size() >= 2 && (expanded[1] == '/' || expanded[1] == '\\'))
+			expanded = std::string(home) + expanded.substr(1);
+		else if (home && expanded.size() == 1)
+			expanded = std::string(home);
+	}
+	try {
+		std::filesystem::path p(expanded);
+		if (std::filesystem::exists(p))
+			return std::filesystem::canonical(p).string();
+		return std::filesystem::absolute(p).string();
+	} catch (...) {
+		return expanded;
+	}
+}
+} // namespace
+
+
+std::size_t
+Editor::FindOpenBuffer(const std::string &path) const
+{
+	const std::string norm = normalize_open_path(path);
+	const auto &bufs       = Buffers();
+	for (std::size_t i = 0; i < bufs.size(); ++i) {
+		if (!bufs[i].Filename().empty() && bufs[i].Filename() == norm)
+			return i;
+	}
+	return static_cast<std::size_t>(-1);
+}
 
 
 Editor::Editor()
@@ -228,6 +269,14 @@ Editor::AddBuffer(Buffer &&buf)
 bool
 Editor::OpenFile(const std::string &path, std::string &err)
 {
+	// A file that is already open is switched to, not opened again: two
+	// buffers for one file would share (and corrupt) one swap journal, and
+	// closing either would delete the other's journal.
+	if (const std::size_t open_idx = FindOpenBuffer(path); open_idx != static_cast<std::size_t>(-1)) {
+		SwitchTo(open_idx);
+		return true;
+	}
+
 	// If the current buffer is an unnamed, empty, clean scratch buffer, reuse
 	// it instead of creating a new one.
 	auto &bufs_ref = Buffers();
@@ -372,9 +421,19 @@ Editor::ResolveRecoveryPrompt(const bool yes)
 				return false;
 			}
 			std::string rerr;
-			if (!kte::SwapManager::ReplayFile(*b, swp, rerr)) {
+			std::uint64_t valid_bytes = 0;
+			if (!kte::SwapManager::ReplayFile(*b, swp, rerr, &valid_bytes)) {
 				SetStatus("Swap recovery failed: " + rerr);
 				return false;
+			}
+			// This session keeps appending to the same journal. Drop a torn
+			// final record first, or new records would land behind it and the
+			// journal could not be replayed after another crash.
+			try {
+				if (std::filesystem::file_size(swp) > valid_bytes)
+					std::filesystem::resize_file(swp, valid_bytes);
+			} catch (...) {
+				// Best effort; the replay itself succeeded.
 			}
 			b->SetDirty(true);
 			apply_pending_line(*this, req.line1);
@@ -436,6 +495,15 @@ Editor::ProcessPendingOpens()
 		pending_open_.pop_front();
 		if (req.path.empty())
 			continue;
+		// Already open: switch to it. Its swap file is this session's live
+		// journal, not something to recover.
+		if (const std::size_t open_idx = FindOpenBuffer(req.path); open_idx != static_cast<std::size_t>(-1)) {
+			SwitchTo(open_idx);
+			apply_pending_line(*this, req.line1);
+			SetStatus("Switched to " + Buffers()[open_idx].Filename());
+			opened_any = true;
+			return opened_any;
+		}
 
 		std::string swp = kte::SwapManager::ComputeSwapPathForFilename(req.path);
 		bool swp_exists = false;
@@ -452,7 +520,12 @@ Editor::ProcessPendingOpens()
 				std::string rerr;
 				if (kte::SwapManager::ReplayFile(tmp, swp, rerr)) {
 					const std::string rec = buffer_bytes_via_views(tmp);
-					if (rec != orig) {
+					if (rec == orig) {
+						// Nothing to recover. Remove the journal rather than
+						// appending this session's records to it (it may end in a
+						// torn record, which would make them unreplayable).
+						(void) std::remove(swp.c_str());
+					} else {
 						pending_recovery_prompt_    = RecoveryPromptKind::RecoverOrDiscard;
 						pending_recovery_open_      = req;
 						pending_recovery_swap_path_ = swp;

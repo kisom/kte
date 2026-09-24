@@ -5,6 +5,7 @@
 #include "ErrorRecovery.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -129,13 +130,23 @@ encode_path_key(std::string s)
 	//  - We strip a single leading path separator so absolute paths don't start with '!'.
 	//  - We replace both '/' and '\\' with '!'.
 	//  - We leave other characters as-is (spaces are OK on POSIX).
+	//  - '!' and '%' in the path itself are escaped as %21 and %25, so the
+	//    mapping is one-to-one: "/x/a!b" and "/x/a/b" used to share a journal.
 	if (!s.empty() && (s[0] == '/' || s[0] == '\\'))
 		s.erase(0, 1);
-	for (char &ch: s) {
+	std::string out;
+	out.reserve(s.size());
+	for (char ch: s) {
 		if (ch == '/' || ch == '\\')
-			ch = '!';
+			out.push_back('!');
+		else if (ch == '!')
+			out += "%21";
+		else if (ch == '%')
+			out += "%25";
+		else
+			out.push_back(ch);
 	}
-	return s;
+	return out;
 }
 
 
@@ -392,6 +403,9 @@ SwapManager::ResetJournal(Buffer &buf)
 		JournalCtx &ctx = it->second;
 		close_ctx(ctx);
 		ctx.header_ok              = false;
+		ctx.gap                    = false; // the journal restarts from the saved file
+		ctx.gap_chkpt_request_ns   = 0;
+		ctx.gap_unfixable_reported = false;
 		ctx.last_flush_ns          = 0;
 		ctx.last_fsync_ns          = 0;
 		ctx.last_chkpt_ns          = 0;
@@ -515,9 +529,16 @@ SwapManager::NotifyFilenameChanged(Buffer &buf)
 		return;
 	JournalCtx &ctx = it->second;
 	close_ctx(ctx);
-	if (!old_path.empty())
+	const std::string new_path = ComputeSidecarPath(buf);
+	// When the path is unchanged (Attach already pointed the journal at this
+	// file's swap), that file may be the one the caller is about to replay
+	// for recovery: removing it here lost the recovery.
+	if (!old_path.empty() && old_path != new_path)
 		(void) std::remove(old_path.c_str());
-	ctx.path                   = ComputeSidecarPath(buf);
+	ctx.gap                     = false;
+	ctx.gap_chkpt_request_ns    = 0;
+	ctx.gap_unfixable_reported  = false;
+	ctx.path                    = new_path;
 	ctx.suspended              = false;
 	ctx.header_ok              = false;
 	ctx.last_flush_ns          = 0;
@@ -851,17 +872,18 @@ SwapManager::compact_to_checkpoint(JournalCtx &ctx, const std::vector<std::uint8
 std::uint32_t
 SwapManager::crc32(const std::uint8_t *data, std::size_t len, std::uint32_t seed)
 {
-	static std::uint32_t table[256];
-	static bool inited = false;
-	if (!inited) {
+	// Built once, thread-safely (used by the writer thread and by replay on
+	// the main thread; the old lazy init with a plain bool was a data race).
+	static const std::array<std::uint32_t, 256> table = [] {
+		std::array<std::uint32_t, 256> t{};
 		for (std::uint32_t i = 0; i < 256; ++i) {
 			std::uint32_t c = i;
 			for (int j = 0; j < 8; ++j)
 				c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
-			table[i] = c;
+			t[i] = c;
 		}
-		inited = true;
-	}
+		return t;
+	}();
 	std::uint32_t c = ~seed;
 	for (std::size_t i = 0; i < len; ++i)
 		c = table[(c ^ data[i]) & 0xFFu] ^ (c >> 8);
@@ -1075,8 +1097,23 @@ SwapManager::RecordCheckpoint(Buffer &buf, const bool urgent_flush)
 	// check the size before paying for a snapshot.
 	const std::size_t nrows      = buf.Nrows();
 	const std::size_t total_size = nrows ? buf.GetLineRange(nrows - 1).second : 0;
-	if (total_size > kMaxRecordPayload - 5)
+	if (total_size > kMaxRecordPayload - 5) {
+		// If the journal has a gap, only a checkpoint could close it: say so
+		// once rather than silently dropping every later record.
+		bool report = false;
+		{
+			std::lock_guard<std::mutex> lg(mtx_);
+			auto it = journals_.find(&buf);
+			if (it != journals_.end() && it->second.gap && !it->second.gap_unfixable_reported) {
+				it->second.gap_unfixable_reported = true;
+				report                            = true;
+			}
+		}
+		if (report)
+			report_error("Swap journal lost a record and the buffer is too large to checkpoint; "
+			             "crash recovery will not include edits made until the file is saved", &buf);
 		return;
+	}
 	const std::string bytes = snapshot_buffer_bytes(buf);
 	if (bytes.size() > kMaxRecordPayload - 5)
 		return;
@@ -1196,11 +1233,18 @@ SwapManager::process_one(const Pending &p)
 		// Log warning at most once per 60 seconds to avoid spam
 		if (now - last > 60000000000ULL) {
 			last_warning_ns.store(now);
+			// Journal path read under mtx_, not Buffer::Filename(), which the
+			// main thread may be assigning (see report_error).
+			std::string context = "<unnamed>";
+			{
+				std::lock_guard<std::mutex> lg(mtx_);
+				auto it = journals_.find(p.buf);
+				if (it != journals_.end() && !it->second.path.empty())
+					context = it->second.path;
+			}
 			ErrorHandler::Instance().Warning("SwapManager",
 			                                 "Swap operations temporarily disabled due to repeated failures (circuit breaker open)",
-			                                 p.buf && !p.buf->Filename().empty()
-				                                 ? p.buf->Filename()
-				                                 : "<unnamed>");
+			                                 context);
 		}
 		mark_gap();
 		return;
@@ -1365,7 +1409,8 @@ parse_u32_le(const std::vector<std::uint8_t> &p, std::size_t &off, std::uint32_t
 
 
 bool
-SwapManager::ReplayFile(Buffer &buf, const std::string &swap_path, std::string &err)
+SwapManager::ReplayFile(Buffer &buf, const std::string &swap_path, std::string &err,
+                        std::uint64_t *valid_bytes)
 {
 	err.clear();
 	std::ifstream in(swap_path, std::ios::binary);
@@ -1404,6 +1449,10 @@ SwapManager::ReplayFile(Buffer &buf, const std::string &swap_path, std::string &
 	} restore{buf, prev_rec};
 
 	for (;;) {
+		// Everything before this offset replayed cleanly.
+		const std::streamoff record_start = in.tellg();
+		if (valid_bytes && record_start >= 0)
+			*valid_bytes = static_cast<std::uint64_t>(record_start);
 		std::uint8_t head[4];
 		in.read(reinterpret_cast<char *>(head), sizeof(head));
 		const std::size_t got_head = static_cast<std::size_t>(in.gcount());
@@ -1576,13 +1625,16 @@ SwapManager::ReplayFile(Buffer &buf, const std::string &swap_path, std::string &
 void
 SwapManager::report_error(const std::string &message, Buffer *buf)
 {
-	std::string context;
-	if (buf && !buf->Filename().empty()) {
-		context = buf->Filename();
-	} else if (buf) {
-		context = "<unnamed>";
-	} else {
-		context = "<unknown>";
+	// Identify the buffer by its journal path, read under mtx_. This runs on
+	// the writer thread, where reading Buffer::Filename() raced with the main
+	// thread assigning it (SaveAs, OpenFromFile).
+	std::string context = "<unknown>";
+	{
+		std::lock_guard<std::mutex> lg(mtx_);
+		if (buf) {
+			auto it = journals_.find(buf);
+			context = (it != journals_.end() && !it->second.path.empty()) ? it->second.path : "<unnamed>";
+		}
 	}
 
 	// Report to centralized error handler
