@@ -163,7 +163,7 @@ TerminalRenderer::Draw(Editor &ed)
 				std::vector<kte::HighlightSpan> sane_spans;
 				if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->
 				    HasHighlighter()) {
-					kte::LineHighlight lh_val = buf->Highlighter()->GetLine(
+					const kte::LineHighlight &lh_val = buf->Highlighter()->GetLine(
 						*buf, static_cast<int>(li), buf->Version());
 					// Sanitize defensively: clamp to [0, line.size()], ensure end>=start, drop empties
 					const std::size_t line_len = line.size();

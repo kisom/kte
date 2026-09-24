@@ -33,7 +33,8 @@
  *
  * Implementation notes:
  * - Consolidation heuristics prevent piece fragmentation (configurable via SetConsolidationParams)
- * - Thread-safe for concurrent reads (mutex protects caches and lazy rebuilds)
+ * - Not thread-safe: even reads update caches. Buffers are used from the
+ *   main thread only (the swap writer thread gets copies of the bytes).
  * - Version tracking invalidates caches on mutations
  */
 #pragma once
@@ -43,7 +44,6 @@
 #include <ostream>
 #include <vector>
 #include <limits>
-#include <mutex>
 #include <string_view>
 
 #include "TextSpan.h"
@@ -297,6 +297,4 @@ private:
 
 	mutable RangeCache range_cache_;
 	mutable FindCache find_cache_;
-
-	mutable std::mutex mutex_;
 };

@@ -14,7 +14,6 @@ HighlighterEngine::~HighlighterEngine() = default;
 void
 HighlighterEngine::SetHighlighter(std::unique_ptr<LanguageHighlighter> hl)
 {
-	std::lock_guard<std::mutex> lock(mtx_);
 	hl_ = std::move(hl);
 	clear_caches_locked();
 }
@@ -39,63 +38,52 @@ HighlighterEngine::invalidate_from_locked(int row) const
 }
 
 
-LineHighlight
+const LineHighlight &
 HighlighterEngine::GetLine(const Buffer &buf, int row, std::uint64_t buf_version) const
 {
-	std::lock_guard<std::mutex> lock(mtx_);
 	if (!have_version_ || buf_version != version_) {
 		// Content changed without OnEdit: nothing cached can be trusted.
 		clear_caches_locked();
 		version_      = buf_version;
 		have_version_ = true;
 	}
-	auto it = cache_.find(row);
-	if (it != cache_.end())
-		return it->second; // return by value (copy)
+	if (auto it = cache_.find(row); it != cache_.end())
+		return it->second;
 
 	LineHighlight result;
 	result.version = buf_version;
-
-	if (!hl_ || row < 0) {
-		cache_[row] = result;
-		return result;
-	}
-
-	auto *stateful = dynamic_cast<StatefulHighlighter *>(hl_.get());
-	if (!stateful) {
+	if (hl_ && row >= 0 && !hl_->Stateful()) {
 		hl_->HighlightLine(buf, row, result.spans);
-		cache_[row] = result;
-		trim_cache_locked(row);
-		return result;
+	} else if (hl_ && row >= 0) {
+		const auto *stateful = static_cast<const StatefulHighlighter *>(hl_.get());
+		// Continue from the last row with a known end state (or the row
+		// just above the target, if that is known), caching every row's
+		// spans and state along the way so neighbouring rows are cache hits.
+		const int known = static_cast<int>(states_.size()) - 1;
+		const int start = std::min(known, row - 1);
+		StatefulHighlighter::LineState state = (start >= 0) ? states_[static_cast<std::size_t>(start)]
+		                                                    : StatefulHighlighter::LineState{};
+		const int nrows = static_cast<int>(buf.Nrows());
+		for (int r = start + 1; r <= row && r < nrows; ++r) {
+			LineHighlight lh;
+			lh.version = buf_version;
+			state      = stateful->HighlightLineStateful(buf, r, state, lh.spans);
+			if (static_cast<std::size_t>(r) == states_.size())
+				states_.push_back(state);
+			else
+				states_[static_cast<std::size_t>(r)] = state;
+			if (r == row)
+				result = std::move(lh);
+			else if (row - r <= kCacheNear)
+				cache_.insert_or_assign(r, std::move(lh));
+			// Rows further above only needed their end state (kept in
+			// states_): caching their spans too held about 10x the file size
+			// in memory after jumping to the end of a large file.
+		}
 	}
-
-	// Stateful: continue from the last row with a known end state (or the
-	// row just above the target, if that is known), caching every row's
-	// spans and state along the way so neighbouring rows are cache hits.
-	const int known = static_cast<int>(states_.size()) - 1;
-	const int start = std::min(known, row - 1);
-	StatefulHighlighter::LineState state = (start >= 0) ? states_[static_cast<std::size_t>(start)]
-	                                                    : StatefulHighlighter::LineState{};
-	const int nrows = static_cast<int>(buf.Nrows());
-	for (int r = start + 1; r <= row && r < nrows; ++r) {
-		LineHighlight lh;
-		lh.version = buf_version;
-		state      = stateful->HighlightLineStateful(buf, r, state, lh.spans);
-		if (static_cast<std::size_t>(r) == states_.size())
-			states_.push_back(state);
-		else
-			states_[static_cast<std::size_t>(r)] = state;
-		if (r == row)
-			result = lh;
-		else if (row - r <= kCacheNear)
-			cache_.insert_or_assign(r, std::move(lh));
-		// Rows further above only needed their end state (kept in states_):
-		// caching their spans too held about 10x the file size in memory
-		// after jumping to the end of a large file.
-	}
-	cache_[row] = result;
+	// Trim first: the entry returned must survive until the next call.
 	trim_cache_locked(row);
-	return result;
+	return cache_.insert_or_assign(row, std::move(result)).first->second;
 }
 
 
@@ -112,7 +100,6 @@ HighlighterEngine::trim_cache_locked(const int row) const
 void
 HighlighterEngine::InvalidateFrom(int row)
 {
-	std::lock_guard<std::mutex> lock(mtx_);
 	invalidate_from_locked(row);
 }
 
@@ -120,7 +107,6 @@ HighlighterEngine::InvalidateFrom(int row)
 void
 HighlighterEngine::OnEdit(int row, std::uint64_t buf_version)
 {
-	std::lock_guard<std::mutex> lock(mtx_);
 	if (have_version_)
 		invalidate_from_locked(row);
 	version_      = buf_version;

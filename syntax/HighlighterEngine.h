@@ -1,11 +1,11 @@
-// HighlighterEngine.h - caching layer for per-line highlights
+// HighlighterEngine.h - caching layer for per-line highlights (main thread
+// only, like the Buffer it reads)
 #pragma once
 
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <vector>
-#include <mutex>
 
 #include "../Highlight.h"
 #include "LanguageHighlighter.h"
@@ -21,10 +21,10 @@ public:
 
 	void SetHighlighter(std::unique_ptr<LanguageHighlighter> hl);
 
-	// Retrieve highlights for a given line and buffer version.
-	// Returns a copy to avoid lifetime issues across threads/renderers.
-	// If cache is stale, recompute using the current highlighter.
-	LineHighlight GetLine(const Buffer &buf, int row, std::uint64_t buf_version) const;
+	// Highlights for a line at a buffer version, computed if not cached.
+	// The reference is valid until the next call on this engine (a later
+	// lookup may evict the entry); copy it to keep it longer.
+	const LineHighlight &GetLine(const Buffer &buf, int row, std::uint64_t buf_version) const;
 
 	// Invalidate cached lines from row (inclusive)
 	void InvalidateFrom(int row);
@@ -74,8 +74,5 @@ private:
 	static constexpr std::size_t kCacheMax = 16384;
 
 	void trim_cache_locked(int row) const;
-
-	// Guards the caches above.
-	mutable std::mutex mtx_;
 };
 } // namespace kte
