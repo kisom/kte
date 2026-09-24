@@ -6,9 +6,7 @@
 
 #include "Editor.h"
 #include "ErrorHandler.h"
-#include "syntax/HighlighterRegistry.h"
 #include "syntax/CppHighlighter.h"
-#include "syntax/NullHighlighter.h"
 
 
 namespace {
@@ -285,27 +283,8 @@ Editor::OpenFile(const std::string &path, std::string &err)
 				cur.SetSwapRecorder(Swap()->RecorderFor(&cur));
 				Swap()->NotifyFilenameChanged(cur);
 			}
-			// Setup highlighting using registry (extension + shebang)
-			cur.EnsureHighlighter();
-			std::string first = "";
-			if (cur.Nrows() > 0)
-				first = cur.GetLineString(0);
-			std::string ft = kte::HighlighterRegistry::DetectForPath(path, first);
-			if (!ft.empty()) {
-				cur.SetFiletype(ft);
-				cur.SetSyntaxEnabled(true);
-				if (auto *eng = cur.Highlighter()) {
-					eng->SetHighlighter(kte::HighlighterRegistry::CreateFor(ft));
-					eng->InvalidateFrom(0);
-				}
-			} else {
-				cur.SetFiletype("");
-				cur.SetSyntaxEnabled(true);
-				if (auto *eng = cur.Highlighter()) {
-					eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-					eng->InvalidateFrom(0);
-				}
-			}
+			// Highlighting by extension or shebang
+			cur.ApplyDetectedFiletype();
 			// Defensive: ensure any active prompt is closed after a successful open
 			CancelPrompt();
 			return true;
@@ -318,27 +297,8 @@ Editor::OpenFile(const std::string &path, std::string &err)
 	}
 	// NOTE: swap recorder/attach must happen after the buffer is stored in its
 	// final location (vector) because swap manager keys off Buffer*.
-	// Initialize syntax highlighting by extension + shebang via registry (v2)
-	b.EnsureHighlighter();
-	std::string first = "";
-	if (b.Nrows() > 0)
-		first = b.GetLineString(0);
-	std::string ft = kte::HighlighterRegistry::DetectForPath(path, first);
-	if (!ft.empty()) {
-		b.SetFiletype(ft);
-		b.SetSyntaxEnabled(true);
-		if (auto *eng = b.Highlighter()) {
-			eng->SetHighlighter(kte::HighlighterRegistry::CreateFor(ft));
-			eng->InvalidateFrom(0);
-		}
-	} else {
-		b.SetFiletype("");
-		b.SetSyntaxEnabled(true);
-		if (auto *eng = b.Highlighter()) {
-			eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-			eng->InvalidateFrom(0);
-		}
-	}
+	// Highlighting by extension or shebang
+	b.ApplyDetectedFiletype();
 	// Add as a new buffer and switch to it
 	std::size_t idx = AddBuffer(std::move(b));
 	if (Swap()) {
@@ -650,25 +610,8 @@ Editor::SwitchTo(std::size_t index)
 	curbuf_ = index;
 	// Robustness: ensure a valid highlighter is installed when switching buffers
 	Buffer &b = bufs[curbuf_];
-	if (b.SyntaxEnabled()) {
-		b.EnsureHighlighter();
-		if (auto *eng = b.Highlighter()) {
-			if (!eng->HasHighlighter()) {
-				// Try to set based on existing filetype; fall back to NullHighlighter
-				if (!b.Filetype().empty()) {
-					auto hl = kte::HighlighterRegistry::CreateFor(b.Filetype());
-					if (hl) {
-						eng->SetHighlighter(std::move(hl));
-					} else {
-						eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-					}
-				} else {
-					eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-				}
-				eng->InvalidateFrom(0);
-			}
-		}
-	}
+	if (b.SyntaxEnabled() && !(b.Highlighter() && b.Highlighter()->HasHighlighter()))
+		b.InstallFiletypeHighlighter();
 	return true;
 }
 

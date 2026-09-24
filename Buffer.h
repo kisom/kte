@@ -472,6 +472,15 @@ public:
 	}
 
 
+	// Enable syntax with the highlighter the filename (or a shebang on the
+	// first line) calls for, or none for an unknown type.
+	void ApplyDetectedFiletype();
+
+	// Install the highlighter for Filetype() (the null highlighter for an
+	// empty or unsupported one), creating the engine if needed.
+	void InstallFiletypeHighlighter();
+
+
 	// Swap journal integration (set by Editor)
 	void SetSwapRecorder(kte::SwapRecorder *rec)
 	{

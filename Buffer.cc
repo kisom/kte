@@ -377,23 +377,8 @@ Buffer::Buffer(const Buffer &other)
 	undo_sys_  = std::make_unique<UndoSystem>(*this, *undo_tree_);
 
 	// Recreate a highlighter engine for this copy based on filetype/syntax state
-	if (syntax_enabled_) {
-		// Allocate engine and install an appropriate highlighter
-		highlighter_ = std::make_unique<kte::HighlighterEngine>();
-		if (!filetype_.empty()) {
-			auto hl = kte::HighlighterRegistry::CreateFor(filetype_);
-			if (hl) {
-				highlighter_->SetHighlighter(std::move(hl));
-			} else {
-				// Unsupported filetype -> NullHighlighter keeps syntax pipeline active
-				highlighter_->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-			}
-		} else {
-			// No filetype -> keep syntax enabled but use NullHighlighter
-			highlighter_->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-		}
-		// Fresh engine has empty caches; nothing to invalidate
-	}
+	if (syntax_enabled_)
+		InstallFiletypeHighlighter();
 }
 
 
@@ -428,19 +413,8 @@ Buffer::operator=(const Buffer &other)
 
 	// Recreate highlighter engine consistent with syntax settings
 	highlighter_.reset();
-	if (syntax_enabled_) {
-		highlighter_ = std::make_unique<kte::HighlighterEngine>();
-		if (!filetype_.empty()) {
-			auto hl = kte::HighlighterRegistry::CreateFor(filetype_);
-			if (hl) {
-				highlighter_->SetHighlighter(std::move(hl));
-			} else {
-				highlighter_->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-			}
-		} else {
-			highlighter_->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-		}
-	}
+	if (syntax_enabled_)
+		InstallFiletypeHighlighter();
 	return *this;
 }
 
@@ -765,6 +739,29 @@ Buffer::insert_text(int row, int col, std::string_view text)
 		if (swap_rec_)
 			swap_rec_->OnInsert(row, col, text);
 	}
+}
+
+
+void
+Buffer::ApplyDetectedFiletype()
+{
+	EnsureHighlighter();
+	const std::string first = Nrows() > 0 ? GetLineString(0) : std::string();
+	const std::string ft    = kte::HighlighterRegistry::DetectForPath(filename_, first);
+	SetFiletype(ft);
+	SetSyntaxEnabled(true);
+	InstallFiletypeHighlighter();
+}
+
+
+void
+Buffer::InstallFiletypeHighlighter()
+{
+	EnsureHighlighter();
+	auto hl = filetype_.empty() ? nullptr : kte::HighlighterRegistry::CreateFor(filetype_);
+	if (!hl)
+		hl = std::make_unique<kte::NullHighlighter>();
+	highlighter_->SetHighlighter(std::move(hl));
 }
 
 

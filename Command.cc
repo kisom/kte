@@ -15,7 +15,6 @@
 #include "RegexEngine.h"
 #include "TermWidth.h"
 #include "syntax/HighlighterRegistry.h"
-#include "syntax/NullHighlighter.h"
 #include "Editor.h"
 #include "Buffer.h"
 #include "UndoSystem.h"
@@ -1641,29 +1640,12 @@ apply_filetype(Buffer &buf, const std::string &ft)
 		buf.SetSyntaxEnabled(false);
 		return;
 	}
-	if (val.empty()) {
-		// Empty means unknown/unspecified -> use NullHighlighter but keep syntax enabled
-		buf.SetFiletype("");
-		buf.SetSyntaxEnabled(true);
-		eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-		eng->InvalidateFrom(0);
-		return;
-	}
-	// Normalize and create via registry
-	std::string norm = kte::HighlighterRegistry::Normalize(val);
-	auto hl          = kte::HighlighterRegistry::CreateFor(norm);
-	if (hl) {
-		eng->SetHighlighter(std::move(hl));
-		buf.SetFiletype(norm);
-		buf.SetSyntaxEnabled(true);
-		eng->InvalidateFrom(0);
-	} else {
-		// Unknown -> install NullHighlighter and keep syntax enabled
-		eng->SetHighlighter(std::make_unique<kte::NullHighlighter>());
-		buf.SetFiletype(val); // record what user asked even if unsupported
-		buf.SetSyntaxEnabled(true);
-		eng->InvalidateFrom(0);
-	}
+	// Empty means unspecified (no highlighting, syntax stays on); an
+	// unsupported type is recorded as asked, without highlighting.
+	const std::string norm = val.empty() ? val : kte::HighlighterRegistry::Normalize(val);
+	buf.SetFiletype(kte::HighlighterRegistry::CreateFor(norm) ? norm : val);
+	buf.SetSyntaxEnabled(true);
+	buf.InstallFiletypeHighlighter();
 }
 
 
