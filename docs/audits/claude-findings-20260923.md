@@ -444,6 +444,23 @@ before the fix (unless noted).
   passed under a correctly instrumented ASan build with leak checks,
   and the stress fuzzers ran with ASan and UBSan.)
 
+**Sixth round (real terminal, file I/O, recovery end to end)**
+- UTF-8 typed or pasted over a slow link lost characters: with the
+  input batch read at zero timeout, ncurses gave up on a character split
+  across reads and discarded the rest as invalid. kte now assembles
+  UTF-8 itself and waits for continuation bytes. (This regression came
+  from this audit's own input batching.)
+- Visual-line (multi-line) insert, delete, backspace and newline used
+  the cursor's byte column on every selected line, splitting multibyte
+  characters on the others; the column is now carried in characters.
+- Journal failures reached only the error log: a session locked out of
+  the journal by another kte (which only happens when the other opened
+  the file before this one's first edit), or whose journal writes
+  failed, silently had no or partial crash recovery. The status line now
+  says so (once per failure).
+- Basenames over about 233 bytes produced a swap name over NAME_MAX, so
+  such files were never journaled.
+
 **Known limitations (not fixed)**
 - Catastrophic regex backtracking (e.g. `(a*)*b`) can still take very
   long; std::regex has no time limit.
@@ -452,6 +469,9 @@ before the fix (unless noted).
 - GUI-only items B7, B8, B10 and highlighter edge cases B13 are
   unchanged; the ImGui and Qt frontends could not be built in the review
   environment (changed GUI files were syntax-checked where possible).
+- Journals are created at the first edit, so a second kte that opens
+  the file before the first one edits it is not warned at open; the
+  session that is locked out is told at its first edit instead.
 - A journal whose buffer exceeds 16 MiB cannot be checkpointed; after a
   lost record such a journal stays incomplete until the file is saved
   (reported to the user).

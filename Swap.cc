@@ -202,8 +202,18 @@ compute_swap_path_for_filename(const std::string &filename)
 	}
 
 	// Fallback: stable, shorter name based on basename + hash.
-	std::string base       = p.filename().string();
-	const std::string name = base + "." + hex_u64(fnv1a64(key)) + ".swp";
+	std::string base         = p.filename().string();
+	const std::string suffix = "." + hex_u64(fnv1a64(key)) + ".swp";
+	// A long basename made even this name exceed NAME_MAX (255), so the
+	// journal could never be created. Shorten only such names (the hash
+	// keeps them distinct), on a UTF-8 boundary.
+	if (base.size() + suffix.size() > 255) {
+		std::size_t keep = 255 - suffix.size();
+		while (keep > 0 && (static_cast<unsigned char>(base[keep]) & 0xC0) == 0x80)
+			--keep;
+		base.resize(keep);
+	}
+	const std::string name = base + suffix;
 	return (root / name).string();
 }
 }
@@ -439,6 +449,7 @@ SwapManager::ResetJournal(Buffer &buf)
 		was_locked_out             = ctx.locked_out;
 		ctx.header_ok              = false;
 		ctx.gap                    = false; // the journal restarts from the saved file
+		ctx.gap_notified           = false;
 		ctx.gap_chkpt_request_ns   = 0;
 		ctx.gap_unfixable_reported = false;
 		ctx.locked_out             = false;
@@ -587,6 +598,7 @@ SwapManager::NotifyFilenameChanged(Buffer &buf)
 	ctx.gap                     = false;
 	ctx.gap_chkpt_request_ns    = 0;
 	ctx.gap_unfixable_reported  = false;
+	ctx.gap_notified            = false;
 	ctx.locked_out              = false;
 	apply_base(ctx, base);
 	ctx.path                    = new_path;
@@ -1193,6 +1205,26 @@ SwapManager::RetryGapCheckpoints()
 }
 
 
+std::string
+SwapManager::TakeUserNotice()
+{
+	std::lock_guard<std::mutex> lg(mtx_);
+	if (user_notices_.empty())
+		return {};
+	std::string msg = std::move(user_notices_.front());
+	user_notices_.pop_front();
+	return msg;
+}
+
+
+void
+SwapManager::notify_user_locked_(std::string msg)
+{
+	if (user_notices_.size() < 8)
+		user_notices_.push_back(std::move(msg));
+}
+
+
 void
 SwapManager::RecordCheckpoint(Buffer &buf, const bool urgent_flush)
 {
@@ -1327,8 +1359,16 @@ SwapManager::process_one(const Pending &p)
 	auto mark_gap = [&]() {
 		std::lock_guard<std::mutex> lg(mtx_);
 		auto it = journals_.find(p.buf);
-		if (it != journals_.end())
+		if (it != journals_.end()) {
 			it->second.gap = true;
+			if (!it->second.gap_notified) {
+				it->second.gap_notified = true;
+				const std::string &jp   = it->second.path;
+				notify_user_locked_("Crash-recovery journal write failed" +
+				                    (jp.empty() ? std::string() : " (" + jp + ")") +
+				                    "; recent edits may not be recoverable");
+			}
+		}
 	};
 
 	// Check circuit breaker before processing
@@ -1399,6 +1439,8 @@ SwapManager::process_one(const Pending &p)
 				{
 					std::lock_guard<std::mutex> lg(mtx_);
 					ctxp->locked_out = true;
+					notify_user_locked_("File is being edited in another kte; crash recovery is off here (" +
+					                    path + ")");
 				}
 				report_error(open_err, p.buf);
 				return; // not an I/O failure; later records are skipped
@@ -1467,7 +1509,8 @@ SwapManager::process_one(const Pending &p)
 		}
 		if (p.type == SwapRecType::CHKPT) {
 			std::lock_guard<std::mutex> lg(mtx_);
-			ctxp->gap = false;
+			ctxp->gap          = false;
+			ctxp->gap_notified = false;
 		}
 		ctxp->approx_size_bytes += static_cast<std::uint64_t>(rec.size());
 		if (p.urgent_flush) {
