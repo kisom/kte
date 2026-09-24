@@ -438,7 +438,7 @@ ImGuiRenderer::Draw(Editor &ed)
 			}
 			// Draw syntax-colored runs (text above background highlights)
 			if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->HasHighlighter()) {
-				kte::LineHighlight lh = buf->Highlighter()->GetLine(
+				const kte::LineHighlight &lh = buf->Highlighter()->GetLine(
 					*buf, static_cast<int>(i), buf->Version());
 				// Sanitize spans defensively: clamp to [0, line.size()], ensure end>=start, drop empties
 				struct SSpan {

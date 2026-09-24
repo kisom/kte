@@ -321,7 +321,6 @@ PieceTable::addPieceFront(Source src, std::size_t start, std::size_t len)
 void
 PieceTable::materialize() const
 {
-	std::lock_guard<std::mutex> lock(mutex_);
 	if (!dirty_) {
 		return;
 	}
@@ -401,7 +400,6 @@ PieceTable::coalesceNeighbors(std::size_t index)
 void
 PieceTable::InvalidateLineIndex() const
 {
-	std::lock_guard<std::mutex> lock(mutex_);
 	line_index_dirty_ = true;
 }
 
@@ -435,7 +433,6 @@ PieceTable::applyLineShift() const
 void
 PieceTable::lineIndexOnInsert(std::size_t offset, const char *text, std::size_t len) const
 {
-	std::lock_guard<std::mutex> lock(mutex_);
 	if (line_index_dirty_)
 		return;
 	// Line starts after the insertion point move right; a start exactly at
@@ -461,7 +458,6 @@ PieceTable::lineIndexOnInsert(std::size_t offset, const char *text, std::size_t 
 void
 PieceTable::lineIndexOnDelete(std::size_t offset, std::size_t len) const
 {
-	std::lock_guard<std::mutex> lock(mutex_);
 	if (line_index_dirty_)
 		return;
 	// Starts in (offset, offset+len] followed a deleted newline: drop them.
@@ -482,7 +478,6 @@ PieceTable::lineIndexOnDelete(std::size_t offset, std::size_t len) const
 void
 PieceTable::RebuildLineIndex() const
 {
-	std::lock_guard<std::mutex> lock(mutex_);
 
 	if (!line_index_dirty_) {
 		return;
@@ -930,7 +925,6 @@ PieceTable::GetRange(std::size_t byte_offset, std::size_t len) const
 
 	// Fast path: return cached value if version/offset/len match
 	{
-		std::lock_guard<std::mutex> lock(mutex_);
 		if (range_cache_.valid && range_cache_.version == version_ &&
 		    range_cache_.off == byte_offset && range_cache_.len == len) {
 			return range_cache_.data;
@@ -940,7 +934,6 @@ PieceTable::GetRange(std::size_t byte_offset, std::size_t len) const
 	std::string out;
 	out.reserve(len);
 	if (!dirty_) {
-		std::lock_guard<std::mutex> lock(mutex_);
 		// Already materialized; slice directly
 		out.assign(materialized_.data() + static_cast<std::ptrdiff_t>(byte_offset), len);
 	} else {
@@ -965,7 +958,6 @@ PieceTable::GetRange(std::size_t byte_offset, std::size_t len) const
 
 	// Update cache
 	{
-		std::lock_guard<std::mutex> lock(mutex_);
 		range_cache_.valid   = true;
 		range_cache_.version = version_;
 		range_cache_.off     = byte_offset;
@@ -984,7 +976,6 @@ PieceTable::Find(const std::string &needle, std::size_t start) const
 	if (start > total_size_)
 		return std::numeric_limits<std::size_t>::max();
 	{
-		std::lock_guard<std::mutex> lock(mutex_);
 		if (find_cache_.valid &&
 		    find_cache_.version == version_ &&
 		    find_cache_.needle == needle &&
@@ -996,7 +987,6 @@ PieceTable::Find(const std::string &needle, std::size_t start) const
 	materialize();
 	std::size_t pos;
 	{
-		std::lock_guard<std::mutex> lock(mutex_);
 		pos = materialized_.find(needle, start);
 		if (pos == std::string::npos)
 			pos = std::numeric_limits<std::size_t>::max();

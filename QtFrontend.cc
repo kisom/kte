@@ -308,7 +308,7 @@ protected:
 					// as operators).
 					if (buf->SyntaxEnabled() && buf->Highlighter() && buf->Highlighter()->
 					    HasHighlighter()) {
-						kte::LineHighlight lh = buf->Highlighter()->GetLine(
+						const kte::LineHighlight &lh = buf->Highlighter()->GetLine(
 							*buf, static_cast<int>(i), buf->Version());
 						struct SSpan {
 							std::size_t s;

@@ -44,7 +44,6 @@
 #include <cstdint>
 #include "syntax/HighlighterEngine.h"
 #include "Highlight.h"
-#include <mutex>
 
 // Edit mode determines which font class is used for a buffer.
 enum class EditMode { Code, Writing };
