@@ -845,6 +845,7 @@ SwapManager::open_ctx(JournalCtx &ctx, const std::string &path, std::string &err
 	if (st.st_size == 0) {
 		ctx.header_ok         = write_header(fd, ctx);
 		ctx.approx_size_bytes = ctx.header_ok ? 64 : 0;
+		ctx.header_version    = VERSION;
 		if (!ctx.header_ok) {
 			err = "Failed to write swap file header: " + path;
 			// Drop any partial header and close, so the next attempt starts a
@@ -856,6 +857,20 @@ SwapManager::open_ctx(JournalCtx &ctx, const std::string &path, std::string &err
 	} else {
 		ctx.header_ok         = true; // stage 1: trust existing header
 		ctx.approx_size_bytes = static_cast<std::uint64_t>(st.st_size);
+		// An existing journal (continued after recovery) may be version 1,
+		// which must not receive chunked checkpoints (see process_one).
+		// (The journal fd is write-only; read through another.)
+		std::uint8_t ver[4] = {0, 0, 0, 0};
+		ctx.header_version  = 0;
+		const int rfd       = kte::syscall::Open(path.c_str(), O_RDONLY | O_CLOEXEC, 0);
+		if (rfd >= 0) {
+			if (::pread(rfd, ver, sizeof(ver), 8) == static_cast<ssize_t>(sizeof(ver)))
+				ctx.header_version = static_cast<std::uint32_t>(ver[0]) |
+				                     (static_cast<std::uint32_t>(ver[1]) << 8) |
+				                     (static_cast<std::uint32_t>(ver[2]) << 16) |
+				                     (static_cast<std::uint32_t>(ver[3]) << 24);
+			kte::syscall::Close(rfd);
+		}
 	}
 	return ctx.header_ok;
 }
@@ -1023,8 +1038,9 @@ SwapManager::compact_to_checkpoint(JournalCtx &ctx, const RecordFrames &chkpt_re
 	const int fl = ::fcntl(tfd, F_GETFL);
 	if (fl >= 0)
 		(void) ::fcntl(tfd, F_SETFL, fl | O_APPEND);
-	ctx.fd        = tfd;
-	ctx.header_ok = true;
+	ctx.fd             = tfd;
+	ctx.header_ok      = true;
+	ctx.header_version = VERSION;
 
 	// Best-effort: fsync parent dir to persist the rename.
 	try {
@@ -1556,8 +1572,14 @@ SwapManager::process_one(const Pending &p)
 		// For a large buffer the thresholds scale with its size, so the cost
 		// of compacting stays proportional to what was journaled since.
 		const std::uint64_t compact_at = std::max<std::uint64_t>(compact_bytes, 2 * p.chkpt.size());
-		if (p.type == SwapRecType::CHKPT && compact_bytes > 0 &&
-		    ctxp->approx_size_bytes + rec.total >= compact_at) {
+		// A chunked checkpoint may not be appended to a version 1 journal
+		// (an older kte would skip it and misapply what follows): write it
+		// as a compacted version 2 journal instead.
+		const bool chunked    = p.type == SwapRecType::CHKPT && p.chkpt.size() > kMaxRecordPayload - 5;
+		const bool v1_journal = ctxp->header_version != 0 && ctxp->header_version < 2;
+		if (p.type == SwapRecType::CHKPT &&
+		    ((chunked && v1_journal) ||
+		     (compact_bytes > 0 && ctxp->approx_size_bytes + rec.total >= compact_at))) {
 			std::string compact_err;
 			if (compact_to_checkpoint(*ctxp, rec, compact_err)) {
 				std::lock_guard<std::mutex> lg(mtx_);
@@ -1566,7 +1588,10 @@ SwapManager::process_one(const Pending &p)
 				circuit_breaker_.RecordSuccess();
 				return;
 			}
-			report_error(compact_err, p.buf); // fall back to appending
+			report_error(compact_err, p.buf);
+			if (chunked && v1_journal)
+				return; // not appended; the records around it stay valid
+			// otherwise fall back to appending
 		}
 
 		// Remember where this record starts so a partial write can be undone;

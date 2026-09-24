@@ -721,6 +721,7 @@ private:
 	// produced it: "y" installs it instead of replaying the journal again.
 	std::string pending_recovery_content_;
 	std::uint64_t pending_recovery_valid_bytes_ = 0;
+	std::uint64_t pending_recovery_swap_size_   = 0; // the journal's size then
 	bool pending_recovery_have_content_         = false;
 
 	// GUI-only state (safe no-op in terminal builds)

@@ -38,24 +38,20 @@ append_format(std::string &out, std::string_view fmt, std::string_view subject, 
 			out.append(subject.substr(me));
 			++i;
 		} else if (n >= '0' && n <= '9') {
-			// $nn if that group exists, else $n; $0 is not a reference.
-			std::size_t idx  = static_cast<std::size_t>(n - '0');
-			std::size_t used = 1;
-			if (i + 2 < fmt.size() && fmt[i + 2] >= '0' && fmt[i + 2] <= '9') {
-				const std::size_t two = idx * 10 + static_cast<std::size_t>(fmt[i + 2] - '0');
-				if (two >= 1 && two < ngroups) {
-					idx  = two;
-					used = 2;
-				}
-			}
-			if (idx == 0 || idx >= ngroups) {
-				out.push_back(c); // not a group reference: literal
-				continue;
+			// As libstdc++'s match_results::format: up to two digits, read
+			// greedily; $0 is the whole match; a group the pattern does not
+			// have expands to nothing.
+			std::size_t idx = static_cast<std::size_t>(n - '0');
+			++i;
+			if (i + 1 < fmt.size() && fmt[i + 1] >= '0' && fmt[i + 1] <= '9') {
+				idx = idx * 10 + static_cast<std::size_t>(fmt[i + 1] - '0');
+				++i;
 			}
 			std::size_t b = 0, e = 0;
-			if (group(idx, b, e))
+			if (idx == 0)
+				out.append(subject.substr(ms, me - ms));
+			else if (idx < ngroups && group(idx, b, e))
 				out.append(subject.substr(b, e - b));
-			i += used;
 		} else {
 			out.push_back(c);
 		}
@@ -121,8 +117,16 @@ Regex::Compile(std::string_view pattern, std::string &err)
 	int errcode        = 0;
 	PCRE2_SIZE erroff  = 0;
 	static const char empty = '\0';
+	// As in ECMAScript (std::regex): '.' matches neither CR nor LF, and '$'
+	// matches only at the end (PCRE2's default newline is LF alone, so '.'
+	// matched the CR of a CRLF line and replace-all deleted it).
+	pcre2_compile_context *cctx = pcre2_compile_context_create(nullptr);
+	if (cctx)
+		pcre2_set_newline(cctx, PCRE2_NEWLINE_ANYCRLF);
 	impl->code = pcre2_compile(reinterpret_cast<PCRE2_SPTR>(pattern.data() ? pattern.data() : &empty),
-	                           pattern.size(), 0, &errcode, &erroff, nullptr);
+	                           pattern.size(), PCRE2_DOLLAR_ENDONLY, &errcode, &erroff, cctx);
+	if (cctx)
+		pcre2_compile_context_free(cctx);
 	if (!impl->code) {
 		PCRE2_UCHAR msg[256];
 		pcre2_get_error_message(errcode, msg, sizeof(msg));

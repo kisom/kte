@@ -17,6 +17,7 @@
 #include "syntax/LanguageHighlighter.h"
 
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <fcntl.h>
@@ -2184,16 +2185,20 @@ TEST(Swap_DeferredBaseCrc)
 }
 
 
-// kte::Regex replacements follow std::regex_replace (ECMAScript), whichever
-// engine is built in. (References to groups the pattern does not have, like
-// $3 with two groups, are implementation-defined and left out.)
+// kte::Regex replacements follow std::regex_replace (ECMAScript as libstdc++
+// reads it), whichever engine is built in.
 TEST(RegexEngine_ReplaceMatchesStdRegex)
 {
 	const char *subjects[] = {"", "baaac", "one two  three", "a-b-c", "xyz", "aaa", "  lead", "tail  "};
 	const std::pair<const char *, const char *> cases[] = {
 		{"a*", "X"}, {"a", "[$&]"}, {"(\\w+)", "<$1>"}, {"(o)(n)?", "$2$1"}, {"-", "$`|$'"},
 		{"\\s+", "$$"}, {"^", ">"}, {"$", "<"}, {"b|", "_"}, {"\\b", "|"},
-		{"([a-z])([a-z])", "$2$1"}, {"(a)(x)?", "[$2]"}
+		{"([a-z])([a-z])", "$2$1"}, {"(a)(x)?", "[$2]"},
+#if defined(__GLIBCXX__)
+		// Read as libstdc++ reads them (libc++ differs): $0 is the match,
+		// two digits are read greedily, missing groups expand to nothing.
+		{"b", "[$0]"}, {"(b?)", "<$10>"}, {"(a)", "[$2]"}, {"(a)(b)?", "$12"},
+#endif
 	};
 	for (const char *subj: subjects) {
 		for (const auto &[pat, fmt]: cases) {
@@ -2227,4 +2232,95 @@ TEST(RegexEngine_CatastrophicPatternStops)
 	ASSERT_TRUE(secs < 10.0);
 	ASSERT_TRUE(h.EditorRef().Status().find("too complex") != std::string::npos);
 	ASSERT_TRUE(h.Exec(CommandId::Refresh));
+}
+
+
+// '.' does not match the CR of a CRLF line (PCRE2's default newline
+// convention let it, and regex replace-all deleted the CR).
+TEST(RegexEngine_DotDoesNotMatchCR)
+{
+	TestHarness h;
+	h.Buf().insert_text(0, 0, "abc\r\ndef\r\n");
+	regex_replace_all(h, "b.*", "X");
+	ASSERT_EQ(h.Text(), std::string("aX\r\ndef\r\n"));
+	kte::Regex rx;
+	std::string err;
+	ASSERT_TRUE(rx.Compile("c$", err));
+	std::size_t pos = 0, len = 0;
+	ASSERT_TRUE(!rx.Search("abc\r", 0, pos, len)); // '$' only at the very end
+	ASSERT_TRUE(rx.Search("abc", 0, pos, len));
+}
+
+
+// Plain search visits overlapping matches in both directions, and the count
+// agrees (Previous found the overlapping one while Next and the count
+// skipped it: "2/1").
+TEST(Search_OverlappingMatchesConsistent)
+{
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	h.Buf().insert_text(0, 0, "aaa");
+	h.Buf().SetCursor(0, 0);
+	ASSERT_TRUE(h.Exec(CommandId::FindStart));
+	ASSERT_TRUE(h.Exec(CommandId::InsertText, "aa"));
+	ASSERT_EQ(h.Buf().Curx(), (std::size_t) 0);
+	ASSERT_TRUE(ed.Status().find("1/2") != std::string::npos);
+	ASSERT_TRUE(h.Exec(CommandId::MoveRight));
+	ASSERT_EQ(h.Buf().Curx(), (std::size_t) 1);
+	ASSERT_TRUE(ed.Status().find("2/2") != std::string::npos);
+	ASSERT_TRUE(h.Exec(CommandId::MoveLeft));
+	ASSERT_EQ(h.Buf().Curx(), (std::size_t) 0);
+	ASSERT_TRUE(h.Exec(CommandId::MoveLeft)); // wraps
+	ASSERT_EQ(h.Buf().Curx(), (std::size_t) 1);
+	ASSERT_TRUE(ed.Status().find("2/2") != std::string::npos);
+	ASSERT_TRUE(h.Exec(CommandId::Refresh));
+}
+
+
+// A version 1 journal (continued after recovery) never receives chunked
+// checkpoint records, which an older kte would skip: the checkpoint is
+// written as a compacted version 2 journal instead.
+TEST(Swap_V1JournalGetsNoChunkedRecords)
+{
+	TempDir d("v1_chunked");
+	const std::string path = (d.path / "big.txt").string();
+	const std::string text = big_text();
+	{
+		std::ofstream o(path, std::ios::binary);
+		o << text;
+	}
+	Buffer b;
+	std::string err;
+	ASSERT_TRUE(b.OpenFromFile(path, err));
+	const std::string swp = kte::SwapManager::ComputeSwapPathForTests(b);
+	{
+		// A bare version 1 header (no base identity recorded).
+		std::string hdr(64, '\0');
+		std::memcpy(hdr.data(), "KTE_SWP", 8);
+		hdr[8] = 1;
+		std::ofstream o(swp, std::ios::binary | std::ios::trunc);
+		o << hdr;
+	}
+	kte::SwapManager sm;
+	sm.Attach(&b);
+	b.SetSwapRecorder(sm.RecorderFor(&b));
+	b.insert_text(0, 0, "X");
+	sm.Flush(&b);
+	sm.Checkpoint(&b);
+	sm.Flush(&b);
+	b.insert_text(0, 1, "Y");
+	sm.Flush(&b);
+	const std::string j = slurp(swp);
+	ASSERT_EQ(static_cast<unsigned char>(j[8]), 2u); // rewritten as version 2
+	const std::string copy = (d.path / "copy.swp").string();
+	{
+		std::ofstream o(copy, std::ios::binary | std::ios::trunc);
+		o << j;
+	}
+	Buffer r;
+	ASSERT_TRUE(r.OpenFromFile(path, err));
+	ASSERT_TRUE(kte::SwapManager::ReplayFile(r, copy, err));
+	ASSERT_TRUE(r.BytesForTests() == b.BytesForTests());
+	b.SetSwapRecorder(nullptr);
+	sm.Detach(&b, true);
 }
