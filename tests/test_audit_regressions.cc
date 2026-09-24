@@ -1471,6 +1471,12 @@ TEST(Audit_Swap_FailuresReachTheUser)
 	sb.Flush(&b);
 	ASSERT_TRUE(sb.TakeUserNotice().find("another kte") != std::string::npos);
 	ASSERT_EQ(sb.TakeUserNotice(), std::string());
+	// Saving resets the journal and retries the lock; still held by A, but
+	// the user was already told.
+	sb.ResetJournal(b);
+	b.insert_text(0, 0, "b");
+	sb.Flush(&b);
+	ASSERT_EQ(sb.TakeUserNotice(), std::string());
 	b.SetSwapRecorder(nullptr);
 	sb.Detach(&b, false);
 	a.SetSwapRecorder(nullptr);
@@ -1503,17 +1509,25 @@ TEST(Audit_Swap_LongBasenameStillJournaled)
 	const std::string path = (d.path / (std::string(240, 'n') + ".txt")).string();
 	std::ofstream(path) << "base\n";
 	const std::string swp = kte::SwapManager::ComputeSwapPathForFilename(path);
-	ASSERT_TRUE(std::filesystem::path(swp).filename().string().size() <= 255);
+	// Room for compaction's "<journal>.tmp" too.
+	ASSERT_TRUE(std::filesystem::path(swp).filename().string().size() + 4 <= 255);
 	std::filesystem::remove(swp);
 	Buffer a;
 	std::string err;
 	ASSERT_TRUE(a.OpenFromFile(path, err));
 	kte::SwapManager sm;
+	kte::SwapConfig cfg;
+	cfg.checkpoint_bytes = 100;
+	cfg.compact_bytes    = 1000;
+	sm.SetConfig(cfg);
 	sm.Attach(&a);
 	a.SetSwapRecorder(sm.RecorderFor(&a));
-	a.insert_text(0, 0, "X");
+	for (int i = 0; i < 50; ++i)
+		a.insert_text(0, 0, std::string(200, 'X'));
 	sm.Flush(&a);
 	ASSERT_TRUE(std::filesystem::exists(swp));
+	// Compaction works: the journal holds about one checkpoint, not fifty.
+	ASSERT_TRUE(std::filesystem::file_size(swp) < 40000);
 	a.SetSwapRecorder(nullptr);
 	sm.Detach(&a, true);
 	ASSERT_TRUE(!std::filesystem::exists(swp));

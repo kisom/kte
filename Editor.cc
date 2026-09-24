@@ -489,25 +489,33 @@ Editor::ResolveRecoveryPrompt(const bool yes)
 bool
 Editor::ProcessPendingOpens()
 {
-	// Opening can throw (bad_alloc on a huge file, filesystem errors). This
-	// runs from every frontend's loop, outside command dispatch: report the
-	// failure instead of letting it end the editor.
+	bool opened = false;
+	// Opening can throw (bad_alloc on a huge file, filesystem errors), and so
+	// can the checkpoint snapshot below. This runs from every frontend's
+	// loop, outside command dispatch: report the failure instead of letting
+	// it end the editor.
 	try {
 		// Also the once-per-frame hook for the journal: retry the
 		// checkpoint of a journal that lost a record.
-		if (kte::SwapManager *sm = Swap()) {
+		if (kte::SwapManager *sm = Swap())
 			sm->RetryGapCheckpoints();
-			if (std::string notice = sm->TakeUserNotice(); !notice.empty())
-				SetStatus(notice);
-		}
-		return process_pending_opens_();
+		opened = process_pending_opens_();
 	} catch (const std::exception &e) {
 		kte::ErrorHandler::Instance().Error("Editor", std::string("open failed: ") + e.what(), "");
 		SetStatus(std::string("Open failed: ") + e.what());
 	} catch (...) {
 		SetStatus("Open failed");
 	}
-	return false;
+	// Journal problems for the user, after the open's own status so it does
+	// not hide them; all pending ones at once (one per frame flashed by).
+	if (kte::SwapManager *sm = Swap()) {
+		std::string notices;
+		for (std::string n = sm->TakeUserNotice(); !n.empty(); n = sm->TakeUserNotice())
+			notices += (notices.empty() ? "" : "; ") + n;
+		if (!notices.empty())
+			SetStatus(notices);
+	}
+	return opened;
 }
 
 

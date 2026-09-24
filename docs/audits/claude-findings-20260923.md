@@ -459,7 +459,9 @@ before the fix (unless noted).
   failed, silently had no or partial crash recovery. The status line now
   says so (once per failure).
 - Basenames over about 233 bytes produced a swap name over NAME_MAX, so
-  such files were never journaled.
+  such files were never journaled. (The first fix capped the name at
+  exactly 255 bytes, which broke compaction's ".tmp" sibling and let
+  the journal grow without bound; it now leaves room for it.)
 
 **Known limitations (not fixed)**
 - Catastrophic regex backtracking (e.g. `(a*)*b`) can still take very
