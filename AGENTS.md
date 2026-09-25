@@ -21,13 +21,34 @@ Docker (cross-platform Linux testing): `docker build -t kte-linux . && docker ru
 - for GUI bugs: launch `./build/kge` and report what was seen; a green test suite is not proof
 
 ## Rules (do not re-litigate)
-- Release: bump CMakeLists version, checkpoint, `./make-release.sh`, report the SHA256 it prints; a GitHub push failure at the same commit is fine; then update `/opt/homebrew/Library/Taps/kisom/homebrew-tap`.
 - All text mutations must go through the PieceTable API (`insert_text`, `delete_text`) so undo and swap recording work.
 - Read lines with `Nrows()` and `GetLineString()` (a copy, cheap on any buffer) or `GetLineView()` (zero-copy when the line lies within one piece; a line straddling an edit materializes the whole buffer); `GetLineView()` and `ContentView()` are valid only until the next buffer modification.
 - C++20, compiled with `-Wall -Wextra -Werror -pedantic`; Clang uses `-stdlib=libc++`.
 - Naming: PascalCase for classes/methods, snake_case for variables, trailing underscore for private members (e.g. `pieces_`); indentation is tabs.
 - Fallible ops use `bool func(args..., std::string &err)`: clear `err` at start, capture `errno` immediately after syscall failure, use EINTR-safe wrappers from `SyscallWrappers.h` instead of raw syscalls.
 - After editing ops, call `ensure_cursor_visible()` to update the viewport.
+
+## Release
+
+`KTE_VERSION` in `CMakeLists.txt` is the version to ship. Bump it and checkpoint only when asked to bump. `./make-release` refuses a dirty tree of tracked files.
+
+`./make-release` (no `.sh`) tags `v${KTE_VERSION}`, pushes `master` and tags to `origin` (`git.wntrmute.dev:kyle/kte`) and `github` (`github.com:kisom/kte`), then runs `./make-app-release`. A GitHub rejection because that tag already points at this commit is fine; if the script stops before the app build, run `./make-app-release`. Stop if an existing tag points at a different commit.
+
+`.github/workflows/release.yml` does not publish the release. Cancel the Actions run the tag push starts so it cannot replace a release created by hand. Publish with `gh`, tag already created, asset only `kge.app.zip`:
+
+```
+gh release create vX.Y.Z cmake-build-release/kge.app.zip \
+  --repo kisom/kte --title "vX.Y.Z" --notes-file /tmp/notes.md
+```
+
+Notes are a short summary of commits since the previous tag. `./make-app-release` prints the zip SHA256. Re-download `https://github.com/kisom/kte/releases/download/vX.Y.Z/kge.app.zip` and confirm that hash. `kte` and the bundled `kge` must print `kte vX.Y.Z`.
+
+Then update `/opt/homebrew/Library/Taps/kisom/homebrew-tap` and push. Leave unrelated dirty files in that checkout unstaged.
+
+- `Formula/kte.rb`: URL `https://github.com/kisom/kte/archive/refs/tags/vX.Y.Z.tar.gz` and the SHA256 of that download. Commit message: `kte X.Y.Z`
+- `Casks/kge.rb`: `version` and the published zip SHA256. The cask URL already uses `v#{version}`. Commit message: `kge -> X.Y.Z`
+
+Report the zip SHA256, the release URL, and the tap commits.
 
 ## Docs that govern
 - `docs/ke.md` — canonical keybinding/spec reference, inherited from the predecessor editor `ke`
