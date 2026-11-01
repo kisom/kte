@@ -155,7 +155,7 @@ ApplyOldBookDarkTheme()
 
 	colors[ImGuiCol_FrameBg]        = bg1;
 	colors[ImGuiCol_FrameBgHovered] = bg2;
-	colors[ImGuiCol_FrameBgActive]  = fg2;
+	colors[ImGuiCol_FrameBgActive]  = bg3;
 
 	colors[ImGuiCol_TitleBg]          = bg1;
 	colors[ImGuiCol_TitleBgActive]    = bg2;

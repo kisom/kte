@@ -57,7 +57,7 @@ ApplyNordImGuiTheme()
 	colors[ImGuiCol_TitleBgCollapsed] = nord1;
 
 	colors[ImGuiCol_MenuBarBg]            = nord1;
-	colors[ImGuiCol_ScrollbarBg]          = nord10;
+	colors[ImGuiCol_ScrollbarBg]          = nord0;
 	colors[ImGuiCol_ScrollbarGrab]        = nord3;
 	colors[ImGuiCol_ScrollbarGrabHovered] = nord2;
 	colors[ImGuiCol_ScrollbarGrabActive]  = nord1;

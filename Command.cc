@@ -1849,7 +1849,15 @@ cmd_font_set_by_name(const CommandContext &ctx)
 
 	auto &reg = FontRegistry::Instance();
 	if (!reg.HasFont(name)) {
-		ctx.editor.SetStatus("font: unknown name");
+		// Build list of available fonts
+		const auto names = reg.FontNames();
+		std::string avail;
+		for (size_t i = 0; i < names.size(); ++i) {
+			if (i)
+				avail += ", ";
+			avail += names[i];
+		}
+		ctx.editor.SetStatus(std::string("Unknown font; available: ") + avail);
 		return true;
 	}
 

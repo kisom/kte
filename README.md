@@ -130,6 +130,17 @@ cmake --build cmake-build-debug
 ./cmake-build-debug/kte --gui [files]
 ```
 
+Theming and Fonts
+------------------
+
+The GUI (`kge`) ships with 15 built-in color themes (several with
+light/dark variants), each with a matching syntax-highlighting
+palette, plus two dozen embedded fonts. Switch either at runtime from
+the command prompt with `: theme NAME` and `: font NAME` (both tab-
+complete), or set defaults in `~/.config/kte/kge.toml`. `: help` lists
+the available theme and font names; see `docs/themes.md` for the full
+theme reference and how to add a new one.
+
 Status
 ------
 

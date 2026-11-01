@@ -770,6 +770,395 @@ SyntaxInkEverforest(const TokenKind k)
 }
 
 
+// Amber: monochrome CRT amber/black with warm parchment text; cool teal/cyan
+// accents provide contrast against the otherwise all-amber palette.
+static ImVec4
+SyntaxInkAmber(const TokenKind k)
+{
+	const ImVec4 text   = RGBA(0xE6D5A3);
+	const ImVec4 amber  = RGBA(0xFFB000);
+	const ImVec4 orange = RGBA(0xFF8C32);
+	const ImVec4 yellow = RGBA(0xFFD166);
+	const ImVec4 teal   = RGBA(0x3AAFA9);
+	const ImVec4 cyan   = RGBA(0x4CC9F0);
+	switch (k) {
+	case TokenKind::Keyword:
+	case TokenKind::Preproc:
+		return amber;
+	case TokenKind::Type:
+		return yellow;
+	case TokenKind::String:
+	case TokenKind::Char:
+		return teal;
+	case TokenKind::Comment:
+		return ImVec4(text.x, text.y, text.z, 0.50f);
+	case TokenKind::Number:
+	case TokenKind::Constant:
+		return orange;
+	case TokenKind::Function:
+		return cyan;
+	case TokenKind::Error:
+		return RGBA(0xFF5555);
+	default:
+		return text;
+	}
+}
+
+
+// E-Ink: near-monochrome, restrained spot color (like Tufte) rather than a
+// full rainbow, to match the grayscale reading-device aesthetic.
+static ImVec4
+SyntaxInkEInk(const TokenKind k, const bool dark)
+{
+	const ImVec4 ink   = dark ? RGBA(0xEDEDEA) : RGBA(0x111111);
+	const ImVec4 dim   = dark ? RGBA(0xB5B5B3) : RGBA(0x666666);
+	const ImVec4 navy  = dark ? RGBA(0x86A6D6) : RGBA(0x2A4B7C);
+	const ImVec4 brick = dark ? RGBA(0xD98080) : RGBA(0x8B3A3A);
+	switch (k) {
+	case TokenKind::Keyword:
+	case TokenKind::Preproc:
+		return navy;
+	case TokenKind::String:
+	case TokenKind::Char:
+		return brick;
+	case TokenKind::Comment:
+		return dim;
+	case TokenKind::Function:
+		return navy;
+	case TokenKind::Number:
+	case TokenKind::Constant:
+		return dark ? RGBA(0xC8B27A) : RGBA(0x6B4C00);
+	case TokenKind::Error:
+		return brick;
+	default:
+		return ink;
+	}
+}
+
+
+// Gruvbox: authentic "retro groove" highlight-group mapping (red statements,
+// yellow types, green strings, gray comments, purple constants).
+static ImVec4
+SyntaxInkGruvbox(const TokenKind k, const bool dark)
+{
+	const ImVec4 fg     = dark ? RGBA(0xEBDBB2) : RGBA(0x3C3836);
+	const ImVec4 gray   = dark ? RGBA(0x928374) : RGBA(0x7C6F64);
+	const ImVec4 red    = dark ? RGBA(0xFB4934) : RGBA(0x9D0006);
+	const ImVec4 green  = dark ? RGBA(0xB8BB26) : RGBA(0x79740E);
+	const ImVec4 yellow = dark ? RGBA(0xFABD2F) : RGBA(0xB57614);
+	const ImVec4 aqua   = dark ? RGBA(0x8EC07C) : RGBA(0x427B58);
+	const ImVec4 purple = dark ? RGBA(0xD3869B) : RGBA(0x8F3F71);
+	const ImVec4 blue   = dark ? RGBA(0x83A598) : RGBA(0x076678);
+	switch (k) {
+	case TokenKind::Keyword:
+		return red;
+	case TokenKind::Type:
+		return yellow;
+	case TokenKind::String:
+	case TokenKind::Char:
+		return green;
+	case TokenKind::Comment:
+		return gray;
+	case TokenKind::Number:
+	case TokenKind::Constant:
+		return purple;
+	case TokenKind::Preproc:
+		return aqua;
+	case TokenKind::Function:
+		return blue;
+	case TokenKind::Error:
+		return red;
+	default:
+		return fg;
+	}
+}
+
+
+// Kanagawa Paper: sumi-ink text with wave/autumn accents drawn from the
+// Kanagawa vim colorscheme, muted for the paper-light variant.
+static ImVec4
+SyntaxInkKanagawaPaper(const TokenKind k, const bool dark)
+{
+	const ImVec4 fg     = dark ? RGBA(0xDCD7BA) : RGBA(0x3A3A3A);
+	const ImVec4 gray   = dark ? RGBA(0x9C9A8F) : RGBA(0x8A8674);
+	const ImVec4 violet = dark ? RGBA(0x957FB8) : RGBA(0x7D5C8A);
+	const ImVec4 green  = dark ? RGBA(0x98BB6C) : RGBA(0x6F894E);
+	const ImVec4 orange = dark ? RGBA(0xFFA066) : RGBA(0xC4746E);
+	const ImVec4 blue   = dark ? RGBA(0x7E9CD8) : RGBA(0x487AA1);
+	const ImVec4 red    = dark ? RGBA(0xE46876) : RGBA(0xC34043);
+	switch (k) {
+	case TokenKind::Keyword:
+		return violet;
+	case TokenKind::Type:
+		return blue;
+	case TokenKind::String:
+	case TokenKind::Char:
+		return green;
+	case TokenKind::Comment:
+		return gray;
+	case TokenKind::Number:
+	case TokenKind::Constant:
+		return orange;
+	case TokenKind::Preproc:
+		return red;
+	case TokenKind::Function:
+		return blue;
+	case TokenKind::Error:
+		return red;
+	default:
+		return fg;
+	}
+}
+
+
+// LCARS: vibrant Star Trek console pastels against near-black.
+static ImVec4
+SyntaxInkLCARS(const TokenKind k)
+{
+	const ImVec4 fg     = RGBA(0xECECEC);
+	const ImVec4 dim    = RGBA(0xBFBFC4);
+	const ImVec4 orange = RGBA(0xFF9966);
+	const ImVec4 yellow = RGBA(0xFFCC66);
+	const ImVec4 purple = RGBA(0xCC99FF);
+	const ImVec4 blue   = RGBA(0x66CCFF);
+	const ImVec4 green  = RGBA(0x99FFCC);
+	switch (k) {
+	case TokenKind::Keyword:
+		return orange;
+	case TokenKind::Type:
+		return purple;
+	case TokenKind::String:
+	case TokenKind::Char:
+		return green;
+	case TokenKind::Comment:
+		return dim;
+	case TokenKind::Number:
+	case TokenKind::Constant:
+		return yellow;
+	case TokenKind::Preproc:
+		return RGBA(0xFF99CC); // lcars pink
+	case TokenKind::Function:
+		return blue;
+	case TokenKind::Error:
+		return RGBA(0xFF6666);
+	default:
+		return fg;
+	}
+}
+
+
+// Old Book: sepia/dark mapping lifted from the oldbook8.vim highlight groups
+// already used for the ImGui chrome, so code reads as part of the same book.
+static ImVec4
+SyntaxInkOldBook(const TokenKind k, const bool dark)
+{
+	const ImVec4 ink    = dark ? RGBA(0xD5D4D2) : RGBA(0x3B2F2F);
+	const ImVec4 dim    = dark ? RGBA(0x626C77) : RGBA(0x5A4540);
+	const ImVec4 red    = dark ? RGBA(0xDB6C6C) : RGBA(0xA65858);
+	const ImVec4 teal   = dark ? RGBA(0x5BB899) : RGBA(0x3F7F7A);
+	const ImVec4 blue   = dark ? RGBA(0x87D7FF) : RGBA(0x4F6D8C);
+	const ImVec4 yellow = dark ? RGBA(0xDDD668) : RGBA(0xB58B00);
+	switch (k) {
+	case TokenKind::Keyword:
+	case TokenKind::Preproc:
+		return red;
+	case TokenKind::Type:
+		return blue;
+	case TokenKind::String:
+	case TokenKind::Char:
+		return teal;
+	case TokenKind::Comment:
+		return dim;
+	case TokenKind::Number:
+	case TokenKind::Constant:
+		return yellow;
+	case TokenKind::Function:
+		return blue;
+	case TokenKind::Error:
+		return red;
+	default:
+		return ink;
+	}
+}
+
+
+// Orbital: deep-space dark with cool blues/cyans/magenta; a spot of green
+// distinguishes strings from the otherwise blue-heavy palette.
+static ImVec4
+SyntaxInkOrbital(const TokenKind k)
+{
+	const ImVec4 fg      = RGBA(0xC8D3E5);
+	const ImVec4 dim     = RGBA(0x9FB2CC);
+	const ImVec4 blue    = RGBA(0x6AA2FF);
+	const ImVec4 cyan    = RGBA(0x5AD1E6);
+	const ImVec4 magenta = RGBA(0xD681F8);
+	const ImVec4 yellow  = RGBA(0xE6C17D);
+	const ImVec4 green   = RGBA(0x7EE081);
+	switch (k) {
+	case TokenKind::Keyword:
+		return blue;
+	case TokenKind::Type:
+		return cyan;
+	case TokenKind::String:
+	case TokenKind::Char:
+		return green;
+	case TokenKind::Comment:
+		return dim;
+	case TokenKind::Number:
+	case TokenKind::Constant:
+		return yellow;
+	case TokenKind::Preproc:
+		return magenta;
+	case TokenKind::Function:
+		return cyan;
+	case TokenKind::Error:
+		return RGBA(0xFF6B6B);
+	default:
+		return fg;
+	}
+}
+
+
+// Plan 9 / acme: deliberately restrained — black ink on paper with acme's
+// signature blue for structure, olive for strings, brick for errors.
+static ImVec4
+SyntaxInkPlan9(const TokenKind k)
+{
+	const ImVec4 ink   = RGBA(0x000000);
+	const ImVec4 blueH = RGBA(0x4C8DFF);
+	switch (k) {
+	case TokenKind::Keyword:
+	case TokenKind::Preproc:
+		return RGBA(0x0064FF); // acme blue
+	case TokenKind::Type:
+	case TokenKind::Function:
+	case TokenKind::Number:
+	case TokenKind::Constant:
+		return blueH;
+	case TokenKind::String:
+	case TokenKind::Char:
+		return RGBA(0x7A6A00); // olive
+	case TokenKind::Comment:
+		return ImVec4(0.0f, 0.0f, 0.0f, 0.55f);
+	case TokenKind::Error:
+		return RGBA(0xB33A3A);
+	default:
+		return ink;
+	}
+}
+
+
+// Solarized: Ethan Schoonover's canonical accent-to-role mapping. Accent
+// hues are shared between light/dark by design; only body/comment shift.
+static ImVec4
+SyntaxInkSolarized(const TokenKind k, const bool dark)
+{
+	const ImVec4 body    = dark ? RGBA(0x839496) : RGBA(0x657b83);
+	const ImVec4 comment = RGBA(0x586e75); // base01
+	const ImVec4 yellow  = RGBA(0xb58900);
+	const ImVec4 orange  = RGBA(0xcb4b16);
+	const ImVec4 red     = RGBA(0xdc322f);
+	const ImVec4 blue    = RGBA(0x268bd2);
+	const ImVec4 cyan    = RGBA(0x2aa198);
+	const ImVec4 green   = RGBA(0x859900);
+	const ImVec4 violet  = RGBA(0x6c71c4);
+	switch (k) {
+	case TokenKind::Keyword:
+		return green;
+	case TokenKind::Type:
+		return yellow;
+	case TokenKind::String:
+	case TokenKind::Char:
+		return cyan;
+	case TokenKind::Comment:
+		return comment;
+	case TokenKind::Number:
+	case TokenKind::Constant:
+		return violet;
+	case TokenKind::Preproc:
+		return orange;
+	case TokenKind::Function:
+		return blue;
+	case TokenKind::Error:
+		return red;
+	default:
+		return body;
+	}
+}
+
+
+// Weyland-Yutani: corporate terminal black with hazard yellow/orange and a
+// system-green for strings so the palette isn't purely amber-on-black.
+static ImVec4
+SyntaxInkWeylandYutani(const TokenKind k)
+{
+	const ImVec4 fg     = RGBA(0xE6E6E6);
+	const ImVec4 dim    = RGBA(0xBDBDBD);
+	const ImVec4 hazard = RGBA(0xFFC300);
+	const ImVec4 orange = RGBA(0xFF8C00);
+	const ImVec4 cyan   = RGBA(0x4CC9F0);
+	const ImVec4 green  = RGBA(0x6FCF97);
+	switch (k) {
+	case TokenKind::Keyword:
+	case TokenKind::Preproc:
+		return hazard;
+	case TokenKind::Type:
+		return cyan;
+	case TokenKind::String:
+	case TokenKind::Char:
+		return green;
+	case TokenKind::Comment:
+		return dim;
+	case TokenKind::Number:
+	case TokenKind::Constant:
+		return orange;
+	case TokenKind::Function:
+		return cyan;
+	case TokenKind::Error:
+		return RGBA(0xFF4444);
+	default:
+		return fg;
+	}
+}
+
+
+// Zenburn: low-contrast dark palette, faces lifted from zenburn.vim
+// (dim green comments, dusty-rose strings/constants, pale yellow keywords).
+static ImVec4
+SyntaxInkZenburn(const TokenKind k)
+{
+	const ImVec4 fg      = RGBA(0xDCDCCC);
+	const ImVec4 comment = RGBA(0x7F9F7F);
+	const ImVec4 str     = RGBA(0xCC9393);
+	const ImVec4 keyword = RGBA(0xF0DFAF);
+	const ImVec4 type    = RGBA(0xDFDFBF);
+	const ImVec4 func    = RGBA(0xEFEF8F);
+	const ImVec4 blue    = RGBA(0x8CD0D3);
+	switch (k) {
+	case TokenKind::Keyword:
+		return keyword;
+	case TokenKind::Type:
+		return type;
+	case TokenKind::String:
+	case TokenKind::Char:
+		return str;
+	case TokenKind::Comment:
+		return comment;
+	case TokenKind::Number:
+	case TokenKind::Constant:
+		return str;
+	case TokenKind::Preproc:
+		return blue;
+	case TokenKind::Function:
+		return func;
+	case TokenKind::Error:
+		return RGBA(0xE37170);
+	default:
+		return fg;
+	}
+}
+
+
 [[maybe_unused]] static ImVec4
 SyntaxInk(const TokenKind k)
 {
@@ -780,6 +1169,30 @@ SyntaxInk(const TokenKind k)
 		return SyntaxInkTufte(k, dark);
 	if (gCurrentTheme == ThemeId::Leuchtturm)
 		return SyntaxInkLeuchtturm(k, dark);
+	if (gCurrentTheme == ThemeId::Everforest)
+		return SyntaxInkEverforest(k);
+	if (gCurrentTheme == ThemeId::Amber)
+		return SyntaxInkAmber(k);
+	if (gCurrentTheme == ThemeId::EInk)
+		return SyntaxInkEInk(k, dark);
+	if (gCurrentTheme == ThemeId::GruvboxDarkMedium)
+		return SyntaxInkGruvbox(k, dark);
+	if (gCurrentTheme == ThemeId::KanagawaPaper)
+		return SyntaxInkKanagawaPaper(k, dark);
+	if (gCurrentTheme == ThemeId::LCARS)
+		return SyntaxInkLCARS(k);
+	if (gCurrentTheme == ThemeId::OldBook)
+		return SyntaxInkOldBook(k, dark);
+	if (gCurrentTheme == ThemeId::Orbital)
+		return SyntaxInkOrbital(k);
+	if (gCurrentTheme == ThemeId::Plan9)
+		return SyntaxInkPlan9(k);
+	if (gCurrentTheme == ThemeId::Solarized)
+		return SyntaxInkSolarized(k, dark);
+	if (gCurrentTheme == ThemeId::WeylandYutani)
+		return SyntaxInkWeylandYutani(k);
+	if (gCurrentTheme == ThemeId::Zenburn)
+		return SyntaxInkZenburn(k);
 	if (gCurrentTheme == ThemeId::Everforest)
 		return SyntaxInkEverforest(k);
 
