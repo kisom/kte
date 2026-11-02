@@ -139,11 +139,7 @@ map_key(const SDL_Keycode key,
 	case SDLK_KP_ENTER:
 		k_prefix = false;
 		k_ctrl_pending = false;
-		if (mod & KMOD_SHIFT) {
-			out = {true, CommandId::SmartNewline, "", 0};
-		} else {
-			out = {true, CommandId::Newline, "", 0};
-		}
+		out            = {true, KEnterCommand((mod & KMOD_SHIFT) != 0), "", 0};
 		return true;
 	case SDLK_ESCAPE:
 		k_prefix = false;

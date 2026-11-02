@@ -235,10 +235,17 @@ KLookupEscCommand(const int ascii_key, CommandId &out) -> bool
 		return true;
 	case '\n':
 	case '\r':
-		out = CommandId::SmartNewline; // Shift+Enter (some terminals send this as Alt+Enter sequences)
+		out = KEnterCommand(true); // ESC-Enter: raw newline (terminals rarely send Shift+Enter)
 		return true;
 	default:
 		break;
 	}
 	return false;
+}
+
+
+auto
+KEnterCommand(const bool raw) -> CommandId
+{
+	return raw ? CommandId::Newline : CommandId::SmartNewline;
 }

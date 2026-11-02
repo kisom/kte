@@ -97,3 +97,25 @@ TEST(KKeymap_EscChords_CanonicalChords)
 
 	ASSERT_EQ(KLookupEscCommand('z', id), false);
 }
+
+
+TEST(KKeymap_Enter_IsSmartNewline)
+{
+	ASSERT_EQ(KEnterCommand(false), CommandId::SmartNewline);
+}
+
+
+TEST(KKeymap_ShiftEnter_IsNewline)
+{
+	ASSERT_EQ(KEnterCommand(true), CommandId::Newline);
+}
+
+
+TEST(KKeymap_EscEnter_IsNewline)
+{
+	CommandId id{};
+	ASSERT_TRUE(KLookupEscCommand('\n', id));
+	ASSERT_EQ(id, CommandId::Newline);
+	ASSERT_TRUE(KLookupEscCommand('\r', id));
+	ASSERT_EQ(id, CommandId::Newline);
+}

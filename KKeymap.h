@@ -20,6 +20,10 @@ bool KLookupCtrlCommand(int ascii_key, CommandId &out);
 // ascii_key should be the lowercase ASCII of the letter.
 bool KLookupEscCommand(int ascii_key, CommandId &out);
 
+// Enter: copy indent from the current line. Shift+Enter (GUI) and ESC-Enter
+// (terminal) insert a raw newline at column 0.
+CommandId KEnterCommand(bool raw);
+
 // Utility: normalize an int keycode to lowercased ASCII if it's in printable range.
 inline int
 KLowerAscii(const int key)

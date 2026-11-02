@@ -57,7 +57,8 @@ map_key_to_command(const int ch,
 	// ESC marks the next key as Meta. Consume that flag on every other key up
 	// front: keys handled before the Meta lookup below (arrows, mouse, Enter,
 	// control chords) used to leave it set, turning a later plain key into a
-	// Meta command (ESC, Left, d => delete word).
+	// Meta command (ESC, Left, d => delete word). KEY_ENTER still sees `meta`
+	// so ESC-Enter can insert a raw newline.
 	const bool meta = esc_meta && ch != 27;
 	if (ch != 27)
 		esc_meta = false;
@@ -67,7 +68,7 @@ map_key_to_command(const int ch,
 		// Some terminals send KEY_ENTER distinct from '\n'/'\r'
 		k_prefix = false;
 		k_ctrl_pending = false;
-		out            = {true, CommandId::Newline, "", 0};
+		out            = {true, KEnterCommand(meta), "", 0};
 		return true;
 	case KEY_MOUSE: {
 		k_prefix       = false;
@@ -195,7 +196,7 @@ map_key_to_command(const int ch,
 
 	// Meta (ESC-prefixed) keys: backspace, Enter and printable keys use the
 	// ESC keymap. Checked before control chords so ESC ^H (meta-backspace) is
-	// not taken as C-h, and before Enter so ESC Enter reaches SmartNewline.
+	// not taken as C-h, and before Enter so ESC Enter reaches a raw newline.
 	// Other control chords after ESC act as themselves.
 	const bool is_backspace = (is_keycode && ch == KEY_BACKSPACE) || ch == 127 || ch == CTRL('H');
 	const bool meta_key = meta && (is_backspace || (!is_keycode && (ch == '\n' || ch == '\r' || ch >= 0x20)));
@@ -315,7 +316,7 @@ map_key_to_command(const int ch,
 	if (ch == '\n' || ch == '\r') {
 		k_prefix       = false;
 		k_ctrl_pending = false;
-		out            = {true, CommandId::Newline, "", 0};
+		out            = {true, KEnterCommand(false), "", 0};
 		return true;
 	}
 	// Backspace in ncurses can be KEY_BACKSPACE or 127
