@@ -51,7 +51,8 @@ Then update `/opt/homebrew/Library/Taps/kisom/homebrew-tap` and push. Leave unre
 Report the zip SHA256, the release URL, and the tap commits.
 
 ## Docs that govern
-- `docs/ke.md` — canonical keybinding/spec reference, inherited from the predecessor editor `ke`
+- `docs/kte.1`, `docs/kge.1` — user manual and keybinding reference (keep the two pages' shared sections in step, and in step with `KKeymap.cc` and `HelpText.cc`)
+- `docs/ke.md` — manual of the predecessor editor `ke`; historical, not kte's spec
 - `REWRITE.md`, `ROADMAP.md`, `CONFIG.md` — design rationale, roadmap, and config reference
 - `README.md` — project overview
 

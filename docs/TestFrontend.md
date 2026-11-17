@@ -79,9 +79,9 @@ int main() {
     
     // Inspect results
     Buffer *buf = editor.CurrentBuffer();
-    if (buf && buf->Rows().size() >= 2) {
-        std::cout << "Line 1: " << std::string(buf->Rows()[0]) << "\n";
-        std::cout << "Line 2: " << std::string(buf->Rows()[1]) << "\n";
+    if (buf && buf->Nrows() >= 2) {
+        std::cout << "Line 1: " << buf->GetLineString(0) << "\n";
+        std::cout << "Line 2: " << buf->GetLineString(1) << "\n";
     }
     
     frontend.Shutdown();

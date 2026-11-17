@@ -5,8 +5,11 @@ Overview
 --------
 
 kte provides lightweight syntax highlighting with a pluggable
-highlighter interface. The initial implementation targets C/C++ and
-focuses on speed and responsiveness.
+highlighter interface, built for speed and responsiveness. Built-in
+highlighters cover C/C++, Go, Python, Rust, shell, JSON, Markdown,
+Lisp, SQL, Erlang and Forth (`syntax/`). The filetype comes from the
+file extension or a `#!` line, or is set by hand with
+`: set filetype=NAME`.
 
 Core types
 ----------
@@ -66,8 +69,6 @@ Limitations and TODOs
   not yet tracked.
 - No semantic analysis; identifiers are classified via small
   keyword/type sets.
-- Additional languages (JSON, Markdown, Shell, Python, Go, Rust,
-  Lisp, …) are planned.
 - Terminal color mapping is conservative to support 8/16-color
   terminals. Rich color-pair themes can be added later.
 
@@ -89,9 +90,9 @@ Renderer-side robustness
     - Drop empty/invalid spans and sort by start.
     - Clip drawing to the horizontally visible region and the
       tab-expanded line length.
-- The highlighter engine returns `LineHighlight` by value to avoid
-  cross-thread lifetime issues; renderers operate on a local copy for
-  each frame.
+- The highlighter engine returns cached `LineHighlight`s by const
+  reference. Highlighting runs on the main thread only, and a returned
+  reference is valid until the next call on the engine.
 
 Extensibility (Phase 4)
 -----------------------

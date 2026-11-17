@@ -1,7 +1,11 @@
 # kge Configuration
 
-kge loads configuration from `~/.config/kte/kge.toml`. If no TOML file is
-found, it falls back to the legacy `kge.ini` format.
+kge reads `~/.config/kte/kge.toml` when it starts. Every setting is
+optional; leave out anything you're happy with. If the file is missing,
+or has a syntax error (kge prints the error), kge falls back to the
+older `kge.ini` format described at the end.
+
+The terminal editor, `kte`, has no configuration file.
 
 ## TOML Format
 
@@ -39,14 +43,34 @@ syntax = true
 | `columns`    | int  | 80      | Initial window width in columns |
 | `rows`       | int  | 42      | Initial window height in rows   |
 
+`columns` and `rows` outside 1–1000 are ignored.
+
 ### `[font]`
 
 | Key       | Type   | Default      | Description                              |
 |-----------|--------|--------------|------------------------------------------|
-| `name`    | string | "default"    | Default font loaded at startup           |
-| `size`    | float  | 18.0         | Font size in pixels                      |
-| `code`    | string | "default"    | Font for code mode (monospace)           |
-| `writing` | string | "crimsonpro" | Font for writing mode (proportional)     |
+| `name`    | string | "default"    | Base font; `code` and `writing` fall back to it |
+| `size`    | float  | 18.0         | Font size in pixels (4–200)              |
+| `code`    | string | same as `name` | Font for code mode                     |
+| `writing` | string | "crimsonpro" | Font for writing mode                    |
+
+How the three font names fit together:
+
+- `code` follows `name` unless you set it.
+- `writing` stays "crimsonpro" unless you set it, or you set `name` to
+  something other than "default", in which case it follows `name`.
+
+So `name = "iosevka"` on its own gives you Iosevka everywhere. Add
+`writing = "etbook"` to keep a serif font for prose.
+
+Each buffer is drawn in the font for its edit mode, so in practice
+`code` and `writing` are the fonts you see; `name` only supplies their
+defaults.
+
+`"default"` is Berkeley Mono Bold (the same as `berkeley-bold`). Set
+fonts here; the size can also change while kge runs, with
+`: font-size NUM` (press `C-k ;` for the prompt) or Ctrl `+`/`-`/`0`
+(Cmd on macOS). Ctrl+0 goes back to `size`.
 
 ### `[appearance]`
 
@@ -66,9 +90,9 @@ syntax = true
 kge has two edit modes that control which font is used:
 
 - **code** — Uses the monospace font (`font.code`). Default for source files.
-- **writing** — Uses the proportional font (`font.writing`). Auto-detected
-  for `.txt`, `.md`, `.markdown`, `.rst`, `.org`, `.tex`, `.adoc`, and
-  `.asciidoc` files.
+- **writing** — Uses the proportional font (`font.writing`), with no
+  syntax highlighting. Files ending in `.txt`, `.md`, `.markdown`,
+  `.rst`, `.org`, `.tex`, `.adoc` or `.asciidoc` open in this mode.
 
 Toggle with `C-k m` or `: mode [code|writing]`.
 
@@ -89,13 +113,15 @@ crimsonpro, etbook, spectral
 amber, eink, everforest, gruvbox, kanagawa-paper, lcars, leuchtturm, nord,
 old-book, orbital, plan9, solarized, tufte, weyland-yutani, zenburn
 
-Themes with light/dark variants: eink, gruvbox, leuchtturm, old-book,
-solarized. Set `background = "light"` or use `: background light`.
+Themes with light and dark versions: eink, gruvbox, kanagawa-paper,
+leuchtturm, old-book, solarized, tufte. Set `background = "light"` or
+use `: background light`. See [docs/themes.md](docs/themes.md) for
+descriptions and how to add a theme.
 
 ## Migrating from kge.ini
 
-If you have an existing `kge.ini`, kge will still read it but prints a
-notice to stderr suggesting migration. To migrate, create `kge.toml` in the
+If you have an existing `kge.ini` and no `kge.toml`, kge still reads it
+but prints a notice to stderr suggesting migration. To migrate, create `kge.toml` in the
 same directory (`~/.config/kte/`) using the format above. The TOML file
 takes priority when both exist.
 
@@ -112,5 +138,5 @@ The INI keys map to TOML as follows:
 | `background`  | `appearance.background`  |
 | `syntax`      | `editor.syntax`          |
 
-New keys `font.code` and `font.writing` have no INI equivalent (the INI
-parser accepts `code_font` and `writing_font` if needed).
+| `code_font`   | `font.code`              |
+| `writing_font`| `font.writing`           |

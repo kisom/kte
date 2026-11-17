@@ -84,17 +84,15 @@ Represents an open document. Manages:
 - Swap recording integration
 
 **Key Insight**: Buffer wraps a PieceTable and provides a higher-level
-interface. The nested `Buffer::Line` class is a legacy wrapper that has
-been largely phased out in favor of direct PieceTable operations.
+interface. The old `Buffer::Line` wrapper and `Buffer::Rows()` are gone;
+read lines through the APIs below.
 
 **Line Access APIs**: Buffer provides three ways to access line content:
 
-- `GetLineView(row)` - Zero-copy `string_view` (fastest, 11x faster than
-  Rows())
-- `GetLineString(row)` - Returns `std::string` copy (1.7x faster than
-  Rows())
-- `Rows()` - Materializes all lines into cache (legacy, avoid in new
-  code)
+- `Nrows()` - Number of lines
+- `GetLineView(row)` - Zero-copy `string_view` when the line lies within
+  one piece; valid only until the next buffer modification
+- `GetLineString(row)` - Returns a `std::string` copy
 
 See `docs/BENCHMARKS.md` for detailed performance analysis and usage
 guidance.
@@ -260,14 +258,17 @@ Test files by category:
     - `test_command_semantics.cc` - Command execution
     - `test_kkeymap.cc` - Keybinding system
     - `test_visual_line_mode.cc` - Visual line selection
+    - `test_smart_newline.cc` - Enter copies the current line's indent
+    - `test_paste_split.cc` - Splitting pasted text into commands
 
 - **Search and Replace**:
-    - `test_search.cc` - Search functionality
-    - `test_search_replace_flow.cc` - Interactive search/replace
+    - `test_search_replace_flow.cc` - Search and interactive
+      search/replace
 
 - **Text Reflow**:
     - `test_reflow_paragraph.cc` - Paragraph reformatting
     - `test_reflow_indented_bullets.cc` - Indented list handling
+    - `test_reflow_undo.cc` - Undo after a reflow
 
 - **Undo System**:
     - `test_undo.cc` - Undo/redo operations
@@ -277,8 +278,12 @@ Test files by category:
     - `test_swap_writer.cc` - Writing swap files
     - `test_swap_replay.cc` - Replaying operations
     - `test_swap_recovery_prompt.cc` - Recovery UI
-    - `test_swap_cleanup.cc` - Cleanup logic
+    - `test_swap_cleanup.cc`, `test_swap_cleanup2.cc` - Cleanup logic
+    - `test_swap_edge_cases.cc` - Minimal and truncated journal records
     - `test_swap_git_editor.cc` - Git editor integration
+
+- **Syntax Highlighting**:
+    - `test_syntax_highlighting.cc` - Highlighters and the engine cache
 
 - **Performance and Migration**:
     - `test_benchmarks.cc` - Performance benchmarks for core operations
@@ -287,9 +292,11 @@ Test files by category:
 - **Integration Tests**:
     - `test_daily_workflows.cc` - Real-world editing scenarios
     - `test_daily_driver_harness.cc` - Workflow test infrastructure
+    - `test_audit_regressions.cc` - Regression tests for audit findings
 
-**Total**: 98 tests across 22 test files. See `docs/BENCHMARKS.md` for
-performance benchmark results.
+**Total**: about 280 tests across 27 test files. `docs/BENCHMARKS.md`
+records the benchmarks from the `Rows()` removal; that API no longer
+exists, but the numbers explain why `GetLineView()` is preferred.
 
 ### Docker/Podman for Linux Builds
 
@@ -349,7 +356,7 @@ Mount your source tree and run the build + tests:
 # Build and test (default command)
 docker run --rm -v "$(pwd):/kte" kte-linux
 
-# Expected output: "98 tests passed, 0 failed"
+# Expected last line: "Done in N ms. Failures: 0"
 ```
 
 The default command builds both `kte` (terminal) and `kge` (GUI)
@@ -475,12 +482,11 @@ TEST(Feature_Behavior_Scenario) {
 
 ### Common Pitfalls
 
-- **Don't modify `Buffer::Rows()` directly** - Use the PieceTable API (
-  `insert_text`, `delete_text`, etc.) to ensure undo and swap recording
-  work correctly.
+- **Mutate text only through the PieceTable API** (`insert_text`,
+  `delete_text`, etc.) so undo and swap recording work correctly.
 - **Prefer efficient line access** - Use `GetLineView()` for read-only
-  access (11x faster than `Rows()`), or `GetLineString()` when you need
-  a copy. Avoid `Rows()` in new code.
+  access, or `GetLineString()` when you need a copy that outlives the
+  next edit.
 - **Remember to invalidate caches** - If you modify PieceTable
   internals, ensure line index and materialization caches are
   invalidated.
@@ -1120,15 +1126,11 @@ Areas where the codebase could be improved:
 
 1. **Split Command.cc** - Break into logical groups (editing,
    navigation, file ops, etc.)
-2. **Complete Buffer::Line migration** - A few legacy editing functions
-   in Command.cc still use `Buffer::Rows()` directly (see lines 86-90
-   comment)
-3. **Add more inline documentation** - Especially for complex algorithms
-4. **Improve test coverage** - Add more edge case tests (current: 98
-   tests)
-5. **Performance profiling** - Continue monitoring performance with
+2. **Add more inline documentation** - Especially for complex algorithms
+3. **Improve test coverage** - Add more edge case tests
+4. **Performance profiling** - Continue monitoring performance with
    benchmark suite
-6. **API documentation** - Consider adding Doxygen-style comments
+5. **API documentation** - Consider adding Doxygen-style comments
 
 ---
 

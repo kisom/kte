@@ -21,7 +21,8 @@ Current themes (alphabetically):
 - **eink** — E-ink inspired high-contrast theme (light/dark variants)
 - **everforest** — Warm, forest-inspired palette
 - **gruvbox** — Retro groove color scheme (light/dark variants)
-- **kanagawa-paper** — Inspired by traditional Japanese art
+- **kanagawa-paper** — Inspired by traditional Japanese art (light/dark
+  variants)
 - **lcars** — Star Trek LCARS interface style
 - **leuchtturm** — Modern, clean theme (light/dark variants)
 - **nord** — Arctic, north-bluish color palette
@@ -354,13 +355,24 @@ ThemeRegistry()
 }
 ```
 
+**e) Keep the index mapping and syntax colors in step:**
+
+`ThemeIndexFromId()` and `ThemeIdFromIndex()` in `GUITheme.h` map each
+`ThemeId` to its position in the registry; add a case for the new theme
+and renumber the ones after it. To give the theme its own syntax
+colors, add a `SyntaxInkMyTheme()` function and a branch for it in
+`SyntaxInk()`; otherwise it gets the default Nord-like palette.
+
+**f) Update the user-facing lists:** the theme names in `HelpText.cc`,
+`docs/kge.1`, `CONFIG.md` and the list at the top of this file.
+
 ### 3. Test your theme
 
 Rebuild kte and test:
 
 ```bash
-# Set theme in config
-echo "theme = mytheme" >> ~/.config/kte/kge.ini
+# Set theme in config: in ~/.config/kte/kge.toml, under [appearance]
+#   theme = "mytheme"
 
 # Or switch at runtime
 kge

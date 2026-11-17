@@ -1,287 +1,349 @@
-.\" kte(1) — Kyle's Text Editor (terminal-first)
+.\" kte(1) - Kyle's Text Editor
 .\"
-.\" Project homepage: https://github.com/wntrmute/kte
-.TH KTE 1 "2025-12-01" "kte 0.1.0" "User Commands"
+.\" The keybinding sections are shared with kge.1; keep the two in step.
+.TH KTE 1 "2026-11-17" "kte 1.14.0" "User Commands"
 .SH NAME
-kte \- Kyle's Text Editor (terminal-first)
+kte \- Kyle's Text Editor, terminal version
 .SH SYNOPSIS
 .B kte
-[
-.I options
-]
-[
-.I files ...
-]
+.RI [ options ]
+.RI [[+ line ]
+.IR file " ...]"
 .SH DESCRIPTION
 .B kte
-is a small, fast, and understandable text editor with a terminal-first
-experience. It preserves ke's WordStar/VDE-style command model with
-Emacs-influenced ergonomics. The core uses ncurses in the terminal.
-
-By default, .B kte
-runs in the terminal (ncurses) frontend. If the binary was built with GUI
-support, the same editor core can be shown with an ImGui-based GUI by passing
-.B --gui
-or by invoking the GUI-first target
-.BR kge (1)
-when available.
-
-If one or more
-.I files
-are provided, they are opened on startup; otherwise, an empty buffer is
-created.
+is a small text editor that runs in a terminal. Its commands follow
+the WordStar and VDE tradition: most of them are Control-K followed by
+another key. Movement and the kill ring work much as they do in Emacs.
+.PP
+Each
+.I file
+named on the command line opens in its own buffer. A file that does not
+exist yet is created when you first save it. An argument of the form
+.BI + N
+moves the cursor to line
+.I N
+of the file that follows it. With no files,
+.B kte
+starts with an empty buffer.
+.PP
+The graphical version of the editor is
+.BR kge (1).
+It shares the same commands and keybindings.
 .SH OPTIONS
 .TP
-.B -g, --gui
-Use the GUI frontend (if the binary was built with GUI support). If GUI was
-not built, the editor exits with an error.
+.BR \-t ", " \-\-term
+Use the terminal frontend. This is the default and only choice for
+.BR kte .
 .TP
-.B -t, --term
-Use the terminal (ncurses) frontend. This is the default for
+.BR \-g ", " \-\-gui
+Accepted for compatibility, but
 .B kte
-.
+is always built without the GUI, so this prints an error and exits
+with status 2. Run
+.BR kge (1)
+instead.
 .TP
-.B -h, --help
-Display a brief usage summary and exit.
+.BR \-h ", " \-\-help
+Print a usage summary and exit.
 .TP
-.B -V, --version
-Print version information and exit.
-.SH KEYBINDINGS
-The command model and keybindings are inherited from
-.I ke
-and are summarized here for convenience. See
-.I docs/ke.md
-in the source tree for the canonical reference and notes.
-
-.SS K-commands (prefix Ctrl-K)
-.PP
-Enter K-command mode with Ctrl-K. Exit K-command mode with ESC or Ctrl-G.
+.BR \-V ", " \-\-version
+Print the version and exit.
+.SH NOTATION
+.B C-x
+means hold Control and press x.
+.B ESC x
+means press Escape and then x; holding Alt (Meta) while pressing x does
+the same thing.
+.B C-k x
+means press Control-K, let go, and then press x. Hold Control on the
+second key only where the list below says so (for example
+.BR "C-k C-d" ,
+which differs from
+.BR "C-k d" ).
+ESC or
+.B C-g
+abandons a half-typed K-command.
+.SH K-COMMANDS
 .TP
-.B C-k '
+.B C-k SPACE
+Set or clear the mark.
+.TP
+.B C-k \(aq
 Toggle read-only for the current buffer.
 .TP
-.B C-k -
-If the mark is set, unindent the region.
+.B C-k \-
+Unindent the region (the mark must be set).
 .TP
 .B C-k =
-If the mark is set, indent the region.
+Indent the region (the mark must be set).
+.TP
+.B C-k /
+Toggle visual-line mode, which edits several lines at once.
 .TP
 .B C-k ;
-Open the generic command prompt (": ").
+Open the command prompt; see
+.B COMMAND PROMPT
+below.
 .TP
 .B C-k a
-Set the mark at the beginning of the file, then jump to the end of the file.
+Set the mark at the start of the file and move to the end, selecting
+everything.
 .TP
 .B C-k b
-Switch to a buffer.
+Switch to a buffer by name.
 .TP
 .B C-k c
-Close the current buffer. If no other buffers are open, an empty buffer will be opened. To exit, use C-k q.
+Close the current buffer. Closing the last buffer leaves an empty one;
+use
+.B C-k q
+to leave the editor.
 .TP
 .B C-k d
 Delete from the cursor to the end of the line.
 .TP
 .B C-k C-d
-Delete the entire line.
+Delete the whole line.
 .TP
 .B C-k e
-Edit (open) a new file.
+Open a file.
 .TP
 .B C-k f
-Flush the kill ring.
+Empty the kill ring.
 .TP
 .B C-k g
-Go to a specific line.
+Go to a line number.
 .TP
 .B C-k h
-Show the built-in help (+HELP+ buffer).
+Show the built-in help in a read-only +HELP+ buffer.
+.TP
+.B C-k i
+Open a new, empty buffer.
 .TP
 .B C-k j
 Jump to the mark.
 .TP
+.B C-k k
+Scroll so the cursor's line is in the middle of the screen.
+.TP
 .B C-k l
-Reload the current buffer from disk.
+Reload the current buffer from disk and redraw the screen.
+.TP
+.B C-k m
+Switch the buffer between code and writing mode. In
+.BR kge (1)
+this changes the font; see that page.
 .TP
 .B C-k n
 Switch to the previous buffer.
 .TP
 .B C-k o
-Change working directory (prompt).
+Change the working directory.
 .TP
 .B C-k p
 Switch to the next buffer.
 .TP
 .B C-k q
-Exit the editor. If the file has unsaved changes, a warning will be printed; a second C-k q will exit.
+Quit. If a buffer has unsaved changes you are warned, and a second
+.B C-k q
+quits anyway.
 .TP
 .B C-k C-q
-Immediately exit the editor.
+Quit at once, without asking.
 .TP
 .B C-k r
-Redo changes.
+Redo.
 .TP
-.B C-k s
-Save the file, prompting for a filename if needed.
+.BR "C-k s" ", " "C-k C-s"
+Save the buffer, asking for a file name if it has none.
 .TP
 .B C-k u
 Undo.
 .TP
 .B C-k v
-Toggle visual file picker (GUI).
+Toggle the file picker
+.RB ( kge (1)
+only).
 .TP
 .B C-k w
-Show the current working directory.
+Show the working directory.
 .TP
-.B C-k x
-Save the file and exit. Also C-k C-x.
+.BR "C-k x" ", " "C-k C-x"
+Save and quit.
 .TP
 .B C-k y
-Yank the kill ring.
+Yank (paste) from the kill ring.
+.SH OTHER KEYS
+.SS Moving
 .TP
-.B C-k C-x
-Save the file and exit.
-
-.SH GUI APPEARANCE
-When running the GUI frontend, you can control appearance via the generic
-command prompt (type "C-k ;" then enter commands):
+.BR C-f ", " C-b ", " C-n ", " C-p
+Right, left, down, up. The arrow keys do the same.
 .TP
-.B : theme NAME
-Set the GUI theme. Available names: "amber", "eink", "everforest", "gruvbox", "kanagawa-paper", "lcars", "nord", "old-book", "orbital", "plan9", "solarized", "weyland-yutani", "zenburn".
-Compatibility aliases are also accepted: "gruvbox-dark", "gruvbox-light",
-"solarized-dark", "solarized-light", "eink-dark", "eink-light",
-"everforest-hard", "oldbook", "old-book-dark", "old-book-light",
-"kanagawa", "kanagawa-light", "kanagawa-paper-light", "vim-amber", "weyland".
+.BR C-a ", " C-e
+Start and end of the line (also Home and End).
 .TP
-.B : background MODE
-Set background mode for supported themes. MODE is either "light" or "dark".
-Themes that respond to background: eink, gruvbox, kanagawa-paper, old-book, solarized. The
-"lcars", "nord" and "plan9" themes do not vary with background.
-
-.SH CONFIGURATION
-The GUI reads a simple configuration file at
-~/.config/kte/kge.ini. Recognized keys include:
-.IP "fullscreen=on|off"
-.IP "columns=NUM"
-.IP "rows=NUM"
-.IP "font_size=NUM"
-.IP "theme=NAME"
-.IP "background=light|dark"
-The theme name accepts the values listed above. The background key controls
-light/dark variants when the selected theme supports it.
-
-.SS Other keybindings
+.BR "ESC f" ", " "ESC b"
+Next and previous word.
 .TP
-.B C-g
-Cancel the current operation.
+.BR "ESC <" ", " "ESC >"
+Start and end of the file.
+.PP
+Page Up and Page Down move a screen at a time.
+.SS Editing
 .TP
-.B C-a
-Move to the beginning of the line.
+.B Enter
+Start a new line, indented to match the current one.
 .TP
-.B C-e
-Move to the end of the line.
-.TP
-.B C-b
-Move left.
-.TP
-.B C-f
-Move right.
-.TP
-.B C-n
-Move down.
-.TP
-.B C-p
-Move up.
-.TP
-.B C-l
-Refresh the display.
+.B ESC Enter
+Start a new line with no indentation.
 .TP
 .B C-d
-Delete the character at the cursor.
-.TP
-.B C-r
-Regex search.
-.TP
-.B C-s
-Incremental find.
-.TP
-.B C-t
-Regex search and replace.
-.TP
-.B C-h
-Search and replace.
-.TP
-.B C-u
-Universal argument. C-u followed by numbers will repeat an operation n times.
-.TP
-.B C-w
-Kill the region if the mark is set.
-.TP
-.B C-y
-Yank the kill ring.
-.TP
-.B ESC <
-Move to the beginning of the file.
-.TP
-.B ESC >
-Move to the end of the file.
-.TP
-.B ESC m
-Toggle the mark.
-.TP
-.B ESC BACKSPACE
-Delete the previous word.
-.TP
-.B ESC b
-Move to the previous word.
+Delete the character under the cursor (also Delete).
 .TP
 .B ESC d
 Delete the next word.
 .TP
-.B ESC f
-Move to the next word.
+.B ESC BACKSPACE
+Delete the previous word.
 .TP
 .B ESC q
-Reflow the paragraph to 72 columns or the value of the universal argument.
+Reflow the paragraph to 72 columns, or to the width given with
+.BR C-u .
+.SS The mark and the kill ring
+.TP
+.B ESC m
+Set or clear the mark (same as
+.BR "C-k SPACE" ).
+The text between the mark and the cursor is the region.
+.TP
+.B C-w
+Cut (kill) the region.
 .TP
 .B ESC w
-Save the region (if the mark is set) to the kill ring.
+Copy the region to the kill ring.
+.TP
+.B C-y
+Yank (paste) from the kill ring.
+.SS Searching
+.TP
+.B C-s
+Incremental search. The down and right arrows go to the next match;
+up and left go to the previous one.
+.TP
+.B C-r
+Regular-expression search.
+.TP
+.B C-h
+Search and replace.
+.TP
+.B C-t
+Regular-expression search and replace.
+.SS Everything else
+.TP
+.B C-u
+Universal argument: type
+.B C-u
+and a number, and the next command repeats that many times.
+.B C-u
+on its own means 4.
+.TP
+.B C-g
+Cancel the current prompt or operation.
+.TP
+.B C-l
+Redraw the screen.
+.PP
+In the terminal the mouse wheel scrolls, and clicking or dragging moves
+the cursor and selects text.
+.SH COMMAND PROMPT
+.B C-k ;
+opens a prompt at the bottom of the screen. Type a command and press
+Enter. Tab completes command names and their arguments.
+.TP
+.BR syntax " " on | off | reload
+Turn syntax highlighting on or off for the buffer, or rescan it.
+.TP
+.BI "set filetype=" type
+Choose the highlighter by hand. Known types: cpp, go, python, rust,
+shell, json, markdown, lisp, sql, erlang and forth (common file
+extensions such as c, py and sh are accepted too).
+.TP
+.BR mode " [" code | writing ]
+Switch, or set, the buffer's edit mode.
+.PP
+The GUI-only commands
+.BR theme ,
+.B background
+and
+.B font\-size
+are described in
+.BR kge (1).
+.SH CONFIGURATION
+.B kte
+itself has no configuration file.
+.PP
+The GUI,
+.BR kge (1),
+reads
+.IR ~/.config/kte/kge.toml .
+That is where you choose the window size, the theme, and the font and
+its size, for example:
+.PP
+.RS
+.nf
+[font]
+name = "iosevka"
+size = 18.0
+.fi
+.RE
+.PP
+See
+.BR kge (1)
+for every setting.
+.SH FILES
+.TP
+.I ~/.local/state/kte/swap/
+Crash-recovery journals, one per open file. If the editor dies with
+unsaved changes, the next time you open that file you are asked whether
+to recover them. Set
+.B XDG_STATE_HOME
+to move this directory.
+.TP
+.I ~/.local/state/kte/error.log
+Errors the editor has logged.
 .SH ENVIRONMENT
 .TP
 .B TERM
-Specifies terminal type and capabilities for ncurses.
+The terminal type, used by ncurses.
 .TP
-.B LANG, LC_ALL, LC_CTYPE
-Determine locale and character encoding.
-.SH FILES
+.BR LANG ", " LC_ALL ", " LC_CTYPE
+The locale; use a UTF-8 locale to edit non-ASCII text.
 .TP
-.I ~/.kte/
-Future configuration directory (not yet stabilized).
+.B XDG_STATE_HOME
+Where the swap journals live (default
+.IR ~/.local/state ).
 .SH EXIT STATUS
-Returns 0 on success, non-zero on failure.
+0 on success; 2 for a bad option or for
+.BR \-\-gui ;
+non-zero on other failures.
 .SH EXAMPLES
-.TP
-Edit a file in the terminal (default):
+Edit two files:
+.PP
 .RS
 .nf
-  kte README.md
+kte README.md main.cc
 .fi
 .RE
-.TP
-Force GUI frontend (if available):
+.PP
+Open Buffer.cc at line 120:
+.PP
 .RS
 .nf
-  kte --gui main.cc
+kte +120 Buffer.cc
 .fi
 .RE
 .SH SEE ALSO
-.BR kge (1),
-.I docs/ke.md
-(project keybinding manual)
-.br
-Project homepage: https://github.com/wntrmute/kte
+.BR kge (1)
+.PP
+The source and releases are at https://github.com/kisom/kte.
 .SH AUTHORS
-Kyle (wntrmute) and contributors.
-.SH COPYRIGHT
-Copyright \(co 2025 Kyle. License as per project repository.
-.SH NOTES
-This page documents kte version 0.1.0.
+Kyle Isom and contributors.

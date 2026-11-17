@@ -30,14 +30,20 @@ swap journal exists.
   content than what is currently on disk, kte prompts:
 
   ```text
-  Recover swap edits for <path>? (y/N, C-g cancel)
+  Recover swap edits for <path>? (y/n, C-g cancel)
   ```
 
     - `y`: open the file and apply swap replay (buffer becomes dirty)
-    - `Enter` (default) / any non-`y`: delete the swap file (
-      best-effort)
-      and open the file normally
+    - any other answer: delete the swap file (best-effort) and open
+      the file normally
     - `C-g`: cancel opening the file
+
+- If the file on disk changed after the journal was written, so the
+  journal cannot be applied to it, kte prompts:
+
+  ```text
+  Swap file for <path> predates changes to the file on disk and cannot be applied. Delete it? (y/N, C-g cancel)
+  ```
 
 - If a swap file exists but is unreadable/corrupt, kte prompts:
 
@@ -46,7 +52,9 @@ swap journal exists.
   ```
 
     - `y`: delete the swap file (best-effort) and open the file normally
-    - `Enter` (default): keep the swap file and open the file normally
+    - `Enter` (default): rename the swap file to `<swap>.corrupt` (kept
+      for inspection, out of the new journal's way) and open the file
+      normally
     - `C-g`: cancel opening the file
 
 ## Where swap files live
