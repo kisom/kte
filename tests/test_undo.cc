@@ -324,7 +324,7 @@ TEST (Undo_RoundTrip_Lossless_RandomEdits)
 
 	// Build a short random sequence of inserts and deletes.
 	for (int i = 0; i < 200; ++i) {
-		const std::string cur = b.AsString();
+		const std::string cur = std::string(b.ContentView());
 		const bool do_insert  = (cur.empty() || pick(rng) == 0);
 		if (do_insert) {
 			char c = static_cast<char>(ch(rng));
@@ -347,22 +347,22 @@ TEST (Undo_RoundTrip_Lossless_RandomEdits)
 		}
 	}
 
-	const std::string final = b.AsString();
+	const std::string final = std::string(b.ContentView());
 	// Undo back to start.
 	for (int i = 0; i < 1000; ++i) {
-		std::string before = b.AsString();
+		std::string before = std::string(b.ContentView());
 		u->undo();
-		if (b.AsString() == before)
+		if (std::string(b.ContentView()) == before)
 			break;
 	}
 	// Redo forward; should end at exact final bytes.
 	for (int i = 0; i < 1000; ++i) {
-		std::string before = b.AsString();
+		std::string before = std::string(b.ContentView());
 		u->redo(0);
-		if (b.AsString() == before)
+		if (std::string(b.ContentView()) == before)
 			break;
 	}
-	ASSERT_EQ(b.AsString(), final);
+	ASSERT_EQ(std::string(b.ContentView()), final);
 }
 
 
@@ -1623,7 +1623,7 @@ TEST (Undo_GroupedDeleteAndInsertRows_UndoesAsUnit)
 	// Seed three lines (with trailing newline so delete_row/insert_row work cleanly).
 	b.insert_text(0, 0, std::string_view("aaa\nbbb\nccc\n"));
 	ASSERT_EQ(b.Nrows(), (std::size_t) 4); // 3 content + 1 empty trailing
-	const std::string original = b.AsString();
+	const std::string original = std::string(b.ContentView());
 
 	// Group: delete content rows then insert replacements (simulates reflow).
 	(void) u->BeginGroup();
@@ -1652,15 +1652,15 @@ TEST (Undo_GroupedDeleteAndInsertRows_UndoesAsUnit)
 
 	u->EndGroup();
 
-	const std::string reflowed = b.AsString();
+	const std::string reflowed = std::string(b.ContentView());
 
 	// Single undo should restore original content.
 	u->undo();
-	ASSERT_EQ(b.AsString(), original);
+	ASSERT_EQ(std::string(b.ContentView()), original);
 
 	// Redo should restore the reflowed state.
 	u->redo();
-	ASSERT_EQ(b.AsString(), reflowed);
+	ASSERT_EQ(std::string(b.ContentView()), reflowed);
 
 	validate_undo_tree(*u);
 }

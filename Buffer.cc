@@ -158,7 +158,9 @@ static const mode_t g_process_umask = [] {
 static bool
 write_in_place(const std::string &path, const ByteChunks &data, std::string &err)
 {
-	int flags = O_WRONLY | O_TRUNC;
+	// No O_TRUNC: Linux clears setuid/setgid when the open truncates, so
+	// read the mode first and truncate afterwards.
+	int flags = O_WRONLY;
 #ifdef O_CLOEXEC
 	flags |= O_CLOEXEC;
 #endif
@@ -168,8 +170,13 @@ write_in_place(const std::string &path, const ByteChunks &data, std::string &err
 		return false;
 	}
 	struct stat before{};
-	const bool have_mode = ::fstat(fd, &before) == 0;
-	bool ok              = write_all_fd(fd, data, err);
+	const bool have_mode = kte::syscall::Fstat(fd, &before) == 0;
+	if (kte::syscall::Ftruncate(fd, 0) != 0) {
+		err = std::string("Failed to truncate file: ") + std::strerror(errno);
+		(void) kte::syscall::Close(fd);
+		return false;
+	}
+	bool ok = write_all_fd(fd, data, err);
 	// Without privilege, writing clears setuid/setgid; put them back.
 	if (ok && have_mode)
 		(void) kte::syscall::Fchmod(fd, before.st_mode & 07777);

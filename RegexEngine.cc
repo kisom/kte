@@ -1,5 +1,6 @@
 #include "RegexEngine.h"
 
+#include <cstdint>
 #include <regex>
 
 #include "RegexGuard.h"
