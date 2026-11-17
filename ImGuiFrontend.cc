@@ -585,7 +585,9 @@ GUIFrontend::Step(Editor &ed, bool &running)
 			}
 		}
 
-		// Draw
+		// Draw. Every frame repaints the whole window, so a full-redraw
+		// request (C-l, reload) needs nothing more than clearing.
+		(void) wed.ConsumeFullRedraw();
 		ws.renderer.Draw(wed);
 
 		// Render

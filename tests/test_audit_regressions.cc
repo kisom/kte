@@ -2406,3 +2406,26 @@ TEST(Audit_B7_SanitizeSpans_WholeCharacters)
 	ASSERT_TRUE(out[3].kind == TokenKind::Error);
 	ASSERT_TRUE(out[4].kind == TokenKind::Error); // the earlier-starting span wins
 }
+
+
+// C-l and C-k l ask the frontend for a full repaint: the terminal must
+// repaint every cell, not only what ncurses believes changed, so output
+// another program wrote to the terminal is cleared.
+TEST(Redraw_RefreshAndReloadRequestFullRedraw)
+{
+	TempDir d("redraw");
+	const std::string file = (d.path / "r.txt").string();
+	std::ofstream(file) << "disk\n";
+	TestHarness h;
+	Editor &ed = h.EditorRef();
+	std::string err;
+	ASSERT_TRUE(ed.OpenFile(file, err));
+	ASSERT_TRUE(!ed.ConsumeFullRedraw());
+
+	ASSERT_TRUE(h.Exec(CommandId::Refresh));
+	ASSERT_TRUE(ed.ConsumeFullRedraw());
+	ASSERT_TRUE(!ed.ConsumeFullRedraw()); // consumed
+
+	ASSERT_TRUE(h.Exec(CommandId::ReloadBuffer));
+	ASSERT_TRUE(ed.ConsumeFullRedraw());
+}

@@ -1495,6 +1495,8 @@ cmd_quit_now(CommandContext &ctx)
 static bool
 cmd_refresh(CommandContext &ctx)
 {
+	// C-l: repaint the whole screen, whatever else this cancels.
+	ctx.editor.RequestFullRedraw();
 	// C-g is mapped to Refresh and acts as a general cancel key.
 	// Cancel visual-line (multicursor) mode if active.
 	if (Buffer *buf = ctx.editor.CurrentBuffer()) {
@@ -5316,6 +5318,7 @@ cmd_reload_buffer(CommandContext &ctx)
 	}
 	ctx.editor.SetStatus(std::string("Reloaded ") + filename);
 	ensure_cursor_visible(ctx.editor, *buf);
+	ctx.editor.RequestFullRedraw();
 	return true;
 }
 

@@ -202,6 +202,24 @@ public:
 	}
 
 
+	// Ask the frontend to repaint the whole screen on its next draw (C-l,
+	// reload). The terminal otherwise sends only what ncurses believes
+	// changed, so output another program wrote to the terminal would stay.
+	void RequestFullRedraw()
+	{
+		full_redraw_requested_ = true;
+	}
+
+
+	// Returns whether a full redraw was requested, and clears the request.
+	bool ConsumeFullRedraw()
+	{
+		const bool on          = full_redraw_requested_;
+		full_redraw_requested_ = false;
+		return on;
+	}
+
+
 	void SetQuitConfirmPending(bool on)
 	{
 		quit_confirm_pending_ = on;
@@ -630,6 +648,7 @@ private:
 	// Quit state
 	bool quit_requested_        = false;
 	bool new_window_requested_  = false;
+	bool full_redraw_requested_ = false;
 	bool quit_confirm_pending_  = false;
 	bool close_confirm_pending_ = false; // awaiting y/N to save-before-close
 	bool close_after_save_      = false; // if true, close buffer after successful Save/SaveAs

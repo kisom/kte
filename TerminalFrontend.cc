@@ -138,6 +138,12 @@ TerminalFrontend::Step(Editor &ed, bool &running)
 	if (handled > 0)
 		timeout(16);
 
+	// C-l or a reload: make the next refresh repaint every cell.
+	if (ed.ConsumeFullRedraw()) {
+		clearok(curscr, TRUE);
+		changed = true;
+	}
+
 	if (ed.QuitRequested()) {
 		running = false;
 	}
