@@ -102,8 +102,15 @@ ImGuiRenderer::Draw(Editor &ed)
 
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+		// NoNavInputs: with keyboard navigation enabled, ImGui scrolls a
+		// focused window that has no navigable items by itself on arrow keys
+		// (by a frame-time-dependent pixel amount) and on PageUp/PageDown/
+		// Home/End. kte already moves the cursor and scroll for those keys,
+		// and the sync above copied ImGui's extra scroll into Rowoffs, so the
+		// view jumped by a row or two on every arrow press.
 		ImGui::BeginChild("scroll", ImVec2(0, child_h_plan), false,
-		                  ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+		                  ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+		                  | ImGuiWindowFlags_NoNavInputs);
 
 		// Get child window position and scroll for click handling
 		ImVec2 child_window_pos = ImGui::GetWindowPos();
