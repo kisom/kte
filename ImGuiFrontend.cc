@@ -157,6 +157,8 @@ GUIFrontend::Init(int &argc, char **argv, Editor &ed)
 
 	// Load GUI configuration (fullscreen, columns/rows, font size, theme, background)
 	config_ = GUIConfig::Load();
+	ed.Fonts().code_font    = config_.code_font;
+	ed.Fonts().writing_font = config_.writing_font;
 
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
 		return false;
@@ -360,6 +362,7 @@ GUIFrontend::OpenNewWindow_(Editor &primary)
 
 	// Secondary editor shares the primary's buffer list
 	ws->editor.SetSharedBuffers(&primary.Buffers(), primary.Swap());
+	ws->editor.SetSharedFonts(&primary.Fonts());
 	ws->editor.SetDimensions(primary.Rows(), primary.Cols());
 
 	// Open a new untitled buffer and switch to it in the new window.
@@ -568,23 +571,6 @@ GUIFrontend::Step(Editor &ed, bool &running)
 			running = false;
 		}
 
-		// Switch font based on current buffer's edit mode (deferred to next frame)
-		{
-			Buffer *cur = wed.CurrentBuffer();
-			if (cur) {
-				auto &fr = kte::Fonts::FontRegistry::Instance();
-				const std::string &expected =
-					(cur->GetEditMode() == EditMode::Writing)
-						? config_.writing_font
-						: config_.code_font;
-				if (fr.CurrentFontName() != expected && fr.HasFont(expected)) {
-					float sz = fr.CurrentFontSize();
-					if (sz <= 0.0f) sz = config_.font_size;
-					fr.RequestLoadFont(expected, sz);
-				}
-			}
-		}
-
 		// Draw. Every frame repaints the whole window, so a full-redraw
 		// request (C-l, reload) needs nothing more than clearing.
 		(void) wed.ConsumeFullRedraw();
@@ -599,6 +585,29 @@ GUIFrontend::Step(Editor &ed, bool &running)
 		glClear(GL_COLOR_BUFFER_BIT);
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 		SDL_GL_SwapWindow(ws.window);
+	}
+
+	// Pick the font for the focused window's buffer's edit mode (applied at
+	// the start of the next Step). There is one loaded font for all windows,
+	// so choose once: when each window asked for its own buffer's mode, a
+	// code window and a writing window swapped the font every frame.
+	{
+		SDL_Window *focus = SDL_GetKeyboardFocus();
+		Editor *fed       = &ed;
+		for (std::size_t wi = 1; wi < windows_.size(); ++wi) {
+			if (windows_[wi]->alive && windows_[wi]->window == focus)
+				fed = &windows_[wi]->editor;
+		}
+		if (const Buffer *cur = fed->CurrentBuffer()) {
+			auto &fr                    = kte::Fonts::FontRegistry::Instance();
+			const std::string &expected = ed.Fonts().ForMode(cur->GetEditMode());
+			if (fr.CurrentFontName() != expected && fr.HasFont(expected)) {
+				float sz = fr.CurrentFontSize();
+				if (sz <= 0.0f)
+					sz = config_.font_size;
+				fr.RequestLoadFont(expected, sz);
+			}
+		}
 	}
 
 	// Handle deferred new-window requests (must happen outside the render loop

@@ -139,6 +139,7 @@ a command and press Enter; Tab completes. For example:
 : syntax off
 : set filetype=python
 : theme gruvbox          (kge)
+: font iosevka           (kge)
 : font-size 20           (kge)
 ```
 
@@ -149,9 +150,9 @@ time you open the file kte asks whether to recover them.
 
 ### kge: themes, fonts and windows
 
-kge has 15 color themes and two dozen built-in fonts. Switch themes
-while you work with `: theme NAME`, and change the text size with Ctrl
-`+`/`-`/`0` (Cmd on macOS). Fonts are chosen in the config file below. `C-k m` switches between code
+kge has 15 color themes and two dozen built-in fonts. Switch them
+while you work with `: theme NAME` and `: font NAME`, and change the
+text size with Ctrl `+`/`-`/`0` (Cmd on macOS). `C-k m` switches between code
 mode (a monospace font) and writing mode (a proportional font, used by
 default for `.md`, `.txt` and similar files). Cmd+N (macOS) or
 Ctrl+Shift+N opens another window onto the same buffers.

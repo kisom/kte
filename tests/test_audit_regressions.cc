@@ -2429,3 +2429,23 @@ TEST(Redraw_RefreshAndReloadRequestFullRedraw)
 	ASSERT_TRUE(h.Exec(CommandId::ReloadBuffer));
 	ASSERT_TRUE(ed.ConsumeFullRedraw());
 }
+
+
+// Per-mode fonts are editor state shared by every window, so `: font`
+// (which only sees the Editor) and the GUI's per-frame font choice agree.
+TEST(EditorFonts_PerModeAndSharedAcrossWindows)
+{
+	Editor primary;
+	ASSERT_EQ(primary.Fonts().ForMode(EditMode::Code), std::string("default"));
+	ASSERT_EQ(primary.Fonts().ForMode(EditMode::Writing), std::string("crimsonpro"));
+
+	primary.Fonts().SetForMode(EditMode::Code, "iosevka");
+	ASSERT_EQ(primary.Fonts().code_font, std::string("iosevka"));
+	ASSERT_EQ(primary.Fonts().writing_font, std::string("crimsonpro"));
+
+	Editor secondary;
+	secondary.SetSharedFonts(&primary.Fonts());
+	secondary.Fonts().SetForMode(EditMode::Writing, "etbook");
+	ASSERT_EQ(primary.Fonts().ForMode(EditMode::Writing), std::string("etbook"));
+	ASSERT_EQ(secondary.Fonts().ForMode(EditMode::Code), std::string("iosevka"));
+}

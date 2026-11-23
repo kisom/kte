@@ -1870,8 +1870,15 @@ cmd_font_set_by_name(const CommandContext &ctx)
 		if (size <= 0.0f)
 			size = 16.0f;
 	}
+	// The font belongs to the current buffer's edit mode: record it there,
+	// or the frontend's per-mode font choice would switch straight back.
+	EditMode mode = EditMode::Code;
+	if (const Buffer *b = ctx.editor.CurrentBuffer())
+		mode = b->GetEditMode();
+	ctx.editor.Fonts().SetForMode(mode, name);
 	reg.RequestLoadFont(name, size);
-	ctx.editor.SetStatus(std::string("Font: ") + name + " (" + std::to_string((int) std::round(size)) + ")");
+	ctx.editor.SetStatus(std::string(mode == EditMode::Writing ? "Writing font: " : "Code font: ") + name + " (" +
+	                     std::to_string((int) std::round(size)) + ")");
 	return true;
 }
 #else

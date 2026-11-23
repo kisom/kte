@@ -49,6 +49,28 @@
 #include "Swap.h"
 
 
+// The GUI font for each edit mode. These are application settings, not
+// per-window ones: there is one loaded font, so every window's Editor must
+// agree on them (secondary windows share the primary's; SetSharedFonts).
+// Seeded from kge.toml; `: font` changes the current buffer's mode's entry.
+struct EditorFonts {
+	std::string code_font    = "default";
+	std::string writing_font = "crimsonpro";
+
+
+	[[nodiscard]] const std::string &ForMode(EditMode m) const
+	{
+		return m == EditMode::Writing ? writing_font : code_font;
+	}
+
+
+	void SetForMode(EditMode m, const std::string &name)
+	{
+		(m == EditMode::Writing ? writing_font : code_font) = name;
+	}
+};
+
+
 class Editor {
 public:
 	Editor();
@@ -590,6 +612,26 @@ public:
 	}
 
 
+	// Per-mode GUI fonts. A secondary window's Editor points at the
+	// primary's, like the shared buffer list.
+	void SetSharedFonts(EditorFonts *shared)
+	{
+		shared_fonts_ = shared;
+	}
+
+
+	[[nodiscard]] EditorFonts &Fonts()
+	{
+		return shared_fonts_ ? *shared_fonts_ : fonts_;
+	}
+
+
+	[[nodiscard]] const EditorFonts &Fonts() const
+	{
+		return shared_fonts_ ? *shared_fonts_ : fonts_;
+	}
+
+
 	// Swap manager access (for advanced integrations/tests)
 	[[nodiscard]] kte::SwapManager *Swap()
 	{
@@ -640,6 +682,9 @@ private:
 	// Swap journaling manager (lifetime = editor)
 	std::unique_ptr<kte::SwapManager> swap_;
 	kte::SwapManager *shared_swap_ = nullptr; // set with shared_buffers_; not owned
+
+	EditorFonts fonts_;
+	EditorFonts *shared_fonts_ = nullptr; // the primary's, in a secondary window; not owned
 
 	// Kill ring (Emacs-like)
 	std::vector<std::string> kill_ring_;

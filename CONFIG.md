@@ -67,10 +67,12 @@ Each buffer is drawn in the font for its edit mode, so in practice
 `code` and `writing` are the fonts you see; `name` only supplies their
 defaults.
 
-`"default"` is Berkeley Mono Bold (the same as `berkeley-bold`). Set
-fonts here; the size can also change while kge runs, with
-`: font-size NUM` (press `C-k ;` for the prompt) or Ctrl `+`/`-`/`0`
-(Cmd on macOS). Ctrl+0 goes back to `size`.
+`"default"` is Berkeley Mono Bold (the same as `berkeley-bold`). While
+kge runs, `: font NAME` (press `C-k ;` for the prompt) changes the font
+for the current buffer's edit mode, and `: font-size NUM` or Ctrl
+`+`/`-`/`0` (Cmd on macOS) the size; Ctrl+0 goes back to `size`. These
+last until you quit. Only one font is shown at a time, so with several
+windows open the focused window's buffer decides.
 
 ### `[appearance]`
 

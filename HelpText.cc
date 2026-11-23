@@ -101,7 +101,7 @@ HelpText::Text()
 		"                       orbital, plan9, solarized, tufte, weyland-yutani,\n"
 		"                       zenburn)\n"
 		"  : background MODE    Background: light | dark\n"
-		"  : font NAME          Set font (tab completes; b612, berkeley,\n"
+		"  : font NAME          Font for this edit mode (tab completes; b612, berkeley,\n"
 		"                       berkeley-bold, brassmono, brassmono-bold,\n"
 		"                       brassmonocode, brassmonocode-bold, crimsonpro,\n"
 		"                       default, etbook, fira, go, ibm, idealist,\n"

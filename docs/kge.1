@@ -291,6 +291,10 @@ Switch to another color theme; see
 .BR background " " light | dark
 Choose the light or dark version of themes that have both.
 .TP
+.BI "font " name
+Use another font for the current buffer's edit mode until you quit; see
+.BR "FONTS AND EDIT MODES" .
+.TP
 .BI "font\-size " pixels
 Set the text size until you quit.
 .SH FONTS AND EDIT MODES
@@ -320,7 +324,12 @@ Proportional: crimsonpro, etbook, spectral.
 is Berkeley Mono Bold, the same as berkeley\-bold.
 .RE
 .PP
-Choose fonts in the configuration file below.
+To try a font, use
+.BR ":\ font" ;
+it changes the font for the current buffer's mode until you quit. To
+keep it, set it in the configuration file below. Only one font is shown
+at a time, so with several windows open the focused window's buffer
+decides.
 .SH THEMES
 amber, eink, everforest, gruvbox, kanagawa\-paper, lcars, leuchtturm,
 nord, old\-book, orbital, plan9, solarized, tufte, weyland\-yutani and
